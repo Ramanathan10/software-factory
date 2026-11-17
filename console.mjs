@@ -16,6 +16,11 @@ let submitting = false;
 let questionStory;
 let detailKey;
 
+const observations = {
+  failed: 'CI failed', passed: 'Reported checks passed', running: 'Checks still running',
+  'no-checks': 'No checks reported', merged: 'Merge observed', closed: 'PR closed without merge',
+};
+
 function node(tag, text, classes) {
   const element = document.createElement(tag);
   if (text) element.textContent = text;
@@ -59,6 +64,15 @@ function status(story) {
   }
   if (story.blocked) return { owner: phases[story.phase][0], label: 'Blocked' };
   const [owner, label] = phases[story.phase];
+  const signal = story.prObservation?.status;
+  if (['ci', 'merge'].includes(story.phase) && signal) {
+    if (story.phase === 'merge' && story.readyHead === story.prObservation.head && signal === 'passed') {
+      return { owner, label };
+    }
+    const awaitingReview = story.phase === 'merge' && signal === 'passed';
+    return { owner, label: awaitingReview ? 'Checks passed · readiness needs confirmation' : observations[signal] ?? label,
+      alert: ['failed', 'closed'].includes(signal) };
+  }
   return { owner, label, decision: owner === 'approver' };
 }
 
@@ -69,7 +83,7 @@ function storyButton(story, showOwner) {
   button.setAttribute('aria-pressed', String(story.id === selected));
   button.append(node('span', story.id + ' · ' + story.title));
   button.append(node('span', (showOwner ? roleLabel(state.owner) + ' · ' : '') + state.label +
-    (story.harness ? ' · ' + story.harness : ''), 'muted'));
+    (story.harness ? ' · ' + story.harness : ''), state.alert ? 'attention-text' : 'muted'));
   button.addEventListener('click', () => {
     selected = story.id;
     ui('submit-status').textContent = '';
@@ -174,7 +188,7 @@ function renderStory(story) {
   ui('story-id').textContent = story.id;
   ui('story-title').textContent = story.title;
   ui('story-status').replaceChildren(node('span', roleLabel(state.owner) + ' · ' + state.label,
-    'tag' + (state.decision ? ' decision' : '') + (story.phase === 'closed' ? ' closed' : '')));
+    'tag' + (state.decision || state.alert ? ' decision' : '') + (story.phase === 'closed' ? ' closed' : '')));
   const harness = story.harness ?? (story.phase === 'closed' ? 'Harness not recorded' : 'Harness selection required');
   ui('story-status').append(node('span', ' · ' + harness, 'muted'));
   ui('story-skills').textContent = roles[state.owner].skills.join(' · ');

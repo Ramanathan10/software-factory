@@ -2,6 +2,7 @@ import { createServer } from 'node:http';
 import { readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { InputError, openStore } from './store.mjs';
+import { waitForWake, watch, watchOnce } from './watcher.mjs';
 
 const host = '127.0.0.1';
 const browserEvents = new Set(['answer', 'approve', 'comparison-choice']);
@@ -89,13 +90,21 @@ function seed(store) {
   });
 }
 
-function main() {
-  const [command, file, argument, ...rest] = process.argv.slice(2);
-  if (!['serve', 'demo', 'record', 'snapshot', 'pending', 'handover', 'ack'].includes(command) ||
-      (command !== 'demo' && !file) || rest.length ||
-      (argument && !['serve', 'snapshot', 'ack', 'handover'].includes(command)) ||
-      (['ack', 'handover'].includes(command) && !argument)) {
-    throw new InputError('Usage: node jarvis.mjs demo [port] | serve <db> [port] | record <db> | snapshot <db> [harness] | pending <db> | handover <db> <story> | ack <db> <seq>');
+async function main() {
+  const [command, file, argument, secondsArg, ...rest] = process.argv.slice(2);
+  if (!['serve', 'demo', 'record', 'snapshot', 'pending', 'handover', 'ack', 'watch', 'watch-once', 'wait'].includes(command) ||
+      (command !== 'demo' && !file) || rest.length || (secondsArg && command !== 'wait') ||
+      (argument && !['serve', 'snapshot', 'ack', 'handover', 'watch', 'wait'].includes(command)) ||
+      (['ack', 'handover', 'wait'].includes(command) && !argument)) {
+    throw new InputError('Usage: node jarvis.mjs demo [port] | serve <db> [port] | record <db> | snapshot <db> [harness] | pending <db> | handover <db> <story> | ack <db> <seq> | watch <db> [interval-seconds] | watch-once <db> | wait <db> <story> [seconds]');
+  }
+  const watchSeconds = Number(argument ?? 30);
+  if (command === 'watch' && (!Number.isInteger(watchSeconds) || watchSeconds < 15 || watchSeconds > 3600)) {
+    throw new InputError('Watch interval must be between 15 and 3600 seconds.');
+  }
+  const waitSeconds = Number(secondsArg ?? 30);
+  if (command === 'wait' && (!Number.isInteger(waitSeconds) || waitSeconds < 0 || waitSeconds > 60)) {
+    throw new InputError('Wait must be between 0 and 60 seconds.');
   }
   const store = openStore(command === 'demo' ? ':memory:' : file);
   if (command === 'serve' || command === 'demo') {
@@ -108,12 +117,27 @@ function main() {
     return;
   }
   try {
+    if (command === 'watch') {
+      const controller = new AbortController();
+      const stop = () => controller.abort();
+      for (const signal of ['SIGINT', 'SIGTERM']) process.once(signal, stop);
+      try {
+        await watch(store, watchSeconds, controller.signal);
+      } catch (error) {
+        if (!controller.signal.aborted || error.name !== 'AbortError') throw error;
+      } finally {
+        for (const signal of ['SIGINT', 'SIGTERM']) process.removeListener(signal, stop);
+      }
+      return;
+    }
     let result;
     if (command === 'record') result = store.record(JSON.parse(readFileSync(0, 'utf8').replace(/^\uFEFF/, '')));
     if (command === 'snapshot') result = store.snapshot(argument);
     if (command === 'pending') result = store.pending();
     if (command === 'handover') result = store.handover(argument);
     if (command === 'ack') result = store.ack(Number(argument));
+    if (command === 'watch-once') result = await watchOnce(store);
+    if (command === 'wait') result = await waitForWake(store, argument, waitSeconds);
     console.log(JSON.stringify(result, null, 2));
   } finally {
     store.close();
@@ -122,7 +146,7 @@ function main() {
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   try {
-    main();
+    await main();
   } catch (error) {
     console.error(error.message);
     process.exitCode = 1;

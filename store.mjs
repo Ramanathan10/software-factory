@@ -65,6 +65,37 @@ function answerQuestion(story, input) {
   return question.answer;
 }
 
+function validHead(head) {
+  return typeof head === 'string' && /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(head);
+}
+
+function observePr(story, input, now) {
+  requireThat(['ci', 'merge'].includes(story.phase) && story.pr && input.url === story.pr,
+    'The registered PR is no longer being watched.', 409);
+  const observation = input.observation;
+  requireThat(validHead(observation?.head), 'Supply the observed PR head.');
+  const { head, status, failedCount, failures } = observation;
+  requireThat(['failed', 'passed', 'running', 'no-checks', 'merged', 'closed'].includes(status) &&
+    Number.isSafeInteger(failedCount) && failedCount >= 0 && Array.isArray(failures) &&
+    failures.length <= Math.min(10, failedCount) && failures.every(name => typeof name === 'string' && name.length <= 160),
+  'Supply valid check evidence.');
+  const current = { head, status, failedCount: status === 'failed' ? failedCount : 0, failures: status === 'failed' ? failures : [] };
+  const previous = story.prObservation;
+  if (previous && Object.keys(current).every(key => JSON.stringify(current[key]) === JSON.stringify(previous[key]))) return null;
+  const priorHead = previous?.head ?? story.readyHead;
+  const newHead = Boolean(priorHead && priorHead !== current.head);
+  const reconcileReady = story.phase === 'merge' && !previous && !story.readyHead;
+  const labels = {
+    failed: 'CI failed', passed: 'Reported checks passed', running: 'Checks still running',
+    'no-checks': 'No checks reported', merged: 'Merge observed', closed: 'PR closed without merge',
+  };
+  const listed = current.failures.length ? ' · ' + current.failures.join(', ') : '';
+  const detail = 'Hawkeye · ' + (newHead ? 'New head · ' : '') + labels[status] + ' · ' + head.slice(0, 12) + listed;
+  story.prObservation = { ...current, at: now };
+  return { detail, wake: newHead || reconcileReady || ['failed', 'passed', 'merged', 'closed'].includes(status) ||
+    Boolean(previous && ['failed', 'passed', 'closed'].includes(previous.status)) };
+}
+
 function apply(story, input, now) {
   requireThat(story.harness || ['select-harness', 'release-worker'].includes(input.type), 'Select the story harness first.', 409);
   requireThat(!story.blocked || ['resume', 'answer', 'replan', 'assign-worktree', 'release-worker', 'select-harness'].includes(input.type),
@@ -133,6 +164,7 @@ function apply(story, input, now) {
         'This phase cannot reopen planning.', 409);
       story.phase = 'planning';
       delete story.blocked;
+      delete story.readyHead;
       return string(input.detail, 'unresolved decision');
     case 'assign-worktree': {
       requireThat(story.phase !== 'closed', 'The story is closed.', 409);
@@ -172,10 +204,17 @@ function apply(story, input, now) {
       return story.pr;
     case 'pr-ready':
       samePhase(story, 'ci');
+      if (input.head !== undefined || story.prObservation) {
+        requireThat(validHead(input.head), 'Supply the head this readiness decision covers.');
+        requireThat(!story.prObservation || input.head === story.prObservation.head,
+          'Readiness evidence does not cover the observed head.', 409);
+        story.readyHead = input.head;
+      }
       story.phase = 'merge';
       return string(input.detail, 'current-head check and review evidence');
     case 'pr-recheck':
       samePhase(story, 'merge');
+      delete story.readyHead;
       story.phase = 'ci';
       return string(input.detail, 'new head or check regression');
     case 'merged':
@@ -238,6 +277,15 @@ export function openStore(path) {
         .map(withHistory));
     },
     pending: () => wakeRecords(pending.all()),
+    pendingFor(id) {
+      identifier(id, 'story ID');
+      requireThat(find.get(id), 'Story does not exist.', 404);
+      return wakeRecords(storyPending.all(id));
+    },
+    watchTargets() {
+      return all.all().map(({ state }) => JSON.parse(state)).filter(story =>
+        story.pr && ['ci', 'merge'].includes(story.phase));
+    },
     handover(id) {
       identifier(id, 'story ID');
       return read(() => {
@@ -269,6 +317,7 @@ export function openStore(path) {
         let story;
         let detail;
         let worker;
+        let wake = wakes.has(input.type);
         if (input.type === 'create') {
           requireThat(!current, 'Story already exists.', 409);
           const title = string(input.title, 'title', 200);
@@ -287,7 +336,16 @@ export function openStore(path) {
             'Use the harness selected for this story.', 409);
           const from = story.phase;
           worker = story.worker;
-          detail = apply(story, input, now);
+          if (input.type === 'pr-observed') {
+            const observed = observePr(story, input, now);
+            if (!observed) {
+              db.exec('COMMIT');
+              return { unchanged: true };
+            }
+            ({ detail, wake } = observed);
+          } else {
+            detail = apply(story, input, now);
+          }
           if (from !== story.phase) {
             requireThat(!worker, 'Release the assigned worker before changing phases.', 409);
             delete story.activity;
@@ -296,13 +354,15 @@ export function openStore(path) {
         story.revision += 1;
         story.updatedAt = now;
         const event = { at: now, type: input.type, phase: story.phase, revision: story.revision, detail };
-        if (story.worker || worker) event.worker = story.worker ?? worker;
+        if (input.type === 'pr-observed') event.observation = story.prObservation;
+        else if (story.worker || worker) event.worker = story.worker ?? worker;
+        if (input.type === 'pr-ready' && story.readyHead) event.head = story.readyHead;
         if (input.command) event.command = input.command;
         if (input.file) event.file = input.file;
         save.run(id, JSON.stringify(story));
-        const result = insert.run(key, id, request, JSON.stringify(event), Number(wakes.has(input.type)));
+        const result = insert.run(key, id, request, JSON.stringify(event), Number(wake));
         db.exec('COMMIT');
-        return { seq: result.lastInsertRowid, revision: story.revision };
+        return { seq: result.lastInsertRowid, revision: story.revision, ...(input.type === 'pr-observed' ? { wake } : {}) };
       } catch (error) {
         db.exec('ROLLBACK');
         throw error;

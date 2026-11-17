@@ -8,6 +8,7 @@ import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { serve } from './jarvis.mjs';
 import { openStore } from './store.mjs';
+import { githubPr, summarizePr, waitForWake, watchOnce } from './watcher.mjs';
 
 function fixture(t) {
   const directory = mkdtempSync(join(tmpdir(), 'jarvis-console-'));
@@ -201,4 +202,100 @@ test('the HTTP surface accepts human decisions from the loopback origin only', a
   } finally {
     await new Promise(resolve => server.close(resolve));
   }
+});
+
+test('Hawkeye distinguishes absent, incomplete, and completed GitHub checks', () => {
+  const headRefOid = 'a'.repeat(40);
+  const check = statusCheckRollup => summarizePr({ state: 'OPEN', headRefOid, statusCheckRollup });
+  assert.equal(check([]).status, 'no-checks');
+  assert.equal(check([{ status: 'IN_PROGRESS', conclusion: 'SUCCESS' }]).status, 'running');
+  assert.equal(check([{ status: 'COMPLETED', conclusion: 'SUCCESS' }, { state: 'SUCCESS' }]).status, 'passed');
+  assert.deepEqual(check([{ status: 'COMPLETED', conclusion: 'FAILURE', name: 'Build' }, { state: 'PENDING' }]), {
+    head: headRefOid, status: 'failed', failedCount: 1, failures: ['Build'],
+  });
+  assert.throws(() => summarizePr({ state: 'OPEN', headRefOid }), /incomplete/);
+  assert.throws(() => summarizePr({ state: 'OPEN', headRefOid: [headRefOid], statusCheckRollup: [] }), /incomplete/);
+  assert.equal(githubPr('https://github.com/example/repo/pull/12#discussion_r1'), 'https://github.com/example/repo/pull/12');
+  assert.equal(githubPr('https://example.com/example/repo/pull/12'), null);
+  assert.equal(githubPr('https://user@github.com/example/repo/pull/12'), null);
+});
+
+test('Hawkeye queues durable CI wakes once per observation, without advancing the story', async t => {
+  const open = fixture(t);
+  const store = open();
+  start(store, 'watched');
+  start(store, 'other');
+  const record = writer(store, 'watched');
+  record('plan', { detail: 'Plan ready.' });
+  record('approve');
+  record('handoff', { detail: 'Tests ready.' });
+  record('handoff', { detail: 'Test failed for expected reason.', command: 'npm test' });
+  record('handoff', { detail: 'Test passes.', command: 'npm test' });
+  record('handoff', { detail: 'Reviewed.' });
+  record('comparison-choice', { run: false });
+  const url = 'https://github.com/example/repo/pull/12';
+  record('pr-opened', { url });
+  const head = 'a'.repeat(40);
+  let observed = { head, status: 'running', failedCount: 0, failures: [] };
+  const readPr = async actualUrl => {
+    assert.equal(actualUrl, url);
+    return observed;
+  };
+  assert.deepEqual(await watchOnce(store, { readPr }), []);
+  let warnings = 0;
+  assert.deepEqual(await watchOnce(store, {
+    readPr: async () => { throw Error('Unable to contact GitHub'); }, warn: () => warnings++,
+  }), []);
+  assert.equal(warnings, 1);
+  assert.equal(store.handover('watched').story.prObservation.status, 'running');
+  observed = { ...observed, status: 'failed', failedCount: 1, failures: ['Build'] };
+  const next = open();
+  for (const { seq } of next.pendingFor('watched')) next.ack(seq);
+  const waiting = waitForWake(next, 'watched', 2);
+  const [failure] = await watchOnce(store, { readPr });
+  const [wake] = await waiting;
+  assert.equal(wake.seq, failure.seq);
+  assert.equal(wake.type, 'pr-observed');
+  assert.equal(wake.observation.status, 'failed');
+  assert.match(wake.detail, /Hawkeye.*CI failed.*Build/);
+  assert.equal(next.handover('watched').story.phase, 'ci');
+  assert.deepEqual(await watchOnce(next, { readPr }), []);
+  assert.equal(next.ack(failure.seq).acknowledged, true);
+  assert.deepEqual(await waitForWake(next, 'watched', 0), []);
+  observed = { ...observed, head: 'b'.repeat(40) };
+  assert.equal((await watchOnce(store, { readPr }))[0].head, 'b'.repeat(40));
+  observed = { ...observed, status: 'passed', failedCount: 0, failures: [] };
+  assert.equal((await watchOnce(store, { readPr }))[0].status, 'passed');
+  assert.equal(next.handover('watched').story.phase, 'ci');
+  observed = { ...observed, status: 'merged' };
+  assert.equal((await watchOnce(store, { readPr }))[0].status, 'merged');
+  assert.equal(next.handover('watched').story.phase, 'ci');
+  assert.deepEqual(await watchOnce(next, { readPr }), []);
+  assert.ok(next.pendingFor('other').every(event => event.type !== 'pr-observed'));
+});
+
+test('the first watch detects a new head even when readiness predates the watcher', async t => {
+  const store = fixture(t)();
+  start(store, 'ready');
+  const record = writer(store, 'ready');
+  record('plan', { detail: 'Plan ready.' });
+  record('approve');
+  record('handoff', { detail: 'Tests ready.' });
+  record('handoff', { detail: 'Expected red.', command: 'npm test' });
+  record('handoff', { detail: 'Passing checks.', command: 'npm test' });
+  record('handoff', { detail: 'Review passed.' });
+  record('comparison-choice', { run: false });
+  const url = 'https://github.com/example/repo/pull/31';
+  record('pr-opened', { url });
+  record('pr-ready', { head: 'a'.repeat(40), detail: 'Head A reviewed.' });
+  const observed = { head: 'b'.repeat(40), status: 'running', failedCount: 0, failures: [] };
+  assert.throws(() => record('pr-observed', { url, observation: { ...observed, head: [observed.head] } }), /observed PR head/);
+  const [wake] = await watchOnce(store, { readPr: async () => observed });
+  assert.equal(wake.head, observed.head);
+  const packet = store.handover('ready');
+  assert.equal(packet.story.readyHead, 'a'.repeat(40));
+  assert.match(packet.pending.find(event => event.seq === wake.seq).detail, /New head/);
+  record('pr-recheck', { detail: 'Confirm head B after its checks and review.' });
+  assert.throws(() => record('pr-ready', { head: 'a'.repeat(40), detail: 'Old evidence.' }), /does not cover/);
+  assert.equal(store.handover('ready').story.phase, 'ci');
 });
