@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Jarvis Mission Console</title>
+  <link rel="stylesheet" href="/console.css">
+  <script type="module" src="/console.mjs"></script>
+</head>
+<body>
+  <header class="masthead">
+    <div class="brand" aria-hidden="true">J</div>
+    <h1>Mission Console</h1>
+    <span class="connection" id="connection" role="status">Connecting…</span>
+  </header>
+  <main>
+    <aside class="overview" aria-label="Story overview">
+      <nav aria-label="Console views">
+        <button type="button" id="stories-tab" aria-pressed="true">Stories</button>
+        <button type="button" id="crew-tab" aria-pressed="false">Crew</button>
+      </nav>
+      <section aria-labelledby="attention-title">
+        <h2 id="attention-title">Needs your decision</h2>
+        <div id="attention" class="items"></div>
+      </section>
+      <section aria-labelledby="overview-title">
+        <h2 id="overview-title">Stories</h2>
+        <div id="overview" class="items"></div>
+      </section>
+    </aside>
+    <section class="workspace" aria-label="Selected story">
+      <p id="empty">No stories recorded yet.</p>
+      <article id="story" hidden>
+        <header class="story-header">
+          <div id="story-id" class="mono muted"></div>
+          <h2 id="story-title"></h2>
+          <div id="story-status" role="status"></div>
+          <p id="branch" class="muted mono"></p>
+        </header>
+        <ol id="pipeline" aria-label="AI SDLC phases"></ol>
+        <p id="submit-status" role="status"></p>
+        <section id="planning" class="panel" aria-labelledby="planning-title" hidden>
+          <h3 id="planning-title">Cap’s planning room</h3>
+          <div id="questions"></div>
+        </section>
+        <section id="approval" class="panel" hidden>
+          <h3>Plan ready for approval</h3>
+          <p id="approval-plan" class="multiline"></p>
+          <button type="button" id="approve" class="primary">Approve plan</button>
+        </section>
+        <section id="comparison" class="panel" hidden>
+          <h3>Before-and-after evidence</h3>
+          <button type="button" id="compare" class="primary">Request comparison</button>
+          <button type="button" id="skip">Skip comparison</button>
+        </section>
+        <section class="panel" aria-labelledby="activity-title">
+          <header class="row">
+            <h3 id="activity-title">Worker activity</h3>
+            <span id="activity-age" class="age"></span>
+          </header>
+          <ol id="events"></ol>
+        </section>
+        <section class="panel" id="changes" aria-labelledby="files-title" hidden>
+          <h3 id="files-title">Changed files</h3>
+          <div id="files"></div>
+        </section>
+        <details class="panel" id="brief">
+          <summary>Story brief and plan</summary>
+          <p id="story-brief" class="multiline"></p>
+          <p id="story-plan" class="multiline"></p>
+        </details>
+        <p><a id="pull-request" hidden>Open pull request</a></p>
+      </article>
+    </section>
+  </main>
+</body>
+</html>
