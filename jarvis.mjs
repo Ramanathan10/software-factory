@@ -5,7 +5,7 @@ import { InputError, openStore } from './store.mjs';
 import { waitForWake, watch, watchOnce } from './watcher.mjs';
 
 const host = '127.0.0.1';
-const browserEvents = new Set(['answer', 'approve', 'comparison-choice']);
+const browserEvents = new Set(['answer', 'approve', 'comparison-choice', 'request-cleanup']);
 
 function respond(response, status, body, type = 'application/json; charset=utf-8') {
   response.writeHead(status, {

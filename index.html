@@ -40,6 +40,11 @@
           <div id="story-status" role="status"></div>
           <p id="story-skills" class="muted"></p>
           <p id="branch" class="muted mono"></p>
+          <details id="delete-story">
+            <summary>Delete story…</summary>
+            <p>Ask Jarvis to stop story work and clean up its worktree, branch, and any story-created PR. The story remains visible until cleanup is verified.</p>
+            <button type="button" id="confirm-cleanup">Request cleanup and deletion</button>
+          </details>
         </header>
         <ol id="pipeline" aria-label="AI SDLC phases"></ol>
         <p id="submit-status" role="status"></p>

@@ -63,6 +63,7 @@ function waitingForJarvis(story) {
 }
 
 function status(story) {
+  if (story.cleanup) return { owner: 'coordinator', label: story.cleanup.blocked ? 'Cleanup blocked' : 'Cleanup queued', alert: true };
   if (story.phase === 'planning' && story.questions.some(question => !question.answer)) {
     return { owner: 'planner', label: 'Answer Captain America', decision: true };
   }
@@ -120,7 +121,7 @@ function renderOverview() {
     ui('overview').replaceChildren(...visible.map(story => storyButton(story, true)));
   } else {
     const groups = Object.entries(roles).map(([id, role]) => {
-      const assignments = visible.filter(story => story.phase !== 'closed' && status(story).owner === id);
+      const assignments = visible.filter(story => (story.phase !== 'closed' || story.cleanup) && status(story).owner === id);
       const group = node('section', '', 'panel crew-role' + (assignments.length ? ' has-assignments' : ''));
       group.append(node('h3', roleLabel(id)), node('p', assignments.length ? assignments.length + ' assigned' : 'No active assignment', 'muted'));
       if (role.skills.length) {
@@ -207,6 +208,8 @@ function renderStory(story) {
   ui('story-status').append(node('span', ' · ' + harness, 'muted'));
   ui('story-skills').textContent = roles[state.owner].skills.join(' · ');
   ui('branch').textContent = story.worktree + ' / ' + story.branch;
+  ui('delete-story').hidden = Boolean(story.cleanup);
+  if (!detailKey?.startsWith(story.id + ':') || story.cleanup) ui('delete-story').open = false;
   ui('pipeline').replaceChildren(...workflow.map(([label], index) => {
     const done = index < phaseIndex || story.phase === 'closed';
     const step = node('li', '', done ? 'done' : '');
@@ -218,11 +221,15 @@ function renderStory(story) {
     return step;
   }));
   renderQuestions(story);
-  ui('planning').hidden = story.phase !== 'planning' || !story.questions.length;
-  ui('approval').hidden = story.phase !== 'approval' || Boolean(story.blocked);
-  ui('decision-handoff').hidden = !waitingForJarvis(story);
-  ui('resume-prompt').textContent = 'Resume Mission Console story ' + story.id + ' and pick up my saved decision.';
-  ui('comparison').hidden = story.phase !== 'comparison-choice' || Boolean(story.blocked);
+  ui('planning').hidden = story.phase !== 'planning' || !story.questions.length || Boolean(story.cleanup);
+  ui('approval').hidden = story.phase !== 'approval' || Boolean(story.blocked || story.cleanup);
+  ui('decision-handoff').hidden = !waitingForJarvis(story) && !story.cleanup;
+  ui('handoff-title').textContent = story.cleanup
+    ? story.cleanup.blocked ? 'Cleanup blocked · ' + story.cleanup.blocked : 'Cleanup queued for Jarvis'
+    : 'Decision saved · waiting for Jarvis';
+  ui('resume-prompt').textContent = 'Resume Mission Console story ' + story.id +
+    (story.cleanup ? ' and carry out the verified cleanup I requested.' : ' and pick up my saved decision.');
+  ui('comparison').hidden = story.phase !== 'comparison-choice' || Boolean(story.blocked || story.cleanup);
   ui('story-brief').textContent = story.brief;
   const answers = story.questions.filter(question => question.answer);
   if (story.phase === 'planning') {
@@ -267,6 +274,7 @@ function renderStory(story) {
 }
 
 function activityAge(story) {
+  if (story?.cleanup) return { recentlyReported: false, label: 'Story work paused for cleanup' };
   const seconds = story?.activity ? Math.max(0, Math.floor((Date.now() - Date.parse(story.activity.at)) / 1000)) : null;
   const waiting = waitingForJarvis(story);
   const recentlyReported = seconds !== null && seconds < 8 && !waiting && !status(story).decision;
@@ -338,7 +346,7 @@ async function decide(id, event, button) {
     });
     const result = await response.json();
     if (!response.ok) throw new Error(result.error);
-    ui('submit-status').textContent = 'Decision saved.';
+    ui('submit-status').textContent = event.type === 'request-cleanup' ? 'Cleanup requested.' : 'Decision saved.';
   } catch (error) {
     ui('submit-status').textContent = error.message;
   } finally {
@@ -358,6 +366,7 @@ ui('harness-filter').addEventListener('change', () => {
 ui('approve').addEventListener('click', event => decide(selected, { type: 'approve' }, event.currentTarget));
 ui('compare').addEventListener('click', event => decide(selected, { type: 'comparison-choice', run: true }, event.currentTarget));
 ui('skip').addEventListener('click', event => decide(selected, { type: 'comparison-choice', run: false }, event.currentTarget));
+ui('confirm-cleanup').addEventListener('click', event => decide(selected, { type: 'request-cleanup' }, event.currentTarget));
 ui('copy-resume').addEventListener('click', async () => {
   try {
     await navigator.clipboard.writeText(ui('resume-prompt').textContent);

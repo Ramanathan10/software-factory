@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import { harnessKey, phases, roles } from './roles.mjs';
 
@@ -13,6 +14,7 @@ const wakes = new Set([
   'create', 'question', 'answer', 'plan', 'approve', 'handoff', 'return-to-build',
   'comparison-choice', 'replan', 'blocked', 'resume', 'assign-worktree', 'release-worker', 'select-harness',
   'pr-opened', 'pr-ready', 'pr-recheck', 'merged',
+  'request-cleanup', 'cleanup-blocked',
 ]);
 
 export class InputError extends Error {
@@ -264,6 +266,7 @@ export function openStore(path) {
       WHERE story = ? AND json_extract(event, '$.phase') != ?), 0)
     ORDER BY seq DESC LIMIT 1`);
   const acknowledge = db.prepare('UPDATE events SET pending = 0 WHERE seq = ? AND pending = 1');
+  const purgeHistory = db.prepare('DELETE FROM events WHERE story = ? AND seq != ?');
   const wakeRecords = rows => rows.map(({ seq, story, event }) => ({ seq, story, ...JSON.parse(event) }));
 
   function read(operation) {
@@ -289,25 +292,28 @@ export function openStore(path) {
     snapshot(harness) {
       const selected = harness === undefined ? undefined : harnessKey(string(harness, 'harness', 100));
       return read(() => all.all().map(({ state }) => JSON.parse(state))
-        .filter(story => selected === undefined || harnessKey(story.harness) === selected)
+        .filter(story => !story.deleted && (selected === undefined || harnessKey(story.harness) === selected))
         .map(withHistory));
     },
     pending: () => wakeRecords(pending.all()),
     pendingFor(id) {
       identifier(id, 'story ID');
-      requireThat(find.get(id), 'Story does not exist.', 404);
+      const row = find.get(id);
+      requireThat(row && !JSON.parse(row.state).deleted, 'Story does not exist.', 404);
       return wakeRecords(storyPending.all(id));
     },
     watchTargets() {
       return all.all().map(({ state }) => JSON.parse(state)).filter(story =>
-        story.pr && ['ci', 'merge'].includes(story.phase));
+        !story.cleanup && story.pr && ['ci', 'merge'].includes(story.phase));
     },
     handover(id) {
       identifier(id, 'story ID');
       return read(() => {
         const row = find.get(id);
         requireThat(row, 'Story does not exist.', 404);
-        return { story: withHistory(JSON.parse(row.state)), pending: wakeRecords(storyPending.all(id)) };
+        const story = JSON.parse(row.state);
+        requireThat(!story.deleted, 'Story does not exist.', 404);
+        return { story: withHistory(story), pending: wakeRecords(storyPending.all(id)) };
       });
     },
     ack(seq) {
@@ -318,8 +324,11 @@ export function openStore(path) {
       requireThat(input && typeof input === 'object' && !Array.isArray(input), 'Send an event object.');
       const id = identifier(input.story, 'story ID');
       const key = identifier(input.key, 'event key');
-      const request = JSON.stringify(input);
-      requireThat(Buffer.byteLength(request) <= 32768, 'Event exceeds 32 KiB.');
+      const serialized = JSON.stringify(input);
+      requireThat(Buffer.byteLength(serialized) <= 32768, 'Event exceeds 32 KiB.');
+      const request = input.type === 'complete-cleanup'
+        ? createHash('sha256').update(serialized).digest('hex')
+        : serialized;
       db.exec('BEGIN IMMEDIATE');
       try {
         const previous = receipt.get(key);
@@ -347,12 +356,31 @@ export function openStore(path) {
         } else {
           requireThat(current, 'Story does not exist.', 404);
           story = JSON.parse(current.state);
+          requireThat(!story.deleted, 'Story does not exist.', 404);
           requireThat(input.revision === story.revision, 'Story changed. Read the latest state and retry.', 409);
           requireThat(input.type === 'select-harness' || input.harness === undefined || input.harness === story.harness,
             'Use the harness selected for this story.', 409);
           const from = story.phase;
           worker = story.worker;
-          if (input.type === 'pr-observed') {
+          requireThat(!story.cleanup || ['release-worker', 'cleanup-blocked', 'complete-cleanup'].includes(input.type),
+            'Story is awaiting cleanup.', 409);
+          if (input.type === 'request-cleanup') {
+            story.cleanup = { requestedAt: now };
+            delete story.activity;
+            detail = 'Story cleanup requested.';
+          } else if (input.type === 'cleanup-blocked') {
+            requireThat(story.cleanup, 'Cleanup was not requested.', 409);
+            detail = string(input.detail, 'cleanup blocker');
+            story.cleanup.blocked = detail;
+          } else if (input.type === 'complete-cleanup') {
+            requireThat(story.cleanup && !worker, 'Request cleanup and release the worker before completing it.', 409);
+            string(input.detail, 'verified cleanup evidence');
+            const result = insert.run(key, id, request, '{}', 0);
+            purgeHistory.run(id, result.lastInsertRowid);
+            save.run(id, JSON.stringify({ id, deleted: true }));
+            db.exec('COMMIT');
+            return { seq: result.lastInsertRowid, deleted: true };
+          } else if (input.type === 'pr-observed') {
             const observed = observePr(story, input, now);
             if (!observed) {
               db.exec('COMMIT');
@@ -360,7 +388,13 @@ export function openStore(path) {
             }
             ({ detail, wake } = observed);
           } else {
-            detail = apply(story, input, now);
+            if (story.cleanup && input.type === 'release-worker') {
+              requireThat(worker && worker.id === input.assignment, 'Current assignment does not match.', 409);
+              detail = string(input.detail, 'release evidence');
+              delete story.worker;
+            } else {
+              detail = apply(story, input, now);
+            }
           }
           if (from !== story.phase) {
             requireThat(!worker, 'Release the assigned worker before changing phases.', 409);

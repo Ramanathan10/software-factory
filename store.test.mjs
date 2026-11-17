@@ -326,3 +326,34 @@ test('planning drafts preserve saved decisions and expose pending handoffs witho
   assert.equal(store.snapshot()[0].draftPlan, undefined);
   assert.equal(store.snapshot()[0].phase, 'approval');
 });
+
+test('deletion stays queued until verified cleanup and preserves other stories and wake identities', t => {
+  const store = fixture(t)();
+  const initial = start(store, 'cancelled');
+  start(store, 'other');
+  const record = writer(store, 'cancelled');
+  record('assign-worker', { session: 'planner' });
+  const assignment = store.handover('cancelled').story.worker.id;
+  const cleanup = record('request-cleanup');
+  assert.throws(() => record('plan', { detail: 'Unexpected continuation.' }), /awaiting cleanup/);
+  assert.throws(() => record('complete-cleanup', { detail: 'Not complete.' }), /release the worker/);
+  record('cleanup-blocked', { detail: 'Checking the worktree.' });
+  assert.equal(store.handover('cancelled').story.cleanup.blocked, 'Checking the worktree.');
+  assert.ok(store.pendingFor('cancelled').some(wake => wake.seq === cleanup.seq));
+  record('release-worker', { assignment, detail: 'Planner is stopped.' });
+  const completion = {
+    type: 'complete-cleanup', story: 'cancelled', key: 'verified-cleanup',
+    revision: store.handover('cancelled').story.revision,
+    detail: 'Verified worktree and branch are absent and no PR exists.',
+  };
+  const receipt = store.record(completion);
+  assert.equal(receipt.deleted, true);
+  assert.equal(store.record(completion).replayed, true);
+  assert.throws(() => store.record({ ...completion, detail: 'Different evidence.' }), /different request/);
+  assert.deepEqual(store.snapshot().map(story => story.id), ['other']);
+  assert.throws(() => store.handover('cancelled'), /does not exist/);
+  assert.throws(() => start(store, 'cancelled'), /already exists/);
+  assert.equal(store.ack(initial.seq).acknowledged, false);
+  assert.equal(store.pending().some(wake => wake.story === 'cancelled'), false);
+  assert.ok(start(store, 'next').seq > receipt.seq);
+});
