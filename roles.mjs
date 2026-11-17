@@ -5,9 +5,9 @@ export const roles = {
   tester: { job: 'Test author', alias: 'Bruce Banner', skills: ['AI SDLC · Test-first handoff'] },
   implementer: { job: 'Implementer', alias: 'Iron Man', skills: ['Ponytail'] },
   reviewer: { job: 'Independent reviewer', alias: 'Doctor Strange', skills: ['Adversarial Code Review'] },
-  verifier: { job: 'Before-and-after verifier', alias: 'Spider-Man', skills: ['Before and After'] },
+  verifier: { job: 'Before-and-after verifier', alias: 'Bruce Banner', skills: ['Before and After'] },
   watcher: { job: 'PR watcher', alias: 'Hawkeye', skills: ['GrepLoop · Current-head checks and feedback'] },
-  diagrammer: { job: 'Architecture diagram designer', alias: 'Shuri', skills: ['Diagram Design'] },
+  diagrammer: { job: 'Architecture diagram designer', alias: 'Rocket', skills: ['Diagram Design'] },
   approver: { job: 'Human approver', alias: 'Fury', skills: [] },
 };
 
