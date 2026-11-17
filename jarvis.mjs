@@ -90,10 +90,11 @@ function seed(store) {
 
 function main() {
   const [command, file, argument, ...rest] = process.argv.slice(2);
-  if (!['serve', 'demo', 'record', 'snapshot', 'pending', 'ack'].includes(command) ||
+  if (!['serve', 'demo', 'record', 'snapshot', 'pending', 'handover', 'ack'].includes(command) ||
       (command !== 'demo' && !file) || rest.length ||
-      (argument && !['serve', 'ack'].includes(command)) || (command === 'ack' && !argument)) {
-    throw new InputError('Usage: node jarvis.mjs demo [port] | serve <db> [port] | record <db> | snapshot <db> | pending <db> | ack <db> <seq>');
+      (argument && !['serve', 'ack', 'handover'].includes(command)) ||
+      (['ack', 'handover'].includes(command) && !argument)) {
+    throw new InputError('Usage: node jarvis.mjs demo [port] | serve <db> [port] | record <db> | snapshot <db> | pending <db> | handover <db> <story> | ack <db> <seq>');
   }
   const store = openStore(command === 'demo' ? ':memory:' : file);
   if (command === 'serve' || command === 'demo') {
@@ -110,6 +111,7 @@ function main() {
     if (command === 'record') result = store.record(JSON.parse(readFileSync(0, 'utf8').replace(/^\uFEFF/, '')));
     if (command === 'snapshot') result = store.snapshot();
     if (command === 'pending') result = store.pending();
+    if (command === 'handover') result = store.handover(argument);
     if (command === 'ack') result = store.ack(Number(argument));
     console.log(JSON.stringify(result, null, 2));
   } finally {

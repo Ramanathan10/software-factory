@@ -51,7 +51,8 @@ function storyButton(story, showOwner) {
   button.type = 'button';
   button.setAttribute('aria-pressed', String(story.id === selected));
   button.append(node('span', story.id + ' · ' + story.title));
-  button.append(node('span', (showOwner ? state.owner + ' · ' : '') + state.label, 'muted'));
+  button.append(node('span', (showOwner ? state.owner + ' · ' : '') + state.label +
+    (story.worker ? ' · ' + story.worker.host : ''), 'muted'));
   button.addEventListener('click', () => {
     selected = story.id;
     ui('submit-status').textContent = '';
@@ -149,6 +150,7 @@ function renderStory(story) {
   ui('story-title').textContent = story.title;
   ui('story-status').replaceChildren(node('span', state.owner + ' · ' + state.label,
     'tag' + (state.decision ? ' decision' : '') + (story.phase === 'closed' ? ' closed' : '')));
+  if (story.worker) ui('story-status').append(node('span', ' · ' + story.worker.host, 'muted'));
   ui('branch').textContent = story.worktree + ' / ' + story.branch;
   ui('pipeline').replaceChildren(...workflow.map(([label], index) => {
     const done = index < phaseIndex || story.phase === 'closed';

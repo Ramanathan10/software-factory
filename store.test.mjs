@@ -1,9 +1,11 @@
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import { once } from 'node:events';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
+import { fileURLToPath } from 'node:url';
 import { serve } from './jarvis.mjs';
 import { openStore } from './store.mjs';
 
@@ -118,6 +120,49 @@ test('a second connection can recover and acknowledge wakes without deleting evi
   assert.equal(c.pending().some(wake => wake.seq === first.seq), false);
   assert.equal(c.ack(first.seq).acknowledged, false);
   assert.equal(c.snapshot()[0].events[0].seq, first.seq);
+});
+
+test('separate CLI processes can hand over a story across harnesses without including another story', t => {
+  const directory = mkdtempSync(join(tmpdir(), 'jarvis-handover-'));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const file = join(directory, 'stories.db');
+  const cli = fileURLToPath(new URL('jarvis.mjs', import.meta.url));
+  const run = (command, argument = [], input) => JSON.parse(execFileSync(
+    process.execPath, [cli, command, file, ...argument],
+    { input: JSON.stringify(input), encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }
+  ));
+  const store = openStore(file);
+  try {
+    start(store, 'portable');
+    start(store, 'other');
+  } finally {
+    store.close();
+  }
+  const record = (type, revision, details) =>
+    run('record', [], { story: 'portable', key: 'handover-' + revision, type, revision, ...details });
+  record('assign-worker', 1, { host: 'Claude Code', session: 'local-claude-worker-1' });
+  record('question', 2, { question: 'scope', prompt: 'What scope?', options: ['All', 'One page'], recommended: 0 });
+  const packet = run('handover', ['portable']);
+  assert.equal(packet.story.worker.host, 'Claude Code');
+  assert.equal(packet.story.revision, 3);
+  assert.ok(packet.pending.some(event => event.type === 'question'));
+  assert.ok(packet.pending.every(event => event.story === 'portable'));
+  assert.throws(() => record('assign-worker', 3, { host: 'Grok Build', session: 'local-claude-worker-1' }), /Release the previous worker/);
+  record('release-worker', 3, { assignment: packet.story.worker.id, detail: 'Claude session stopped after asking the question.' });
+  assert.throws(() => record('activity', 4, { assignment: packet.story.worker.id, detail: 'Old update between assignments.' }), /current assignment/);
+  record('assign-worker', 4, { host: 'Grok Build', session: 'local-claude-worker-1' });
+  assert.throws(() => record('activity', 5, { assignment: packet.story.worker.id, detail: 'Old update from same session label.' }), /current assignment/);
+  assert.throws(() => record('release-worker', 5, { assignment: packet.story.worker.id, detail: 'Old release.' }), /assignment does not match/);
+  record('answer', 5, { question: 'scope', answer: 0 });
+  assert.throws(() => record('plan', 6, { detail: 'Export all eligible rows.' }), /Release the assigned worker/);
+  const grok = run('handover', ['portable']).story.worker;
+  record('release-worker', 6, { assignment: grok.id, detail: 'Grok finished reviewing the decision.' });
+  record('plan', 7, { detail: 'Export all eligible rows.' });
+  const resumed = run('handover', ['portable']);
+  assert.equal(resumed.story.phase, 'approval');
+  assert.equal(resumed.story.worker, undefined);
+  assert.equal(resumed.story.questions[0].answer, 'All');
+  assert.ok(resumed.story.events.some(event => event.type === 'release-worker' && event.worker.host === 'Grok Build'));
 });
 
 test('the HTTP surface accepts human decisions from the loopback origin only', async t => {

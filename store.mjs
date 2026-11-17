@@ -18,7 +18,8 @@ const transitions = {
 };
 const wakes = new Set([
   'create', 'question', 'answer', 'plan', 'approve', 'handoff', 'return-to-build',
-  'comparison-choice', 'replan', 'blocked', 'resume', 'assign-worktree', 'pr-opened', 'pr-ready', 'pr-recheck', 'merged',
+  'comparison-choice', 'replan', 'blocked', 'resume', 'assign-worktree', 'release-worker',
+  'pr-opened', 'pr-ready', 'pr-recheck', 'merged',
 ]);
 
 export class InputError extends Error {
@@ -72,7 +73,7 @@ function answerQuestion(story, input) {
 }
 
 function apply(story, input, now) {
-  requireThat(!story.blocked || ['resume', 'answer', 'replan', 'assign-worktree'].includes(input.type),
+  requireThat(!story.blocked || ['resume', 'answer', 'replan', 'assign-worktree', 'release-worker'].includes(input.type),
     'Resume or replan the blocked story first.', 409);
   switch (input.type) {
     case 'question':
@@ -91,6 +92,7 @@ function apply(story, input, now) {
       return 'Fury approved the plan.';
     case 'activity':
       requireThat(workers[story.phase], 'This phase has no reporting worker.', 409);
+      requireThat(input.assignment === story.worker?.id, 'Report from the current assignment.', 409);
       if (input.file !== undefined) {
         const path = string(input.file, 'file', 1000);
         const change = string(input.change, 'change summary', 300);
@@ -102,6 +104,22 @@ function apply(story, input, now) {
       }
       story.activity = { at: now, worker: workers[story.phase] };
       return string(input.detail, 'activity');
+    case 'assign-worker':
+      requireThat(workers[story.phase], 'This phase has no assignable worker.', 409);
+      requireThat(!story.worker, 'Release the previous worker before assigning another.', 409);
+      story.worker = {
+        id: input.key,
+        role: workers[story.phase],
+        host: string(input.host, 'harness name', 100),
+        session: string(input.session, 'session reference', 400),
+      };
+      delete story.activity;
+      return story.worker.role + ' assigned in ' + story.worker.host + '.';
+    case 'release-worker':
+      requireThat(story.worker && story.worker.id === input.assignment, 'Current assignment does not match.', 409);
+      delete story.worker;
+      delete story.activity;
+      return string(input.detail, 'release evidence');
     case 'handoff':
       requireThat(transitions[story.phase], 'This phase has no handoff.', 409);
       if (story.phase === 'red' || story.phase === 'building') string(input.command, 'verification command');
@@ -119,6 +137,7 @@ function apply(story, input, now) {
       return string(input.detail, 'unresolved decision');
     case 'assign-worktree': {
       requireThat(story.phase !== 'closed', 'The story is closed.', 409);
+      requireThat(!story.worker, 'Release the worker before changing its worktree.', 409);
       const branch = string(input.branch, 'branch', 200);
       requireThat(!story.pr || branch === story.branch, 'Keep the existing PR branch when reassigning its worktree.', 409);
       story.branch = branch;
@@ -190,26 +209,40 @@ export function openStore(path) {
   const recent = db.prepare('SELECT seq, event FROM events WHERE story = ? ORDER BY seq DESC LIMIT 40');
   const all = db.prepare('SELECT state FROM stories ORDER BY id');
   const pending = db.prepare('SELECT seq, story, event FROM events WHERE pending = 1 ORDER BY seq');
+  const storyPending = db.prepare('SELECT seq, story, event FROM events WHERE pending = 1 AND story = ? ORDER BY seq');
   const acknowledge = db.prepare('UPDATE events SET pending = 0 WHERE seq = ? AND pending = 1');
+  const wakeRecords = rows => rows.map(({ seq, story, event }) => ({ seq, story, ...JSON.parse(event) }));
+
+  function read(operation) {
+    db.exec('BEGIN');
+    try {
+      const result = operation();
+      db.exec('COMMIT');
+      return result;
+    } catch (error) {
+      db.exec('ROLLBACK');
+      throw error;
+    }
+  }
+
+  function withHistory({ state }) {
+    const story = JSON.parse(state);
+    const events = recent.all(story.id).map(({ seq, event }) => ({ seq, ...JSON.parse(event) }));
+    return { ...story, events };
+  }
 
   return {
     close: () => db.close(),
-    snapshot() {
-      db.exec('BEGIN');
-      try {
-        const stories = all.all().map(({ state }) => {
-          const story = JSON.parse(state);
-          const events = recent.all(story.id).map(({ seq, event }) => ({ seq, ...JSON.parse(event) }));
-          return { ...story, events };
-        });
-        db.exec('COMMIT');
-        return stories;
-      } catch (error) {
-        db.exec('ROLLBACK');
-        throw error;
-      }
+    snapshot: () => read(() => all.all().map(withHistory)),
+    pending: () => wakeRecords(pending.all()),
+    handover(id) {
+      identifier(id, 'story ID');
+      return read(() => {
+        const row = find.get(id);
+        requireThat(row, 'Story does not exist.', 404);
+        return { story: withHistory(row), pending: wakeRecords(storyPending.all(id)) };
+      });
     },
-    pending: () => pending.all().map(({ seq, story, event }) => ({ seq, story, ...JSON.parse(event) })),
     ack(seq) {
       requireThat(Number.isSafeInteger(seq) && seq > 0, 'Invalid wake ID.');
       return { acknowledged: acknowledge.run(seq).changes === 1 };
@@ -232,6 +265,7 @@ export function openStore(path) {
         const now = new Date().toISOString();
         let story;
         let detail;
+        let worker;
         if (input.type === 'create') {
           requireThat(!current, 'Story already exists.', 409);
           const title = string(input.title, 'title', 200);
@@ -246,12 +280,17 @@ export function openStore(path) {
           story = JSON.parse(current.state);
           requireThat(input.revision === story.revision, 'Story changed. Read the latest state and retry.', 409);
           const from = story.phase;
+          worker = story.worker;
           detail = apply(story, input, now);
-          if (from !== story.phase) delete story.activity;
+          if (from !== story.phase) {
+            requireThat(!worker, 'Release the assigned worker before changing phases.', 409);
+            delete story.activity;
+          }
         }
         story.revision += 1;
         story.updatedAt = now;
         const event = { at: now, type: input.type, phase: story.phase, revision: story.revision, detail };
+        if (story.worker || worker) event.worker = story.worker ?? worker;
         if (input.command) event.command = input.command;
         if (input.file) event.file = input.file;
         save.run(id, JSON.stringify(story));
