@@ -1,4 +1,4 @@
-import { phases, roles } from './roles.mjs';
+import { harnessKey, phases, roles } from './roles.mjs';
 
 const ui = id => document.getElementById(id);
 const workflow = [
@@ -25,12 +25,37 @@ function node(tag, text, classes) {
 
 function roleLabel(id) {
   const role = roles[id];
-  return role.job + (ui('show-aliases').checked ? ' · ' + role.alias : '');
+  return role.alias + ' · ' + role.job;
+}
+
+function filterKey(story) {
+  return 'harness:' + harnessKey(story.harness);
+}
+
+function updateHarnessFilter() {
+  const select = ui('harness-filter');
+  const selectedKey = select.value;
+  const options = new Map([['', 'All harnesses']]);
+  for (const story of stories) options.set(filterKey(story), story.harness ?? 'Harness not recorded');
+  const signature = JSON.stringify([...options]);
+  if (select.dataset.options === signature) return;
+  select.replaceChildren(...[...options].map(([key, name]) => {
+    const option = node('option', name);
+    option.value = key;
+    return option;
+  }));
+  select.dataset.options = signature;
+  select.value = options.has(selectedKey) ? selectedKey : '';
+}
+
+function visibleStories() {
+  const filter = ui('harness-filter').value;
+  return filter ? stories.filter(story => filterKey(story) === filter) : stories;
 }
 
 function status(story) {
   if (story.phase === 'planning' && story.questions.some(question => !question.answer)) {
-    return { owner: 'planner', label: 'Planning question', decision: true };
+    return { owner: 'planner', label: 'Answer Captain America', decision: true };
   }
   if (story.blocked) return { owner: phases[story.phase][0], label: 'Blocked' };
   const [owner, label] = phases[story.phase];
@@ -57,7 +82,8 @@ function storyButton(story, showOwner) {
 }
 
 function renderOverview() {
-  const decisions = stories.filter(story => status(story).decision);
+  const visible = visibleStories();
+  const decisions = visible.filter(story => status(story).decision);
   ui('attention').replaceChildren(...(decisions.length
     ? decisions.map(story => storyButton(story, false))
     : [node('p', 'No decisions waiting.', 'muted')]));
@@ -65,12 +91,19 @@ function renderOverview() {
   ui('stories-tab').setAttribute('aria-pressed', String(view === 'stories'));
   ui('crew-tab').setAttribute('aria-pressed', String(view === 'crew'));
   if (view === 'stories') {
-    ui('overview').replaceChildren(...stories.map(story => storyButton(story, true)));
+    ui('overview').replaceChildren(...visible.map(story => storyButton(story, true)));
   } else {
-    ui('overview').replaceChildren(...Object.entries(roles).filter(([, role]) => role.skill).map(([id, role]) => {
-      const assignments = stories.filter(story => story.phase !== 'closed' && status(story).owner === id);
+    ui('overview').replaceChildren(...Object.entries(roles).map(([id, role]) => {
+      const assignments = visible.filter(story => story.phase !== 'closed' && status(story).owner === id);
       const group = node('section', '', 'panel');
-      group.append(node('h3', roleLabel(id)), node('p', role.skill + ' · ' + assignments.length + ' assigned', 'muted'));
+      group.append(node('h3', roleLabel(id)), node('p', assignments.length + ' assigned', 'muted'));
+      if (role.skills.length) {
+        const skills = node('ul', '', 'role-skills');
+        skills.append(...role.skills.map(skill => node('li', skill)));
+        group.append(skills);
+      } else {
+        group.append(node('p', 'Plan approval and workflow decisions', 'muted'));
+      }
       group.append(...assignments.map(story => storyButton(story, false)));
       return group;
     }));
@@ -144,6 +177,7 @@ function renderStory(story) {
     'tag' + (state.decision ? ' decision' : '') + (story.phase === 'closed' ? ' closed' : '')));
   const harness = story.harness ?? (story.phase === 'closed' ? 'Harness not recorded' : 'Harness selection required');
   ui('story-status').append(node('span', ' · ' + harness, 'muted'));
+  ui('story-skills').textContent = roles[state.owner].skills.join(' · ');
   ui('branch').textContent = story.worktree + ' / ' + story.branch;
   ui('pipeline').replaceChildren(...workflow.map(([label], index) => {
     const done = index < phaseIndex || story.phase === 'closed';
@@ -152,7 +186,6 @@ function renderStory(story) {
     return step;
   }));
   renderQuestions(story);
-  ui('planning-title').textContent = ui('show-aliases').checked ? 'Planning room · Captain America' : 'Planning room';
   ui('planning').hidden = story.phase !== 'planning' || !story.questions.length;
   ui('approval').hidden = story.phase !== 'approval' || Boolean(story.blocked);
   ui('approval-plan').textContent = story.plan ?? '';
@@ -193,9 +226,11 @@ function renderAge() {
 }
 
 function render() {
-  if (!stories.some(story => story.id === selected)) selected = stories[0]?.id;
+  updateHarnessFilter();
+  const visible = visibleStories();
+  if (!visible.some(story => story.id === selected)) selected = visible[0]?.id;
   renderOverview();
-  const story = stories.find(story => story.id === selected);
+  const story = visible.find(story => story.id === selected);
   ui('empty').hidden = Boolean(story);
   ui('story').hidden = !story;
   if (story) {
@@ -255,7 +290,10 @@ async function decide(id, event, button) {
 
 ui('stories-tab').addEventListener('click', () => { view = 'stories'; renderOverview(); });
 ui('crew-tab').addEventListener('click', () => { view = 'crew'; renderOverview(); });
-ui('show-aliases').addEventListener('change', render);
+ui('harness-filter').addEventListener('change', () => {
+  ui('submit-status').textContent = '';
+  render();
+});
 ui('approve').addEventListener('click', event => decide(selected, { type: 'approve' }, event.currentTarget));
 ui('compare').addEventListener('click', event => decide(selected, { type: 'comparison-choice', run: true }, event.currentTarget));
 ui('skip').addEventListener('click', event => decide(selected, { type: 'comparison-choice', run: false }, event.currentTarget));

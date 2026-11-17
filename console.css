@@ -26,8 +26,8 @@ h3 { font-size: 15px; }
 .masthead { padding: 18px 26px; display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; background: var(--panel); }
 .brand { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 9px; background: var(--blue-soft); color: var(--blue); font-weight: 700; }
 .connection { margin-inline-start: auto; color: var(--muted); font-size: 12px; }
-.alias-view { align-items: center; margin-inline-start: auto; color: var(--muted); font-size: 13px; }
-.alias-view input { accent-color: var(--blue); }
+.harness-view { align-items: center; margin-inline-start: auto; color: var(--muted); font-size: 13px; }
+.harness-view select { font: inherit; color: var(--ink); background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 7px; max-width: min(230px, 55vw); }
 main { background: var(--surface); border-top: 1px solid var(--line); display: grid; grid-template-columns: minmax(270px, .8fr) minmax(0, 1.5fr); min-height: calc(100vh - 73px); }
 .overview, .workspace { padding: 22px 26px; min-width: 0; overflow-wrap: anywhere; }
 .workspace { border-inline-start: 1px solid var(--line); }
@@ -65,6 +65,7 @@ button:disabled { opacity: .62; cursor: default; }
 .age { color: var(--blue); font-size: 12px; }
 #events { list-style: none; padding: 0; margin: 10px 0 0; display: grid; gap: 8px; }
 #events li { display: grid; grid-template-columns: 6.5em 1fr; align-items: baseline; gap: 7px; font-size: 13px; }
+.role-skills { color: var(--muted); font-size: 13px; margin: 6px 0 0; padding-inline-start: 18px; }
 time { color: var(--muted); font-size: 11px; }
 pre { margin: 5px 0 0; padding: 7px; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--green); background: var(--green-soft); font-size: 12px; }
 .multiline { white-space: pre-wrap; line-height: 1.55; }
@@ -83,5 +84,5 @@ a { color: var(--blue); }
   .masthead, .overview, .workspace { padding-inline: 14px; }
 }
 @media (pointer: coarse) {
-  button, label { min-height: 44px; }
+  button, label, select { min-height: 44px; }
 }

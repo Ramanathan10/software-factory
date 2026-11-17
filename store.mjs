@@ -1,5 +1,5 @@
 import { DatabaseSync } from 'node:sqlite';
-import { phases, roles } from './roles.mjs';
+import { harnessKey, phases, roles } from './roles.mjs';
 
 const workerPhases = new Set(['planning', 'testing', 'red', 'building', 'review', 'comparison', 'ci']);
 const transitions = {
@@ -224,22 +224,26 @@ export function openStore(path) {
     }
   }
 
-  function withHistory({ state }) {
-    const story = JSON.parse(state);
+  function withHistory(story) {
     const events = recent.all(story.id).map(({ seq, event }) => ({ seq, ...JSON.parse(event) }));
     return { ...story, events };
   }
 
   return {
     close: () => db.close(),
-    snapshot: () => read(() => all.all().map(withHistory)),
+    snapshot(harness) {
+      const selected = harness === undefined ? undefined : harnessKey(string(harness, 'harness', 100));
+      return read(() => all.all().map(({ state }) => JSON.parse(state))
+        .filter(story => selected === undefined || harnessKey(story.harness) === selected)
+        .map(withHistory));
+    },
     pending: () => wakeRecords(pending.all()),
     handover(id) {
       identifier(id, 'story ID');
       return read(() => {
         const row = find.get(id);
         requireThat(row, 'Story does not exist.', 404);
-        return { story: withHistory(row), pending: wakeRecords(storyPending.all(id)) };
+        return { story: withHistory(JSON.parse(row.state)), pending: wakeRecords(storyPending.all(id)) };
       });
     },
     ack(seq) {

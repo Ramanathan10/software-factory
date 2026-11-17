@@ -134,13 +134,13 @@ test('separate CLI processes resume one story in its pinned harness', t => {
   const store = openStore(file);
   try {
     start(store, 'portable', 'Claude Code');
-    start(store, 'other', 'Grok Build');
+    start(store, 'other', 'Cursor');
   } finally {
     store.close();
   }
   const record = (type, revision, details) =>
     run('record', [], { story: 'portable', key: 'handover-' + revision, type, revision, ...details });
-  assert.throws(() => record('assign-worker', 1, { host: 'Grok Build', session: 'worker-1' }), /harness selected/);
+  assert.throws(() => record('assign-worker', 1, { host: 'Cursor', session: 'worker-1' }), /harness selected/);
   record('assign-worker', 1, { session: 'worker-1' });
   record('question', 2, { question: 'scope', prompt: 'What scope?', options: ['All', 'One page'], recommended: 0 });
   const packet = run('handover', ['portable']);
@@ -151,7 +151,7 @@ test('separate CLI processes resume one story in its pinned harness', t => {
   assert.ok(packet.pending.every(event => event.story === 'portable'));
   assert.throws(() => record('assign-worker', 3, { session: 'worker-1' }), /Release the previous worker/);
   record('release-worker', 3, { assignment: packet.story.worker.id, detail: 'Claude session stopped after asking the question.' });
-  assert.throws(() => record('select-harness', 4, { harness: 'Grok Build' }), /only for an older/);
+  assert.throws(() => record('select-harness', 4, { harness: 'Cursor' }), /only for an older/);
   assert.throws(() => record('activity', 4, { assignment: packet.story.worker.id, detail: 'Old update between assignments.' }), /current assignment/);
   record('assign-worker', 4, { session: 'worker-1' });
   assert.throws(() => record('activity', 5, { assignment: packet.story.worker.id, detail: 'Old update from same session label.' }), /current assignment/);
@@ -166,7 +166,10 @@ test('separate CLI processes resume one story in its pinned harness', t => {
   assert.equal(resumed.story.worker, undefined);
   assert.equal(resumed.story.questions[0].answer, 'All');
   assert.equal(resumed.story.harness, 'Claude Code');
-  assert.equal(run('handover', ['other']).story.harness, 'Grok Build');
+  assert.equal(run('handover', ['other']).story.harness, 'Cursor');
+  assert.deepEqual(run('snapshot', ['cursor']).map(story => story.id), ['other']);
+  assert.deepEqual(run('snapshot', ['Claude Code']).map(story => story.id), ['portable']);
+  assert.equal(run('snapshot').length, 2);
 });
 
 test('the HTTP surface accepts human decisions from the loopback origin only', async t => {

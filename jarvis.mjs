@@ -81,7 +81,7 @@ function seed(store) {
   });
   add('TL-147', 'create', {
     title: 'Add CSV export to activity history', detail: 'Export activity data with existing access rules.',
-    branch: 'tl-147-activity-export', worktree: '(sample) tmp/tl-147', harness: 'Claude Code',
+    branch: 'tl-147-activity-export', worktree: '(sample) tmp/tl-147', harness: 'Cursor',
   });
   add('TL-147', 'question', {
     revision: 1, question: 'scope', prompt: 'Which rows should the CSV include?',
@@ -93,9 +93,9 @@ function main() {
   const [command, file, argument, ...rest] = process.argv.slice(2);
   if (!['serve', 'demo', 'record', 'snapshot', 'pending', 'handover', 'ack'].includes(command) ||
       (command !== 'demo' && !file) || rest.length ||
-      (argument && !['serve', 'ack', 'handover'].includes(command)) ||
+      (argument && !['serve', 'snapshot', 'ack', 'handover'].includes(command)) ||
       (['ack', 'handover'].includes(command) && !argument)) {
-    throw new InputError('Usage: node jarvis.mjs demo [port] | serve <db> [port] | record <db> | snapshot <db> | pending <db> | handover <db> <story> | ack <db> <seq>');
+    throw new InputError('Usage: node jarvis.mjs demo [port] | serve <db> [port] | record <db> | snapshot <db> [harness] | pending <db> | handover <db> <story> | ack <db> <seq>');
   }
   const store = openStore(command === 'demo' ? ':memory:' : file);
   if (command === 'serve' || command === 'demo') {
@@ -110,7 +110,7 @@ function main() {
   try {
     let result;
     if (command === 'record') result = store.record(JSON.parse(readFileSync(0, 'utf8').replace(/^\uFEFF/, '')));
-    if (command === 'snapshot') result = store.snapshot();
+    if (command === 'snapshot') result = store.snapshot(argument);
     if (command === 'pending') result = store.pending();
     if (command === 'handover') result = store.handover(argument);
     if (command === 'ack') result = store.ack(Number(argument));

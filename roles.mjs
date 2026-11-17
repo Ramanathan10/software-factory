@@ -1,13 +1,17 @@
 export const roles = {
-  coordinator: { job: 'Coordinator', alias: 'Jarvis', skill: 'AI SDLC' },
-  planner: { job: 'Planner', alias: 'Captain America', skill: 'Grill Me' },
-  scout: { job: 'Scout', alias: 'Black Widow', skill: 'Repository investigation' },
-  tester: { job: 'Test author', alias: 'Doctor Strange', skill: 'AI SDLC test-first handoff' },
-  implementer: { job: 'Implementer', alias: 'Iron Man', skill: 'Ponytail' },
-  reviewer: { job: 'Independent reviewer', alias: 'Banner', skill: 'Adversarial Code Review' },
-  watcher: { job: 'PR watcher', alias: 'Hawkeye', skill: 'GitHub checks and GrepLoop' },
-  approver: { job: 'Your decision', alias: 'Fury' },
+  coordinator: { job: 'Coordinator', alias: 'Jarvis', skills: ['AI SDLC', 'Before and After', 'Diagram Design'] },
+  planner: { job: 'Planner', alias: 'Captain America', skills: ['Grill Me'] },
+  scout: { job: 'Scout', alias: 'Black Widow', skills: ['AI SDLC · Planning research'] },
+  tester: { job: 'Test author', alias: 'Doctor Strange', skills: ['AI SDLC · Test-first handoff'] },
+  implementer: { job: 'Implementer', alias: 'Iron Man', skills: ['Ponytail'] },
+  reviewer: { job: 'Independent reviewer', alias: 'Banner', skills: ['Adversarial Code Review'] },
+  watcher: { job: 'PR watcher', alias: 'Hawkeye', skills: ['GrepLoop · Current-head checks and feedback'] },
+  approver: { job: 'Human approver', alias: 'Fury', skills: [] },
 };
+
+export function harnessKey(harness) {
+  return harness?.trim().toLowerCase() ?? '';
+}
 
 export const phases = {
   planning: ['planner', 'Planning'],
