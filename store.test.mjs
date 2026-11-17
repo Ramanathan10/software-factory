@@ -268,9 +268,13 @@ test('Hawkeye queues durable CI wakes once per observation, without advancing th
   assert.equal((await watchOnce(store, { readPr }))[0].status, 'passed');
   assert.equal(next.handover('watched').story.phase, 'ci');
   observed = { ...observed, status: 'merged' };
+  record('blocked', { detail: 'Waiting for a review that has not appeared.' });
   assert.equal((await watchOnce(store, { readPr }))[0].status, 'merged');
   assert.equal(next.handover('watched').story.phase, 'ci');
   assert.deepEqual(await watchOnce(next, { readPr }), []);
+  record('merged', { detail: 'GitHub reports the registered PR merged.' });
+  assert.equal(next.handover('watched').story.phase, 'closed');
+  assert.equal(next.handover('watched').story.blocked, undefined);
   assert.ok(next.pendingFor('other').every(event => event.type !== 'pr-observed'));
 });
 

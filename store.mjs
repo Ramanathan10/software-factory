@@ -104,7 +104,7 @@ function observePr(story, input, now) {
 
 function apply(story, input, now) {
   requireThat(story.harness || ['select-harness', 'release-worker'].includes(input.type), 'Select the story harness first.', 409);
-  requireThat(!story.blocked || ['resume', 'answer', 'replan', 'assign-worktree', 'release-worker', 'select-harness'].includes(input.type),
+  requireThat(!story.blocked || ['resume', 'answer', 'replan', 'assign-worktree', 'release-worker', 'select-harness', 'merged'].includes(input.type),
     'Resume or replan the blocked story first.', 409);
   switch (input.type) {
     case 'select-harness':
@@ -272,6 +272,7 @@ function apply(story, input, now) {
     case 'merged':
       requireThat(['ci', 'merge'].includes(story.phase), 'There is no open PR to reconcile in this phase.', 409);
       story.phase = 'closed';
+      delete story.blocked;
       return string(input.detail, 'merge evidence');
     default:
       throw new InputError('Unknown event type.');

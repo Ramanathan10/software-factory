@@ -66,6 +66,10 @@ function waitingForJarvis(story) {
 
 function status(story) {
   if (story.cleanup) return { owner: 'coordinator', label: story.cleanup.blocked ? 'Cleanup blocked' : 'Cleanup queued', alert: true };
+  if (['ci', 'merge'].includes(story.phase) && story.prObservation?.status === 'merged') {
+    return { owner: 'watcher', label: 'Merge observed · awaiting story closure' };
+  }
+  if (story.phase === 'closed') return { owner: 'coordinator', label: 'Merged' };
   if (story.phase === 'planning' && story.questions.some(question => !question.answer)) {
     return { owner: 'planner', label: 'Answer Captain America', decision: true };
   }
