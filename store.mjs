@@ -1,8 +1,11 @@
 import { createHash } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
+import { realpathSync, statSync } from 'node:fs';
+import { extname, isAbsolute } from 'node:path';
+import { mediaTypes } from './media.mjs';
 import { harnessKey, phases, roles } from './roles.mjs';
 
-const workerPhases = new Set(['planning', 'testing', 'red', 'building', 'review', 'comparison', 'ci']);
+const workerPhases = new Set(['planning', 'testing', 'red', 'building', 'review', 'comparison', 'diagram', 'ci']);
 const transitions = {
   testing: 'red',
   red: 'building',
@@ -15,6 +18,7 @@ const wakes = new Set([
   'comparison-choice', 'replan', 'blocked', 'resume', 'assign-worktree', 'release-worker', 'select-harness',
   'pr-opened', 'pr-ready', 'pr-recheck', 'merged',
   'request-cleanup', 'cleanup-blocked',
+  'diagram-start',
 ]);
 
 export class InputError extends Error {
@@ -144,6 +148,27 @@ function apply(story, input, now) {
       }
       story.activity = { at: now, role: phases[story.phase][0] };
       return string(input.detail, 'activity');
+    case 'artifact': {
+      requireThat(input.assignment === story.worker?.id, 'Report from the current assignment.', 409);
+      requireThat(['before', 'after', 'diagram', 'recording'].includes(input.kind), 'Choose an evidence kind.');
+      const path = string(input.path, 'evidence path', 2000);
+      requireThat(isAbsolute(path), 'Use an absolute evidence file path.');
+      let realPath;
+      let stat;
+      try {
+        realPath = realpathSync(path);
+        stat = statSync(realPath);
+      } catch {
+        throw new InputError('The evidence file is unavailable.');
+      }
+      requireThat(stat.isFile() && stat.size > 0 && mediaTypes[extname(realPath).toLowerCase()],
+        'Register a nonempty PNG, JPEG, WebP, MP4, or WebM file.');
+      const artifact = { id: input.key, kind: input.kind, caption: string(input.detail, 'evidence caption', 1000),
+        path: realPath, size: stat.size, mtimeMs: stat.mtimeMs, at: now };
+      story.artifacts ??= [];
+      story.artifacts.push(artifact);
+      return 'Evidence added · ' + artifact.caption;
+    }
     case 'assign-worker':
       requireThat(workerPhases.has(story.phase), 'This phase has no assignable worker.', 409);
       requireThat(!story.worker, 'Release the previous worker before assigning another.', 409);
@@ -161,10 +186,23 @@ function apply(story, input, now) {
       delete story.activity;
       return string(input.detail, 'release evidence');
     case 'handoff':
+      if (story.phase === 'diagram') {
+        requireThat(['publishing', 'ci', 'merge'].includes(story.diagram?.returnPhase), 'Diagram return phase is unavailable.', 409);
+        const evidence = string(input.detail, 'diagram evidence');
+        story.phase = story.diagram.returnPhase;
+        story.diagram.completedAt = now;
+        story.diagram.detail = evidence;
+        return evidence;
+      }
       requireThat(transitions[story.phase], 'This phase has no handoff.', 409);
       if (story.phase === 'red' || story.phase === 'building') string(input.command, 'verification command');
       story.phase = transitions[story.phase];
       return string(input.detail, 'handoff evidence');
+    case 'diagram-start':
+      requireThat(['publishing', 'ci', 'merge'].includes(story.phase), 'Start diagram work after review and the comparison decision.', 409);
+      story.diagram = { returnPhase: story.phase, startedAt: now, detail: string(input.detail, 'diagram scope') };
+      story.phase = 'diagram';
+      return 'Rocket started architecture diagram work.';
     case 'return-to-build':
       samePhase(story, 'review');
       story.phase = 'building';
@@ -176,6 +214,8 @@ function apply(story, input, now) {
       delete story.blocked;
       delete story.readyHead;
       delete story.draftPlan;
+      delete story.diagram;
+      delete story.comparisonRequested;
       return string(input.detail, 'unresolved decision');
     case 'assign-worktree': {
       requireThat(story.phase !== 'closed', 'The story is closed.', 409);
@@ -199,6 +239,7 @@ function apply(story, input, now) {
     case 'comparison-choice':
       samePhase(story, 'comparison-choice');
       requireThat(typeof input.run === 'boolean', 'Choose whether to run before-and-after.');
+      story.comparisonRequested = input.run;
       story.phase = input.run ? 'comparison' : 'publishing';
       return input.run ? 'Before-and-after requested.' : 'Before-and-after declined.';
     case 'pr-opened':
@@ -296,6 +337,16 @@ export function openStore(path) {
         .map(withHistory));
     },
     pending: () => wakeRecords(pending.all()),
+    artifact(id, artifactId) {
+      identifier(id, 'story ID');
+      identifier(artifactId, 'evidence ID');
+      const row = find.get(id);
+      const story = row && JSON.parse(row.state);
+      requireThat(story && !story.deleted, 'Story does not exist.', 404);
+      const artifact = story.artifacts?.find(item => item.id === artifactId);
+      requireThat(artifact, 'Evidence does not exist.', 404);
+      return artifact;
+    },
     pendingFor(id) {
       identifier(id, 'story ID');
       const row = find.get(id);

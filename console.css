@@ -75,6 +75,10 @@ button:disabled { opacity: .62; cursor: default; }
 #events { list-style: none; padding: 0; margin: 10px 0 0; display: grid; gap: 8px; }
 #events li { display: grid; grid-template-columns: 6.5em 1fr; align-items: baseline; gap: 7px; font-size: 13px; }
 .role-skills { color: var(--muted); font-size: 13px; margin: 6px 0 0; padding-inline-start: 18px; }
+#evidence-gallery { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr)); gap: 14px; }
+#evidence-gallery figure { margin: 0; min-width: 0; }
+#evidence-gallery figcaption { margin-block: 6px; font-size: 13px; }
+#evidence-gallery img, #evidence-gallery video { display: block; width: 100%; height: auto; border: 1px solid var(--line); border-radius: 6px; }
 time { color: var(--muted); font-size: 11px; }
 pre { margin: 5px 0 0; padding: 7px; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--green); background: var(--green-soft); font-size: 12px; }
 .multiline { white-space: pre-wrap; line-height: 1.55; }

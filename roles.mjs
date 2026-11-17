@@ -24,6 +24,7 @@ export const phases = {
   review: ['reviewer', 'Review'],
   'comparison-choice': ['approver', 'Before-and-after decision'],
   comparison: ['verifier', 'Capture before and after'],
+  diagram: ['diagrammer', 'Design architecture diagram'],
   publishing: ['coordinator', 'Open pull request'],
   ci: ['watcher', 'Watching checks'],
   merge: ['watcher', 'PR ready to merge'],

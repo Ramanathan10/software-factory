@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { once } from 'node:events';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
@@ -327,6 +327,34 @@ test('planning drafts preserve saved decisions and expose pending handoffs witho
   assert.equal(store.snapshot()[0].phase, 'approval');
 });
 
+test('Rocket diagram work returns to its original PR phase after a verified handoff', t => {
+  const store = fixture(t)();
+  start(store, 'diagram');
+  const record = writer(store, 'diagram');
+  assert.throws(() => record('diagram-start', { detail: 'Architecture delta.' }), /after review/);
+  record('plan', { detail: 'Plan.' });
+  record('approve');
+  record('handoff', { detail: 'Tests ready.' });
+  record('handoff', { detail: 'Valid red.', command: 'npm test' });
+  record('handoff', { detail: 'Verified green.', command: 'npm test' });
+  record('handoff', { detail: 'Review passed.' });
+  record('comparison-choice', { run: false });
+  record('pr-opened', { url: 'https://github.com/example/repo/pull/5' });
+  record('diagram-start', { detail: 'Show the new data flow.' });
+  assert.equal(store.handover('diagram').story.comparisonRequested, false);
+  record('assign-worker', { session: 'rocket' });
+  const assignment = store.handover('diagram').story.worker.id;
+  assert.equal(store.handover('diagram').story.worker.role, 'diagrammer');
+  assert.throws(() => record('handoff', { detail: 'Diagram ready.' }), /Release the assigned worker/);
+  record('activity', { assignment, detail: 'Drawing data ownership boundaries.' });
+  record('release-worker', { assignment, detail: 'Diagram finished.' });
+  record('handoff', { detail: 'Diagram reviewed and added to the PR description.' });
+  const story = store.handover('diagram').story;
+  assert.equal(story.phase, 'ci');
+  assert.ok(story.diagram.completedAt);
+  assert.equal(story.pr, 'https://github.com/example/repo/pull/5');
+});
+
 test('deletion stays queued until verified cleanup and preserves other stories and wake identities', t => {
   const store = fixture(t)();
   const initial = start(store, 'cancelled');
@@ -356,4 +384,42 @@ test('deletion stays queued until verified cleanup and preserves other stories a
   assert.equal(store.ack(initial.seq).acknowledged, false);
   assert.equal(store.pending().some(wake => wake.story === 'cancelled'), false);
   assert.ok(start(store, 'next').seq > receipt.seq);
+});
+
+test('registered evidence is streamed with video ranges, limited to the registered story and file', async t => {
+  const store = fixture(t)();
+  const directory = mkdtempSync(join(tmpdir(), 'jarvis-media-'));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const image = join(directory, 'before.png');
+  const video = join(directory, 'capture.mp4');
+  writeFileSync(image, Buffer.from('89504e470d0a1a0a', 'hex'));
+  writeFileSync(video, '0123456789');
+  start(store, 'media');
+  const record = writer(store, 'media');
+  assert.throws(() => record('artifact', { path: '../not-registered.png', kind: 'before', detail: 'Before' }), /absolute/);
+  record('artifact', { path: image, kind: 'before', detail: 'Before capture.' });
+  record('artifact', { path: video, kind: 'recording', detail: 'Video capture.' });
+  const [png, mp4] = store.handover('media').story.artifacts;
+  const server = serve(store, 0);
+  await once(server, 'listening');
+  const origin = 'http://127.0.0.1:' + server.address().port;
+  const url = artifact => origin + '/api/media?' + new URLSearchParams({ story: 'media', id: artifact.id });
+  try {
+    const response = await fetch(url(png));
+    assert.equal(response.headers.get('content-type'), 'image/png');
+    assert.equal((await response.arrayBuffer()).byteLength, 8);
+    const partial = await fetch(url(mp4), { headers: { Range: 'bytes=2-5' } });
+    assert.equal(partial.status, 206);
+    assert.equal(partial.headers.get('content-range'), 'bytes 2-5/10');
+    assert.equal(await partial.text(), '2345');
+    assert.equal((await fetch(url(mp4), { headers: { Range: 'bytes=30-' } })).status, 416);
+    assert.equal((await fetch(origin + '/api/media?story=media&id=unknown')).status, 404);
+    writeFileSync(image, 'changed');
+    assert.equal((await fetch(url(png))).status, 409);
+    record('request-cleanup');
+    record('complete-cleanup', { detail: 'Test files retained by the test harness until teardown.' });
+    assert.equal((await fetch(url(mp4))).status, 404);
+  } finally {
+    await new Promise(resolve => server.close(resolve));
+  }
 });

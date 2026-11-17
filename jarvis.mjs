@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { InputError, openStore } from './store.mjs';
 import { waitForWake, watch, watchOnce } from './watcher.mjs';
+import { sendMedia } from './media.mjs';
 
 const host = '127.0.0.1';
 const browserEvents = new Set(['answer', 'approve', 'comparison-choice', 'request-cleanup']);
@@ -12,7 +13,7 @@ function respond(response, status, body, type = 'application/json; charset=utf-8
     'Content-Type': type,
     'Cache-Control': 'no-store',
     'X-Content-Type-Options': 'nosniff',
-    'Content-Security-Policy': "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'",
+    'Content-Security-Policy': "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self'; media-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'",
   });
   response.end(type.startsWith('application/json') ? JSON.stringify(body) : body);
 }
@@ -49,6 +50,9 @@ export function serve(store, port) {
         respond(response, 200, file, type);
       } else if (request.method === 'GET' && request.url === '/api/stories') {
         respond(response, 200, store.snapshot());
+      } else if (request.method === 'GET' && request.url.startsWith('/api/media?')) {
+        const url = new URL(request.url, origin);
+        await sendMedia(request, response, store.artifact(url.searchParams.get('story'), url.searchParams.get('id')));
       } else if (request.method === 'POST' && request.url === '/api/decision') {
         if (request.headers.origin !== origin) throw new InputError('The decision must come from the local console.', 403);
         if (request.headers['content-type'] !== 'application/json') throw new InputError('Send JSON.', 415);

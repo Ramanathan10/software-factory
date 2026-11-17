@@ -5,7 +5,8 @@ const workflow = [
   ['Plan', ['planning', 'approval']],
   ['Test', ['testing', 'red']],
   ['Build', ['building']],
-  ['Review', ['review', 'comparison-choice', 'comparison']],
+  ['Review', ['review']],
+  ['Before & after', ['comparison-choice', 'comparison']],
   ['PR', ['publishing', 'ci', 'merge', 'closed']],
 ];
 let stories = [];
@@ -15,6 +16,7 @@ let refreshing;
 let submitting = false;
 let questionStory;
 let detailKey;
+let evidenceKey;
 
 const observations = {
   failed: 'CI failed', passed: 'Reported checks passed', running: 'Checks still running',
@@ -199,7 +201,9 @@ function renderQuestions(story) {
 
 function renderStory(story) {
   const state = status(story);
-  const phaseIndex = workflow.findIndex(([, phases]) => phases.includes(story.phase));
+  const steps = [...workflow];
+  if (story.diagram) steps.splice(steps.length - 1, 0, ['Diagram', ['diagram']]);
+  const phaseIndex = steps.findIndex(([, phases]) => phases.includes(story.phase));
   ui('story-id').textContent = story.id;
   ui('story-title').textContent = story.title;
   ui('story-status').replaceChildren(node('span', roleLabel(state.owner) + ' · ' + state.label,
@@ -207,13 +211,26 @@ function renderStory(story) {
   const harness = story.harness ?? (story.phase === 'closed' ? 'Harness not recorded' : 'Harness selection required');
   ui('story-status').append(node('span', ' · ' + harness, 'muted'));
   ui('story-skills').textContent = roles[state.owner].skills.join(' · ');
+  ui('current-assignment').textContent = story.worker
+    ? roleLabel(roles[story.worker.role] ? story.worker.role : phases[story.phase][0]) +
+      (story.cleanup ? ' must be stopped and released for cleanup.' : ' has the current assignment.') + ' Session ' + story.worker.session + '.'
+    : story.phase === 'diagram' ? 'Rocket is awaiting assignment.' : '';
   ui('branch').textContent = story.worktree + ' / ' + story.branch;
+  renderEvidence(story);
   ui('delete-story').hidden = Boolean(story.cleanup);
   if (!detailKey?.startsWith(story.id + ':') || story.cleanup) ui('delete-story').open = false;
-  ui('pipeline').replaceChildren(...workflow.map(([label], index) => {
-    const done = index < phaseIndex || story.phase === 'closed';
+  ui('pipeline').replaceChildren(...steps.map(([label, phases], index) => {
+    const latestReplan = story.events.find(event => event.type === 'replan')?.seq ?? 0;
+    const comparisonChoice = story.events.find(event => event.type === 'comparison-choice' && event.seq > latestReplan);
+    const comparisonRequested = story.comparisonRequested ?? (comparisonChoice
+      ? comparisonChoice.detail === 'Before-and-after requested.' : undefined);
+    const isComparison = phases.includes('comparison');
+    const skipped = isComparison && comparisonRequested === false;
+    const reached = index < phaseIndex || story.phase === 'closed';
+    const unknown = isComparison && reached && comparisonRequested === undefined;
+    const done = phases.includes('diagram') ? Boolean(story.diagram?.completedAt) : reached && !skipped && !unknown;
     const step = node('li', '', done ? 'done' : '');
-    step.append(node('span', done ? '✓ ' + label : label));
+    step.append(node('span', skipped ? label + ' · skipped' : unknown ? label + ' · not recorded' : done ? '✓ ' + label : label));
     if (index === phaseIndex && !done) {
       step.setAttribute('aria-current', 'step');
       step.append(node('small', state.decision ? 'Your decision' : waitingForJarvis(story) ? 'Handoff queued' : roles[state.owner].alias));
@@ -271,6 +288,41 @@ function renderStory(story) {
   link.hidden = !story.pr;
   if (story.pr) link.href = story.pr;
   else link.removeAttribute('href');
+}
+
+function renderEvidence(story) {
+  const artifacts = story.artifacts ?? [];
+  const key = JSON.stringify([story.id, artifacts]);
+  if (key === evidenceKey) return;
+  evidenceKey = key;
+  ui('evidence-empty').hidden = Boolean(artifacts.length);
+  ui('evidence-gallery').replaceChildren(...artifacts.map(artifact => {
+    const figure = node('figure');
+    const url = '/api/media?' + new URLSearchParams({ story: story.id, id: artifact.id });
+    const video = /\.(mp4|webm)$/i.test(artifact.path);
+    const media = node(video ? 'video' : 'img');
+    media.src = url;
+    if (video) {
+      media.controls = true;
+      media.preload = 'metadata';
+      media.setAttribute('aria-label', artifact.caption);
+    } else {
+      media.alt = artifact.caption;
+      media.loading = 'lazy';
+    }
+    const label = { before: 'Before', after: 'After', diagram: 'Architecture diagram', recording: 'Recording' }[artifact.kind];
+    figure.append(node('figcaption', label + ' · ' + artifact.caption), media);
+    const link = node('a', 'Open capture');
+    link.href = url;
+    link.target = '_blank';
+    link.rel = 'noopener';
+    figure.append(link);
+    media.addEventListener('error', () => {
+      const error = node('p', 'Capture unavailable or changed. Ask the assigned worker to register it again.', 'attention-text');
+      media.replaceWith(error);
+    }, { once: true });
+    return figure;
+  }));
 }
 
 function activityAge(story) {
