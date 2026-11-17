@@ -51,14 +51,22 @@ button:disabled { opacity: .62; cursor: default; }
 .tag { display: inline-block; width: fit-content; color: var(--blue); background: var(--blue-soft); border-radius: 100px; padding: 3px 8px; font-size: 12px; }
 .tag.decision { color: var(--amber); background: var(--amber-soft); }
 .tag.closed { color: var(--green); background: var(--green-soft); }
-#pipeline { display: flex; flex-wrap: wrap; gap: 6px 10px; list-style: none; padding: 0; margin: 14px 0; color: var(--muted); font-size: 13px; }
-#pipeline li { display: flex; gap: 8px; }
-#pipeline li[aria-current] { color: var(--blue); font-weight: 650; }
+#pipeline { display: flex; flex-wrap: wrap; gap: 6px; list-style: none; padding: 0; margin: 14px 0; color: var(--muted); font-size: 13px; }
+#pipeline li { display: grid; gap: 2px; align-content: center; position: relative; padding: 6px 11px; border: 1px solid var(--line); border-radius: 8px; min-height: 42px; }
+#pipeline li[aria-current] { color: var(--blue); font-weight: 650; border-color: var(--blue); background: var(--blue-soft); }
+#pipeline li small { font-size: 11px; }
 #pipeline li.done { color: var(--green); }
-#pipeline li:not(:last-child)::after { content: "→"; color: var(--muted); }
-#pipeline[data-recent] li[aria-current]:not(:last-child)::after { color: var(--blue); animation: report-flow 1s ease-in-out 3 alternate; }
-@keyframes report-flow { from { transform: translateX(0); } to { transform: translateX(4px); } }
-@media (prefers-reduced-motion: reduce) { #pipeline[data-recent] li[aria-current]::after { animation: none !important; } }
+#pipeline[data-recent] li[aria-current], .crew-age[data-recent] { animation: report-flow 1s ease-in-out 4 alternate; }
+@keyframes report-flow { from { opacity: .65; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { #pipeline[data-recent] li[aria-current], .crew-age[data-recent] { animation: none; } }
+.crew-role.has-assignments { border-inline-start: 3px solid var(--blue); }
+.crew-detail { font-size: 13px; }
+.handoff { border-inline-start: 3px solid var(--amber); }
+.handoff p { margin-block: 5px; }
+.plan-panel h4 { margin: 14px 0 4px; }
+.plan-panel dl { margin: 0; }
+.plan-panel dt { margin-top: 8px; font-size: 13px; font-weight: 650; }
+.plan-panel dd { margin: 2px 0 0; padding-inline-start: 9px; border-inline-start: 2px solid var(--line); }
 .panel { margin: 12px 0; padding: 15px; border: 1px solid var(--line); background: var(--panel); border-radius: 10px; }
 .panel > h3 { margin-bottom: 7px; }
 .panel button { margin-block-start: 7px; }

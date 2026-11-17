@@ -58,12 +58,17 @@ function visibleStories() {
   return filter ? stories.filter(story => filterKey(story) === filter) : stories;
 }
 
+function waitingForJarvis(story) {
+  return Boolean(story?.pendingDecision);
+}
+
 function status(story) {
   if (story.phase === 'planning' && story.questions.some(question => !question.answer)) {
     return { owner: 'planner', label: 'Answer Captain America', decision: true };
   }
   if (story.blocked) return { owner: phases[story.phase][0], label: 'Blocked' };
   const [owner, label] = phases[story.phase];
+  if (waitingForJarvis(story)) return { owner, label: 'Decision saved · waiting for Jarvis', alert: true };
   const signal = story.prObservation?.status;
   if (['ci', 'merge'].includes(story.phase) && signal) {
     if (story.phase === 'merge' && story.readyHead === story.prObservation.head && signal === 'passed') {
@@ -76,7 +81,7 @@ function status(story) {
   return { owner, label, decision: owner === 'approver' };
 }
 
-function storyButton(story, showOwner) {
+function storyButton(story, showOwner, showActivity = false) {
   const state = status(story);
   const button = node('button');
   button.type = 'button';
@@ -84,6 +89,13 @@ function storyButton(story, showOwner) {
   button.append(node('span', story.id + ' · ' + story.title));
   button.append(node('span', (showOwner ? roleLabel(state.owner) + ' · ' : '') + state.label +
     (story.harness ? ' · ' + story.harness : ''), state.alert ? 'attention-text' : 'muted'));
+  if (showActivity) {
+    const latest = story.events[0];
+    if (latest) button.append(node('span', latest.detail, 'crew-detail'));
+    const age = node('span', '', 'muted crew-age');
+    age.dataset.storyAge = story.id;
+    button.append(age);
+  }
   button.addEventListener('click', () => {
     selected = story.id;
     ui('submit-status').textContent = '';
@@ -107,10 +119,10 @@ function renderOverview() {
   if (view === 'stories') {
     ui('overview').replaceChildren(...visible.map(story => storyButton(story, true)));
   } else {
-    ui('overview').replaceChildren(...Object.entries(roles).map(([id, role]) => {
+    const groups = Object.entries(roles).map(([id, role]) => {
       const assignments = visible.filter(story => story.phase !== 'closed' && status(story).owner === id);
-      const group = node('section', '', 'panel');
-      group.append(node('h3', roleLabel(id)), node('p', assignments.length + ' assigned', 'muted'));
+      const group = node('section', '', 'panel crew-role' + (assignments.length ? ' has-assignments' : ''));
+      group.append(node('h3', roleLabel(id)), node('p', assignments.length ? assignments.length + ' assigned' : 'No active assignment', 'muted'));
       if (role.skills.length) {
         const skills = node('ul', '', 'role-skills');
         skills.append(...role.skills.map(skill => node('li', skill)));
@@ -118,9 +130,11 @@ function renderOverview() {
       } else {
         group.append(node('p', 'Plan approval and workflow decisions', 'muted'));
       }
-      group.append(...assignments.map(story => storyButton(story, false)));
-      return group;
-    }));
+      group.append(...assignments.map(story => storyButton(story, false, true)));
+      return { group, count: assignments.length };
+    }).sort((a, b) => b.count - a.count);
+    ui('overview').replaceChildren(...groups.map(({ group }) => group));
+    renderAge();
   }
 }
 
@@ -195,17 +209,37 @@ function renderStory(story) {
   ui('branch').textContent = story.worktree + ' / ' + story.branch;
   ui('pipeline').replaceChildren(...workflow.map(([label], index) => {
     const done = index < phaseIndex || story.phase === 'closed';
-    const step = node('li', done ? '✓ ' + label : label, done ? 'done' : '');
-    if (index === phaseIndex && !done) step.setAttribute('aria-current', 'step');
+    const step = node('li', '', done ? 'done' : '');
+    step.append(node('span', done ? '✓ ' + label : label));
+    if (index === phaseIndex && !done) {
+      step.setAttribute('aria-current', 'step');
+      step.append(node('small', state.decision ? 'Your decision' : waitingForJarvis(story) ? 'Handoff queued' : roles[state.owner].alias));
+    }
     return step;
   }));
   renderQuestions(story);
   ui('planning').hidden = story.phase !== 'planning' || !story.questions.length;
   ui('approval').hidden = story.phase !== 'approval' || Boolean(story.blocked);
-  ui('approval-plan').textContent = story.plan ?? '';
+  ui('decision-handoff').hidden = !waitingForJarvis(story);
+  ui('resume-prompt').textContent = 'Resume Mission Console story ' + story.id + ' and pick up my saved decision.';
   ui('comparison').hidden = story.phase !== 'comparison-choice' || Boolean(story.blocked);
   ui('story-brief').textContent = story.brief;
-  ui('story-plan').textContent = story.plan ?? '';
+  const answers = story.questions.filter(question => question.answer);
+  if (story.phase === 'planning') {
+    ui('plan-title').textContent = story.draftPlan || !story.plan ? 'Working plan' : 'Previous plan';
+    ui('story-plan').textContent = story.draftPlan?.text ?? story.plan ?? 'Captain America has not recorded a draft yet.';
+    ui('plan-status').textContent = story.draftPlan
+      ? (story.draftPlan.answers < answers.length ? 'New decisions saved below. Waiting for the next draft.' : 'Draft updated ' + new Date(story.draftPlan.at).toLocaleTimeString() + '.')
+      : story.plan ? 'Replanning in progress.' : '';
+  } else {
+    ui('plan-title').textContent = story.phase === 'approval' ? 'Proposed plan' : 'Approved plan';
+    ui('story-plan').textContent = story.plan ?? '';
+    ui('plan-status').textContent = '';
+  }
+  ui('plan-decisions').hidden = !answers.length;
+  ui('decision-list').replaceChildren(...answers.flatMap(question => [
+    node('dt', question.prompt), node('dd', question.answer, 'multiline'),
+  ]));
   const openFiles = detailKey?.startsWith(story.id + ':')
     ? new Set([...ui('files').querySelectorAll('details[open]')].map(file => file.dataset.path)) : new Set();
   ui('changes').hidden = !story.files.length;
@@ -232,11 +266,24 @@ function renderStory(story) {
   else link.removeAttribute('href');
 }
 
-function renderAge() {
-  const story = stories.find(story => story.id === selected);
+function activityAge(story) {
   const seconds = story?.activity ? Math.max(0, Math.floor((Date.now() - Date.parse(story.activity.at)) / 1000)) : null;
-  ui('activity-age').textContent = seconds === null ? 'No worker report for this phase' : 'Last worker report ' + seconds + 's ago';
-  ui('pipeline').toggleAttribute('data-recent', seconds !== null && seconds < 5);
+  const waiting = waitingForJarvis(story);
+  const recentlyReported = seconds !== null && seconds < 8 && !waiting && !status(story).decision;
+  const label = waiting ? 'Decision queued for Jarvis' : seconds === null ? 'No worker report for this phase'
+    : 'Last worker report ' + (seconds < 60 ? seconds + 's' : Math.floor(seconds / 60) + 'm') + ' ago';
+  return { recentlyReported, label };
+}
+
+function renderAge() {
+  const current = activityAge(stories.find(story => story.id === selected));
+  ui('activity-age').textContent = current.label;
+  ui('pipeline').toggleAttribute('data-recent', current.recentlyReported);
+  document.querySelectorAll('[data-story-age]').forEach(element => {
+    const age = activityAge(stories.find(story => story.id === element.dataset.storyAge));
+    element.textContent = age.label;
+    element.toggleAttribute('data-recent', age.recentlyReported);
+  });
 }
 
 function render() {
@@ -261,8 +308,8 @@ async function refresh() {
       const response = await fetch('/api/stories');
       if (!response.ok) throw new Error('Snapshot unavailable.');
       const updated = await response.json();
-      if (JSON.stringify(updated.map(story => [story.id, story.revision])) !==
-          JSON.stringify(stories.map(story => [story.id, story.revision]))) {
+      const signature = records => JSON.stringify(records.map(story => [story.id, story.revision, story.pendingDecision?.seq]));
+      if (signature(updated) !== signature(stories)) {
         stories = updated;
         render();
       }
@@ -311,6 +358,14 @@ ui('harness-filter').addEventListener('change', () => {
 ui('approve').addEventListener('click', event => decide(selected, { type: 'approve' }, event.currentTarget));
 ui('compare').addEventListener('click', event => decide(selected, { type: 'comparison-choice', run: true }, event.currentTarget));
 ui('skip').addEventListener('click', event => decide(selected, { type: 'comparison-choice', run: false }, event.currentTarget));
+ui('copy-resume').addEventListener('click', async () => {
+  try {
+    await navigator.clipboard.writeText(ui('resume-prompt').textContent);
+    ui('submit-status').textContent = 'Resume message copied.';
+  } catch {
+    ui('submit-status').textContent = 'Select and copy the resume message above the button.';
+  }
+});
 await refresh();
 setInterval(() => {
   renderAge();

@@ -110,10 +110,18 @@ function apply(story, input, now) {
       return addQuestion(story, input);
     case 'answer':
       return answerQuestion(story, input);
+    case 'draft-plan':
+      samePhase(story, 'planning');
+      requireThat(input.assignment === story.worker?.id, 'Report from the current assignment.', 409);
+      story.draftPlan = { text: string(input.detail, 'working plan', 16000), at: now,
+        answers: story.questions.filter(question => question.answer).length };
+      story.activity = { at: now, role: 'planner' };
+      return 'Captain America updated the working plan.';
     case 'plan':
       samePhase(story, 'planning');
       requireThat(story.questions.every(question => question.answer), 'The plan still has open questions.', 409);
       story.plan = string(input.detail, 'plan', 16000);
+      delete story.draftPlan;
       story.phase = 'approval';
       return 'Planner submitted the plan for approval.';
     case 'approve':
@@ -165,6 +173,7 @@ function apply(story, input, now) {
       story.phase = 'planning';
       delete story.blocked;
       delete story.readyHead;
+      delete story.draftPlan;
       return string(input.detail, 'unresolved decision');
     case 'assign-worktree': {
       requireThat(story.phase !== 'closed', 'The story is closed.', 409);
@@ -248,6 +257,12 @@ export function openStore(path) {
   const all = db.prepare('SELECT state FROM stories ORDER BY id');
   const pending = db.prepare('SELECT seq, story, event FROM events WHERE pending = 1 ORDER BY seq');
   const storyPending = db.prepare('SELECT seq, story, event FROM events WHERE pending = 1 AND story = ? ORDER BY seq');
+  const pendingDecision = db.prepare(`SELECT seq, event FROM events
+    WHERE pending = 1 AND story = ? AND json_extract(event, '$.phase') = ?
+    AND json_extract(event, '$.type') IN ('answer', 'approve', 'comparison-choice')
+    AND seq > COALESCE((SELECT MAX(seq) FROM events
+      WHERE story = ? AND json_extract(event, '$.phase') != ?), 0)
+    ORDER BY seq DESC LIMIT 1`);
   const acknowledge = db.prepare('UPDATE events SET pending = 0 WHERE seq = ? AND pending = 1');
   const wakeRecords = rows => rows.map(({ seq, story, event }) => ({ seq, story, ...JSON.parse(event) }));
 
@@ -265,7 +280,8 @@ export function openStore(path) {
 
   function withHistory(story) {
     const events = recent.all(story.id).map(({ seq, event }) => ({ seq, ...JSON.parse(event) }));
-    return { ...story, events };
+    const decision = pendingDecision.get(story.id, story.phase, story.id, story.phase);
+    return { ...story, events, pendingDecision: decision ? { seq: decision.seq, at: JSON.parse(decision.event).at } : null };
   }
 
   return {

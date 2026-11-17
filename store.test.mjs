@@ -299,3 +299,30 @@ test('the first watch detects a new head even when readiness predates the watche
   assert.throws(() => record('pr-ready', { head: 'a'.repeat(40), detail: 'Old evidence.' }), /does not cover/);
   assert.equal(store.handover('ready').story.phase, 'ci');
 });
+
+test('planning drafts preserve saved decisions and expose pending handoffs without approval', t => {
+  const store = fixture(t)();
+  start(store, 'draft');
+  const record = writer(store, 'draft');
+  record('draft-plan', { detail: 'Goal and open design choice.' });
+  record('question', { question: 'format', prompt: 'Which format?', options: ['CSV', 'JSON'], recommended: 0 });
+  const answer = record('answer', { question: 'format', answer: 0 });
+  let [story] = store.snapshot();
+  assert.equal(story.phase, 'planning');
+  assert.equal(story.draftPlan.answers, 0);
+  assert.equal(story.questions[0].answer, 'CSV');
+  assert.equal(story.pendingDecision.seq, answer.seq);
+  record('draft-plan', { detail: 'Goal and approved CSV format.' });
+  [story] = store.snapshot();
+  assert.equal(story.draftPlan.answers, 1);
+  assert.match(story.draftPlan.text, /CSV/);
+  record('assign-worker', { session: 'planner' });
+  const assignment = store.snapshot()[0].worker.id;
+  record('release-worker', { assignment, detail: 'Done for this round.' });
+  assert.throws(() => record('draft-plan', { assignment, detail: 'Late draft.' }), /current assignment/);
+  store.ack(answer.seq);
+  assert.equal(store.snapshot()[0].pendingDecision, null);
+  record('plan', { detail: 'Proposed CSV plan.' });
+  assert.equal(store.snapshot()[0].draftPlan, undefined);
+  assert.equal(store.snapshot()[0].phase, 'approval');
+});

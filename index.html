@@ -43,13 +43,30 @@
         </header>
         <ol id="pipeline" aria-label="AI SDLC phases"></ol>
         <p id="submit-status" role="status"></p>
+        <section class="panel handoff" id="decision-handoff" hidden aria-labelledby="handoff-title">
+          <h3 id="handoff-title">Decision saved · waiting for Jarvis</h3>
+          <p>Continue in your Jarvis chat if it’s idle.</p>
+          <p id="resume-prompt" class="multiline"></p>
+          <button type="button" id="copy-resume">Copy resume message</button>
+        </section>
         <section id="planning" class="panel" aria-labelledby="planning-title" hidden>
           <h3 id="planning-title">Captain America’s planning room</h3>
           <div id="questions"></div>
         </section>
+        <section class="panel plan-panel" aria-labelledby="brief-title">
+          <h3 id="brief-title">Story brief and plan</h3>
+          <h4>Brief</h4>
+          <p id="story-brief" class="multiline"></p>
+          <h4 id="plan-title">Working plan</h4>
+          <p id="plan-status" class="muted"></p>
+          <p id="story-plan" class="multiline"></p>
+          <div id="plan-decisions" hidden>
+            <h4>Recorded decisions</h4>
+            <dl id="decision-list"></dl>
+          </div>
+        </section>
         <section id="approval" class="panel" hidden>
           <h3>Plan ready for approval</h3>
-          <p id="approval-plan" class="multiline"></p>
           <button type="button" id="approve" class="primary">Approve plan</button>
         </section>
         <section id="comparison" class="panel" hidden>
@@ -68,11 +85,6 @@
           <h3 id="files-title">Changed files</h3>
           <div id="files"></div>
         </section>
-        <details class="panel" id="brief">
-          <summary>Story brief and plan</summary>
-          <p id="story-brief" class="multiline"></p>
-          <p id="story-plan" class="multiline"></p>
-        </details>
         <p><a id="pull-request" hidden>Open pull request</a></p>
       </article>
     </section>
