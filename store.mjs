@@ -1,14 +1,7 @@
 import { DatabaseSync } from 'node:sqlite';
+import { phases, roles } from './roles.mjs';
 
-const workers = {
-  planning: 'Captain America',
-  testing: 'Doctor Strange',
-  red: 'Jarvis',
-  building: 'Iron Man',
-  review: 'Banner',
-  comparison: 'Jarvis',
-  ci: 'Hawkeye',
-};
+const workerPhases = new Set(['planning', 'testing', 'red', 'building', 'review', 'comparison', 'ci']);
 const transitions = {
   testing: 'red',
   red: 'building',
@@ -18,7 +11,7 @@ const transitions = {
 };
 const wakes = new Set([
   'create', 'question', 'answer', 'plan', 'approve', 'handoff', 'return-to-build',
-  'comparison-choice', 'replan', 'blocked', 'resume', 'assign-worktree', 'release-worker',
+  'comparison-choice', 'replan', 'blocked', 'resume', 'assign-worktree', 'release-worker', 'select-harness',
   'pr-opened', 'pr-ready', 'pr-recheck', 'merged',
 ]);
 
@@ -73,25 +66,31 @@ function answerQuestion(story, input) {
 }
 
 function apply(story, input, now) {
-  requireThat(!story.blocked || ['resume', 'answer', 'replan', 'assign-worktree', 'release-worker'].includes(input.type),
+  requireThat(story.harness || ['select-harness', 'release-worker'].includes(input.type), 'Select the story harness first.', 409);
+  requireThat(!story.blocked || ['resume', 'answer', 'replan', 'assign-worktree', 'release-worker', 'select-harness'].includes(input.type),
     'Resume or replan the blocked story first.', 409);
   switch (input.type) {
+    case 'select-harness':
+      requireThat(!story.harness && !story.worker && story.phase !== 'closed',
+        'Select a harness only for an older open story without one or an assigned worker.', 409);
+      story.harness = string(input.harness, 'harness', 100);
+      return 'Story harness selected · ' + story.harness;
     case 'question':
       return addQuestion(story, input);
     case 'answer':
       return answerQuestion(story, input);
     case 'plan':
       samePhase(story, 'planning');
-      requireThat(story.questions.every(question => question.answer), 'Cap still has open questions.', 409);
+      requireThat(story.questions.every(question => question.answer), 'The plan still has open questions.', 409);
       story.plan = string(input.detail, 'plan', 16000);
       story.phase = 'approval';
-      return 'Cap submitted the plan for approval.';
+      return 'Planner submitted the plan for approval.';
     case 'approve':
       samePhase(story, 'approval');
       story.phase = 'testing';
-      return 'Fury approved the plan.';
+      return 'Plan approved.';
     case 'activity':
-      requireThat(workers[story.phase], 'This phase has no reporting worker.', 409);
+      requireThat(workerPhases.has(story.phase), 'This phase has no reporting worker.', 409);
       requireThat(input.assignment === story.worker?.id, 'Report from the current assignment.', 409);
       if (input.file !== undefined) {
         const path = string(input.file, 'file', 1000);
@@ -102,19 +101,19 @@ function apply(story, input, now) {
         if (previous >= 0) story.files[previous] = file;
         else story.files.push(file);
       }
-      story.activity = { at: now, worker: workers[story.phase] };
+      story.activity = { at: now, role: phases[story.phase][0] };
       return string(input.detail, 'activity');
     case 'assign-worker':
-      requireThat(workers[story.phase], 'This phase has no assignable worker.', 409);
+      requireThat(workerPhases.has(story.phase), 'This phase has no assignable worker.', 409);
       requireThat(!story.worker, 'Release the previous worker before assigning another.', 409);
+      requireThat(input.host === undefined || input.host === story.harness, 'Use the harness selected for this story.', 409);
       story.worker = {
         id: input.key,
-        role: workers[story.phase],
-        host: string(input.host, 'harness name', 100),
+        role: phases[story.phase][0],
         session: string(input.session, 'session reference', 400),
       };
       delete story.activity;
-      return story.worker.role + ' assigned in ' + story.worker.host + '.';
+      return roles[story.worker.role].job + ' assigned.';
     case 'release-worker':
       requireThat(story.worker && story.worker.id === input.assignment, 'Current assignment does not match.', 409);
       delete story.worker;
@@ -158,7 +157,7 @@ function apply(story, input, now) {
       samePhase(story, 'comparison-choice');
       requireThat(typeof input.run === 'boolean', 'Choose whether to run before-and-after.');
       story.phase = input.run ? 'comparison' : 'publishing';
-      return input.run ? 'Fury requested before-and-after.' : 'Fury declined before-and-after.';
+      return input.run ? 'Before-and-after requested.' : 'Before-and-after declined.';
     case 'pr-opened':
       samePhase(story, 'publishing');
       {
@@ -272,6 +271,7 @@ export function openStore(path) {
           story = {
             id, title, brief: string(input.detail, 'initial brief', 16000),
             branch: string(input.branch, 'branch', 200), worktree: string(input.worktree, 'worktree', 1000),
+            harness: string(input.harness, 'harness', 100),
             phase: 'planning', revision: 0, questions: [], files: []
           };
           detail = title;
@@ -279,6 +279,8 @@ export function openStore(path) {
           requireThat(current, 'Story does not exist.', 404);
           story = JSON.parse(current.state);
           requireThat(input.revision === story.revision, 'Story changed. Read the latest state and retry.', 409);
+          requireThat(input.type === 'select-harness' || input.harness === undefined || input.harness === story.harness,
+            'Use the harness selected for this story.', 409);
           const from = story.phase;
           worker = story.worker;
           detail = apply(story, input, now);

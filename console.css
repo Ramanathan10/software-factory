@@ -23,9 +23,11 @@ h1 { font-size: 20px; letter-spacing: -.025em; }
 h2 { font-size: 14px; }
 h3 { font-size: 15px; }
 .masthead, main { max-width: 1280px; margin-inline: auto; }
-.masthead { padding: 18px 26px; display: flex; align-items: center; gap: 12px; background: var(--panel); }
+.masthead { padding: 18px 26px; display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; background: var(--panel); }
 .brand { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 9px; background: var(--blue-soft); color: var(--blue); font-weight: 700; }
 .connection { margin-inline-start: auto; color: var(--muted); font-size: 12px; }
+.alias-view { align-items: center; margin-inline-start: auto; color: var(--muted); font-size: 13px; }
+.alias-view input { accent-color: var(--blue); }
 main { background: var(--surface); border-top: 1px solid var(--line); display: grid; grid-template-columns: minmax(270px, .8fr) minmax(0, 1.5fr); min-height: calc(100vh - 73px); }
 .overview, .workspace { padding: 22px 26px; min-width: 0; overflow-wrap: anywhere; }
 .workspace { border-inline-start: 1px solid var(--line); }

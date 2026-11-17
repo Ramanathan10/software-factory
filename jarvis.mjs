@@ -36,6 +36,7 @@ export function serve(store, port) {
     ['/', ['index.html', 'text/html; charset=utf-8']],
     ['/console.css', ['console.css', 'text/css; charset=utf-8']],
     ['/console.mjs', ['console.mjs', 'text/javascript; charset=utf-8']],
+    ['/roles.mjs', ['roles.mjs', 'text/javascript; charset=utf-8']],
   ].map(([route, [file, type]]) => [route, [readFileSync(new URL(file, import.meta.url)), type]]));
   const server = createServer(async (request, response) => {
     const authority = host + ':' + server.address().port;
@@ -69,21 +70,21 @@ function seed(store) {
   const add = (story, type, input) => store.record({ story, type, key: story + '-' + type, ...input });
   add('TL-142', 'create', {
     title: 'Stabilize orders pagination', detail: 'Keep cursor results stable when timestamps tie.',
-    branch: 'tl-142-stable-pagination', worktree: '(sample) tmp/tl-142',
+    branch: 'tl-142-stable-pagination', worktree: '(sample) tmp/tl-142', harness: 'Codex',
   });
   add('TL-142', 'plan', { revision: 1, detail: 'Keep the API shape and verify that orders with tied timestamps appear exactly once across pages.' });
   add('TL-142', 'approve', { revision: 2 });
   add('TL-142', 'activity', {
-    revision: 3, detail: 'Strange saved a test for a cursor boundary with tied timestamps.',
+    revision: 3, detail: 'Test author saved a test for a cursor boundary with tied timestamps.',
     file: 'tests/orders-pagination.test.ts', change: 'Added test',
     diff: '+ expect(pageTwo.ids).toEqual([secondOrder.id]);',
   });
   add('TL-147', 'create', {
     title: 'Add CSV export to activity history', detail: 'Export activity data with existing access rules.',
-    branch: 'tl-147-activity-export', worktree: '(sample) tmp/tl-147',
+    branch: 'tl-147-activity-export', worktree: '(sample) tmp/tl-147', harness: 'Claude Code',
   });
   add('TL-147', 'question', {
-    revision: 1, question: 'scope', prompt: 'Which rows should Cap include in the CSV plan?',
+    revision: 1, question: 'scope', prompt: 'Which rows should the CSV include?',
     options: ['All rows matching the current filters', 'Only rows on the current page', 'Only rows the user selects'], recommended: 0,
   });
 }

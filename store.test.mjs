@@ -25,10 +25,10 @@ function fixture(t) {
   return open;
 }
 
-function start(store, story) {
+function start(store, story, harness = 'Codex') {
   return store.record({
     story, key: story + '-start', type: 'create', title: 'Implement ' + story,
-    detail: 'Use an isolated branch.', branch: story, worktree: '/worktrees/' + story,
+    detail: 'Use an isolated branch.', branch: story, worktree: '/worktrees/' + story, harness,
   });
 }
 
@@ -122,7 +122,7 @@ test('a second connection can recover and acknowledge wakes without deleting evi
   assert.equal(c.snapshot()[0].events[0].seq, first.seq);
 });
 
-test('separate CLI processes can hand over a story across harnesses without including another story', t => {
+test('separate CLI processes resume one story in its pinned harness', t => {
   const directory = mkdtempSync(join(tmpdir(), 'jarvis-handover-'));
   t.after(() => rmSync(directory, { recursive: true, force: true }));
   const file = join(directory, 'stories.db');
@@ -133,36 +133,40 @@ test('separate CLI processes can hand over a story across harnesses without incl
   ));
   const store = openStore(file);
   try {
-    start(store, 'portable');
-    start(store, 'other');
+    start(store, 'portable', 'Claude Code');
+    start(store, 'other', 'Grok Build');
   } finally {
     store.close();
   }
   const record = (type, revision, details) =>
     run('record', [], { story: 'portable', key: 'handover-' + revision, type, revision, ...details });
-  record('assign-worker', 1, { host: 'Claude Code', session: 'local-claude-worker-1' });
+  assert.throws(() => record('assign-worker', 1, { host: 'Grok Build', session: 'worker-1' }), /harness selected/);
+  record('assign-worker', 1, { session: 'worker-1' });
   record('question', 2, { question: 'scope', prompt: 'What scope?', options: ['All', 'One page'], recommended: 0 });
   const packet = run('handover', ['portable']);
-  assert.equal(packet.story.worker.host, 'Claude Code');
+  assert.equal(packet.story.harness, 'Claude Code');
+  assert.equal(packet.story.worker.role, 'planner');
   assert.equal(packet.story.revision, 3);
   assert.ok(packet.pending.some(event => event.type === 'question'));
   assert.ok(packet.pending.every(event => event.story === 'portable'));
-  assert.throws(() => record('assign-worker', 3, { host: 'Grok Build', session: 'local-claude-worker-1' }), /Release the previous worker/);
+  assert.throws(() => record('assign-worker', 3, { session: 'worker-1' }), /Release the previous worker/);
   record('release-worker', 3, { assignment: packet.story.worker.id, detail: 'Claude session stopped after asking the question.' });
+  assert.throws(() => record('select-harness', 4, { harness: 'Grok Build' }), /only for an older/);
   assert.throws(() => record('activity', 4, { assignment: packet.story.worker.id, detail: 'Old update between assignments.' }), /current assignment/);
-  record('assign-worker', 4, { host: 'Grok Build', session: 'local-claude-worker-1' });
+  record('assign-worker', 4, { session: 'worker-1' });
   assert.throws(() => record('activity', 5, { assignment: packet.story.worker.id, detail: 'Old update from same session label.' }), /current assignment/);
   assert.throws(() => record('release-worker', 5, { assignment: packet.story.worker.id, detail: 'Old release.' }), /assignment does not match/);
   record('answer', 5, { question: 'scope', answer: 0 });
   assert.throws(() => record('plan', 6, { detail: 'Export all eligible rows.' }), /Release the assigned worker/);
-  const grok = run('handover', ['portable']).story.worker;
-  record('release-worker', 6, { assignment: grok.id, detail: 'Grok finished reviewing the decision.' });
+  const replacement = run('handover', ['portable']).story.worker;
+  record('release-worker', 6, { assignment: replacement.id, detail: 'Claude finished reviewing the decision.' });
   record('plan', 7, { detail: 'Export all eligible rows.' });
   const resumed = run('handover', ['portable']);
   assert.equal(resumed.story.phase, 'approval');
   assert.equal(resumed.story.worker, undefined);
   assert.equal(resumed.story.questions[0].answer, 'All');
-  assert.ok(resumed.story.events.some(event => event.type === 'release-worker' && event.worker.host === 'Grok Build'));
+  assert.equal(resumed.story.harness, 'Claude Code');
+  assert.equal(run('handover', ['other']).story.harness, 'Grok Build');
 });
 
 test('the HTTP surface accepts human decisions from the loopback origin only', async t => {

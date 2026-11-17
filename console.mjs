@@ -1,3 +1,5 @@
+import { phases, roles } from './roles.mjs';
+
 const ui = id => document.getElementById(id);
 const workflow = [
   ['Plan', ['planning', 'approval']],
@@ -6,21 +8,6 @@ const workflow = [
   ['Review', ['review', 'comparison-choice', 'comparison']],
   ['PR', ['publishing', 'ci', 'merge', 'closed']],
 ];
-const phases = {
-  planning: ['Captain America', 'Planning'],
-  approval: ['Fury', 'Plan approval'],
-  testing: ['Doctor Strange', 'Writing tests'],
-  red: ['Jarvis', 'Verify red'],
-  building: ['Iron Man', 'Implementation'],
-  review: ['Banner', 'Review'],
-  'comparison-choice': ['Fury', 'Before-and-after decision'],
-  comparison: ['Jarvis', 'Verify comparison'],
-  publishing: ['Jarvis', 'Open pull request'],
-  ci: ['Hawkeye', 'Watching checks'],
-  merge: ['Hawkeye', 'PR ready to merge'],
-  closed: ['Jarvis', 'Merged'],
-};
-const roles = ['Jarvis', 'Captain America', 'Black Widow', 'Doctor Strange', 'Iron Man', 'Banner', 'Hawkeye'];
 let stories = [];
 let selected;
 let view = 'stories';
@@ -36,13 +23,18 @@ function node(tag, text, classes) {
   return element;
 }
 
+function roleLabel(id) {
+  const role = roles[id];
+  return role.job + (ui('show-aliases').checked ? ' · ' + role.alias : '');
+}
+
 function status(story) {
   if (story.phase === 'planning' && story.questions.some(question => !question.answer)) {
-    return { owner: 'Captain America', label: 'Answer Cap', decision: true };
+    return { owner: 'planner', label: 'Planning question', decision: true };
   }
   if (story.blocked) return { owner: phases[story.phase][0], label: 'Blocked' };
   const [owner, label] = phases[story.phase];
-  return { owner, label, decision: owner === 'Fury' };
+  return { owner, label, decision: owner === 'approver' };
 }
 
 function storyButton(story, showOwner) {
@@ -51,8 +43,8 @@ function storyButton(story, showOwner) {
   button.type = 'button';
   button.setAttribute('aria-pressed', String(story.id === selected));
   button.append(node('span', story.id + ' · ' + story.title));
-  button.append(node('span', (showOwner ? state.owner + ' · ' : '') + state.label +
-    (story.worker ? ' · ' + story.worker.host : ''), 'muted'));
+  button.append(node('span', (showOwner ? roleLabel(state.owner) + ' · ' : '') + state.label +
+    (story.harness ? ' · ' + story.harness : ''), 'muted'));
   button.addEventListener('click', () => {
     selected = story.id;
     ui('submit-status').textContent = '';
@@ -75,10 +67,10 @@ function renderOverview() {
   if (view === 'stories') {
     ui('overview').replaceChildren(...stories.map(story => storyButton(story, true)));
   } else {
-    ui('overview').replaceChildren(...roles.map(role => {
-      const assignments = stories.filter(story => story.phase !== 'closed' && status(story).owner === role);
+    ui('overview').replaceChildren(...Object.entries(roles).filter(([, role]) => role.skill).map(([id, role]) => {
+      const assignments = stories.filter(story => story.phase !== 'closed' && status(story).owner === id);
       const group = node('section', '', 'panel');
-      group.append(node('h3', role), node('p', assignments.length + ' assigned', 'muted'));
+      group.append(node('h3', roleLabel(id)), node('p', role.skill + ' · ' + assignments.length + ' assigned', 'muted'));
       group.append(...assignments.map(story => storyButton(story, false)));
       return group;
     }));
@@ -112,7 +104,7 @@ function questionForm(story, question) {
     });
   });
   fields.append(custom);
-  const submit = node('button', 'Send to Cap', 'primary');
+  const submit = node('button', 'Send answer', 'primary');
   submit.type = 'submit';
   form.append(fields, submit);
   form.addEventListener('submit', event => {
@@ -148,9 +140,10 @@ function renderStory(story) {
   const phaseIndex = workflow.findIndex(([, phases]) => phases.includes(story.phase));
   ui('story-id').textContent = story.id;
   ui('story-title').textContent = story.title;
-  ui('story-status').replaceChildren(node('span', state.owner + ' · ' + state.label,
+  ui('story-status').replaceChildren(node('span', roleLabel(state.owner) + ' · ' + state.label,
     'tag' + (state.decision ? ' decision' : '') + (story.phase === 'closed' ? ' closed' : '')));
-  if (story.worker) ui('story-status').append(node('span', ' · ' + story.worker.host, 'muted'));
+  const harness = story.harness ?? (story.phase === 'closed' ? 'Harness not recorded' : 'Harness selection required');
+  ui('story-status').append(node('span', ' · ' + harness, 'muted'));
   ui('branch').textContent = story.worktree + ' / ' + story.branch;
   ui('pipeline').replaceChildren(...workflow.map(([label], index) => {
     const done = index < phaseIndex || story.phase === 'closed';
@@ -159,6 +152,7 @@ function renderStory(story) {
     return step;
   }));
   renderQuestions(story);
+  ui('planning-title').textContent = ui('show-aliases').checked ? 'Planning room · Captain America' : 'Planning room';
   ui('planning').hidden = story.phase !== 'planning' || !story.questions.length;
   ui('approval').hidden = story.phase !== 'approval' || Boolean(story.blocked);
   ui('approval-plan').textContent = story.plan ?? '';
@@ -261,6 +255,7 @@ async function decide(id, event, button) {
 
 ui('stories-tab').addEventListener('click', () => { view = 'stories'; renderOverview(); });
 ui('crew-tab').addEventListener('click', () => { view = 'crew'; renderOverview(); });
+ui('show-aliases').addEventListener('change', render);
 ui('approve').addEventListener('click', event => decide(selected, { type: 'approve' }, event.currentTarget));
 ui('compare').addEventListener('click', event => decide(selected, { type: 'comparison-choice', run: true }, event.currentTarget));
 ui('skip').addEventListener('click', event => decide(selected, { type: 'comparison-choice', run: false }, event.currentTarget));
