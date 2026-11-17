@@ -1,11 +1,13 @@
 export const roles = {
-  coordinator: { job: 'Coordinator', alias: 'Jarvis', skills: ['AI SDLC', 'Before and After', 'Diagram Design'] },
+  coordinator: { job: 'Coordinator', alias: 'Jarvis', skills: ['AI SDLC'] },
   planner: { job: 'Planner', alias: 'Captain America', skills: ['Grill Me'] },
   scout: { job: 'Scout', alias: 'Black Widow', skills: ['AI SDLC · Planning research'] },
-  tester: { job: 'Test author', alias: 'Doctor Strange', skills: ['AI SDLC · Test-first handoff'] },
+  tester: { job: 'Test author', alias: 'Bruce Banner', skills: ['AI SDLC · Test-first handoff'] },
   implementer: { job: 'Implementer', alias: 'Iron Man', skills: ['Ponytail'] },
-  reviewer: { job: 'Independent reviewer', alias: 'Banner', skills: ['Adversarial Code Review'] },
+  reviewer: { job: 'Independent reviewer', alias: 'Doctor Strange', skills: ['Adversarial Code Review'] },
+  verifier: { job: 'Before-and-after verifier', alias: 'Spider-Man', skills: ['Before and After'] },
   watcher: { job: 'PR watcher', alias: 'Hawkeye', skills: ['GrepLoop · Current-head checks and feedback'] },
+  diagrammer: { job: 'Architecture diagram designer', alias: 'Shuri', skills: ['Diagram Design'] },
   approver: { job: 'Human approver', alias: 'Fury', skills: [] },
 };
 
@@ -21,7 +23,7 @@ export const phases = {
   building: ['implementer', 'Implementation'],
   review: ['reviewer', 'Review'],
   'comparison-choice': ['approver', 'Before-and-after decision'],
-  comparison: ['coordinator', 'Verify comparison'],
+  comparison: ['verifier', 'Capture before and after'],
   publishing: ['coordinator', 'Open pull request'],
   ci: ['watcher', 'Watching checks'],
   merge: ['watcher', 'PR ready to merge'],

@@ -59,7 +59,13 @@ test('approval, red evidence, and PR transitions hold independently across stori
   record('resume', { detail: 'Test database is ready.' });
   record('handoff', { detail: 'Focused and broader tests passed.', command: 'npm test' });
   record('handoff', { detail: 'Independent review completed.' });
-  record('comparison-choice', { run: false });
+  record('comparison-choice', { run: true });
+  assert.throws(() => record('pr-opened', { url: 'https://github.com/example/repo/pull/2' }), /Expected phase publishing/);
+  record('assign-worker', { session: 'comparison-session' });
+  const comparison = store.handover('first').story.worker;
+  assert.equal(comparison.role, 'verifier');
+  record('release-worker', { assignment: comparison.id, detail: 'The comparison session finished.' });
+  record('handoff', { detail: 'The same scenario succeeds after the change. Captured both runs.' });
   record('pr-opened', { url: 'https://github.com/example/repo/pull/2' });
   record('pr-ready', { detail: 'Checks and review passed for head xyz.' });
   record('pr-recheck', { detail: 'GitHub reports a new head.' });
