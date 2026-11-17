@@ -7,6 +7,7 @@ const workflow = [
   ['Build', ['building']],
   ['Review', ['review']],
   ['Before & after', ['comparison-choice', 'comparison']],
+  ['Architecture', ['diagram']],
   ['PR', ['publishing', 'ci', 'merge', 'closed']],
 ];
 let stories = [];
@@ -206,7 +207,6 @@ function renderQuestions(story) {
 function renderStory(story) {
   const state = status(story);
   const steps = [...workflow];
-  if (story.diagram) steps.splice(steps.length - 1, 0, ['Diagram', ['diagram']]);
   const phaseIndex = steps.findIndex(([, phases]) => phases.includes(story.phase));
   ui('story-id').textContent = story.id;
   ui('story-title').textContent = story.title;
@@ -235,6 +235,9 @@ function renderStory(story) {
     const done = phases.includes('diagram') ? Boolean(story.diagram?.completedAt) : reached && !skipped && !unknown;
     const step = node('li', '', done ? 'done' : '');
     step.append(node('span', skipped ? label + ' · skipped' : unknown ? label + ' · not recorded' : done ? '✓ ' + label : label));
+    if (phases.includes('diagram') && !story.diagram) {
+      step.append(node('small', story.phase === 'closed' ? 'No diagram recorded' : 'Rocket · when needed'));
+    }
     if (index === phaseIndex && !done) {
       step.setAttribute('aria-current', 'step');
       step.append(node('small', state.decision ? 'Your decision' : waitingForJarvis(story) ? 'Handoff queued' : roles[state.owner].alias));
