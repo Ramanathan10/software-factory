@@ -85,15 +85,3 @@ Then restart the harness and say "Be Jarvis. Run AI SDLC." in a repository that 
 ## License
 
 MIT; see [LICENSE](LICENSE). Imported skills keep their own license file in their folder.
-
-## Known gaps
-
-- Workers run in the GitHub Copilot app, Claude Code, and Codex. Cursor is installed but its row in `adapters/harnesses.mjs` has no worker commands yet. A real Claude Code session has been started, has recorded events and committed in its worktree, and has been resumed with a decision, on Windows only. A real Codex session has been started, but its first turn has not completed, so recording and committing from Codex's restricted sandbox are still untested.
-- On Windows, a Claude Code or Codex story session starts only from the native program (`claude.exe`, `codex.exe`). An npm install leaves a `.cmd` script, which the installer and the start call refuse with the fix.
-- A story session that fails within ten seconds of starting or resuming is reported with its error. One that fails later is silent: the story shows a worker and no new events, and only the session's log says why.
-- In Claude Code, Jarvis hears that a worker ended its turn through a background `wait-any` command, because the chat resumes when a background command ends. That has not been checked in Codex; where the chat does not resume, Jarvis learns of a finished turn when it next reads the console. In both, an undelivered decision is found only then.
-- The Copilot extension cannot be executed outside the Copilot app, so `extension.mjs` is covered only by the service tests behind it.
-- The console still has a `comparison-choice` step after review; `ai-sdlc` now settles that during planning, so Jarvis records the planned answer there instead of asking again.
-- `.github/workflows/test.yml` runs the tests on Windows, macOS and Linux, but it has not run yet, so only Windows is known to pass.
-- The readiness check's Azure DevOps reader is tested with a stand-in for `az`, and Linear is read by the agent's own tools; only the GitHub reader has read a real story.
-- The installer has not been run on a clean machine, and its Copilot copy step is tested against a temporary folder, not the real app.
