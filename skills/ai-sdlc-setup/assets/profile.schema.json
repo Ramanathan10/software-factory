@@ -11,6 +11,7 @@
     "crossModelReviewAuthorized": { "description": "Whether plans and code may be sent to additional model providers for critique and review.", "type": "boolean" },
     "sharedResources": { "description": "Local services, databases, ports, or hosts that parallel stories must not fight over.", "type": "array", "items": { "type": "string" } },
     "defaultVerificationEnvironment": { "description": "Where before-and-after and live tests run by default.", "type": "string" },
+    "declinedComponents": { "description": "Optional components the owner chose not to install, such as hyperframes or ffmpeg, so the check stops raising them.", "type": "array", "items": { "type": "string", "minLength": 1 } },
     "repos": {
       "description": "The owner's profile for each repository, keyed by owner/name.",
       "type": "object",

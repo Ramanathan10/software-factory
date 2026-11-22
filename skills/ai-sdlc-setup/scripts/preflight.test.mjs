@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { check, detect, validate } from './preflight.mjs';
+import { check, componentSeverity, components, detect, nextSteps, validate } from './preflight.mjs';
 
 const asset = name => JSON.parse(readFileSync(fileURLToPath(new URL(`../assets/${name}`, import.meta.url)), 'utf8'));
 const machine = { schemaVersion: 1, ownerName: 'Sam', crossModelReviewAuthorized: true };
@@ -94,6 +94,59 @@ test('detect reports repository facts for the interview', t => {
   assert.deepEqual(facts.repo.manifests, ['package.json']);
   assert.equal(facts.tools.git, true);
   assert.equal(facts.profiles.machineProfileExists, false);
+});
+
+const part = (list, name) => list.find(item => item.name === name);
+
+test('components finds Stryker installed in the repository and suggests an install when it is not', t => {
+  const { repo, env } = workspace(t);
+  const bare = { ...env, PATH: '', Path: '' };
+  assert.equal(part(components(repo, bare), 'stryker').found, false);
+  assert.match(part(components(repo, bare), 'stryker').install, /@stryker-mutator\/core/);
+  mkdirSync(join(repo, 'node_modules', '.bin'), { recursive: true });
+  writeFileSync(join(repo, 'node_modules', '.bin', 'stryker'), '');
+  assert.equal(part(components(repo, bare), 'stryker').found, true);
+});
+
+test('components looks for the .NET Stryker tool in a .NET repository', t => {
+  const { repo, env } = workspace(t);
+  const bare = { ...env, PATH: '', Path: '' };
+  writeFileSync(join(repo, 'app.sln'), '');
+  assert.match(part(components(repo, bare), 'stryker').install, /dotnet-stryker/);
+  mkdirSync(join(repo, '.config'));
+  writeFileSync(join(repo, '.config', 'dotnet-tools.json'), JSON.stringify({ tools: { 'dotnet-stryker': {} } }));
+  assert.equal(part(components(repo, bare), 'stryker').found, true);
+});
+
+test('check links components to the gates that use them and remembers declined ones', t => {
+  const { repo, env } = workspace(t, {
+    machineProfile: { ...machine, declinedComponents: ['hyperframes'] },
+    repoEntry: repoProfile({ test: 'git --version', mutation: 'git stryker run --mutate {files}' }),
+  });
+  const result = check(repo, env);
+  assert.deepEqual(part(result.components, 'stryker').usedBy, ['mutation']);
+  assert.equal(part(result.components, 'hyperframes').declined, true);
+  assert.doesNotMatch(result.warnings.join('\n'), /hyperframes/);
+  assert.equal(result.ok, false);
+  assert.match(result.problems.join('\n'), /stryker is not installed \(mutation testing\)/);
+  assert.match(result.nextSteps.join('\n'), /ai-sdlc-setup/);
+});
+
+test('a missing component blocks only when the profile depends on it', () => {
+  const severity = part => componentSeverity({ usedBy: [], declined: false, ...part });
+  assert.equal(severity({ name: 'stryker', kind: 'gate', usedBy: ['mutation'] }), 'problem');
+  assert.equal(severity({ name: 'gitleaks', kind: 'gate' }), null);
+  assert.equal(severity({ name: 'git', kind: 'core' }), 'problem');
+  assert.equal(severity({ name: 'gh', kind: 'core' }), 'warning');
+  assert.equal(severity({ name: 'gh', kind: 'core', declined: true }), 'warning');
+  assert.equal(severity({ name: 'hyperframes', kind: 'optional' }), 'warning');
+  assert.equal(severity({ name: 'hyperframes', kind: 'optional', declined: true }), null);
+});
+
+test('next steps send a failing check back to setup', () => {
+  assert.deepEqual(nextSteps({ problems: ['x'], warnings: [] }).length, 1);
+  assert.match(nextSteps({ problems: ['x'], warnings: [] })[0], /ai-sdlc-setup/);
+  assert.match(nextSteps({ problems: [], warnings: ['y'] })[0], /declinedComponents/);
 });
 
 test('the CLI runs when the skill folder is reached through a link', t => {

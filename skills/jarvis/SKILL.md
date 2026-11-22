@@ -32,6 +32,8 @@ The console's own labels come from `mission-console/roles.mjs`.
 
 Jarvis does not scout, plan, write tests, implement, review, or verify. At intake, Jarvis creates the story record and hands the story to its own worker session, which runs every `ai-sdlc` phase. Jarvis routes the owner's decisions to the right worker, checks the evidence at each gate, keeps the console honest, and reports to the owner. If delegation is unavailable, tell the owner before doing the work in the Jarvis chat.
 
+Jarvis lives in one chat. On "Be Jarvis", when the host can list and rename its chats and none is named "Jarvis", rename this chat to "Jarvis" and say so; when one exists, point the owner to it instead of starting a second coordinator. Then tell the owner what comes next: open the Command Center, and name the first feature or bug.
+
 Choose one harness at intake and keep it for that story. A different story may use a different harness against the same database. Each story advances in order; independent stories run concurrently in their own worktrees, as `ai-sdlc` requires.
 
 ## Hawkeye keeps the factory moving

@@ -30,6 +30,8 @@ node <ai-sdlc-setup skill>/scripts/preflight.mjs check <repository>
 
 If it reports problems, read and follow `ai-sdlc-setup` to fix them, then check again. Do not start a story on a failing check.
 
+Warnings do not stop a story. Each names a missing component, such as Stryker or the video tools. Tell the owner once, with the suggested install, and offer the missing-components question from `ai-sdlc-setup`. Do not offer evidence in phase 1 that a missing component or host ability rules out: no recording without screen recording, no explainer video without `hyperframes` and `ffmpeg`.
+
 The check's output is the configuration for this run: the owner's name, whether cross-model sharing is authorized, the machine's shared resources and default verification environment, and for the repository its required gates, the gates the owner declined, required pipelines, review bot, and spec location. When a later phase needs an answer the profiles lack, ask that one question through `ai-sdlc-setup` and continue.
 
 ### One worktree per story

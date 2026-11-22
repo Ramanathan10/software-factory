@@ -6,7 +6,7 @@
     "typecheck": "npx tsc --noEmit",
     "build": "npm run build",
     "secrets": "gitleaks git --no-banner",
-    "dependencies": "osv-scanner scan -r .",
+    "dependencies": null,
     "staticAnalysis": null,
     "mutation": "npx stryker run --mutate {files}"
   },
