@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
@@ -58,11 +58,10 @@ test('the launcher serves the dashboard, and a second one on the same port is re
   }
 });
 
-test('adapters are found by the harness name stories record', async t => {
-  const directory = folder(t);
-  mkdirSync(join(directory, 'claude-code'));
-  mkdirSync(join(directory, 'no-adapter-here'));
-  writeFileSync(join(directory, 'claude-code', 'adapter.mjs'), "export const harness = 'Claude Code';\nexport const messageWorker = () => {};\n");
-  const adapters = await loadAdapters(directory);
-  assert.deepEqual([...adapters.keys()], ['claude code']);
+test('each command-line harness in the table gets an adapter, found by the name stories record', async () => {
+  const sent = [];
+  const adapters = loadAdapters({ 'Claude Code': { workers: 'command-line' }, Codex: { workers: 'command-line' }, 'GitHub Copilot app': { workers: 'in-app' }, Cursor: { workers: 'none' } }, message => sent.push(message));
+  assert.deepEqual([...adapters.keys()], ['claude code', 'codex']);
+  await deliver({ ...decision, worktree: '/work/tl-1' }, adapters.get('codex'));
+  assert.deepEqual([sent[0].harness, sent[0].session, sent[0].worktree], ['Codex', 'worker-1', '/work/tl-1']);
 });

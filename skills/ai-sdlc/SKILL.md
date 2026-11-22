@@ -1,13 +1,13 @@
 ---
 name: ai-sdlc
-description: Run the AI software development lifecycle from an idea or bug through a pull request. Use when the owner asks for AI SDLC, the AI software development lifecycle, or to take a feature or bug fix from plan through implementation, review, and PR. Checks the saved setup profiles, scouts the repository, settles every decision up front with Grill Me (or a reproduction for bugs) and records the approved spec, has a subagent write failing tests, implements with Ponytail, runs the repository's required gates and mutation testing, reviews adversarially across models, captures before-and-after and an architecture diagram when planned, opens a PR, and ends with a retro that feeds lessons back into the skills.
+description: Run the AI software development lifecycle from an idea or bug through a pull request. Use when the owner asks for AI SDLC, the AI software development lifecycle, or to take a feature or bug fix from plan through implementation, review, and PR. Checks the saved setup profile, scouts the repository, settles every decision up front with Grill Me (or a reproduction for bugs) and records the approved spec, has a subagent write failing tests, implements with Ponytail, runs the repository's required gates and mutation testing, reviews adversarially across models, captures before-and-after and an architecture diagram when planned, opens a PR, and ends with a retro that feeds lessons back into the skills.
 ---
 
 # AI SDLC
 
-AI software development lifecycle. Run the phases in order on the feature or bug the owner names. Finish each phase before starting the next. Read each named skill and follow it; this skill only sequences them. "The owner" is the person running this session, named in the machine profile.
+AI software development lifecycle. Run the phases in order on the feature or bug the owner names. Finish each phase before starting the next. Read each named skill and follow it; this skill only sequences them. "The owner" is the person running this session, named in the profile.
 
-- [ ] 0. Preflight: valid setup profiles
+- [ ] 0. Preflight: a valid setup profile
 - [ ] 1. Plan: scout; Grill Me for a feature, reproduction for a bug; settle every run decision; record the spec
 - [ ] 2. Test-first handoff to a subagent; verify red
 - [ ] 3. Implement with Ponytail; verify green
@@ -32,19 +32,19 @@ If it reports problems, read and follow `ai-sdlc-setup` to fix them, then check 
 
 Warnings do not stop a story. Each names a missing component, such as Stryker or the video tools. Tell the owner once, with the suggested install, and offer the missing-components question from `ai-sdlc-setup`. Do not offer evidence in phase 1 that a missing component or host ability rules out: no recording without screen recording, no explainer video without `hyperframes` and `ffmpeg`.
 
-The check's output is the configuration for this run: the owner's name, whether cross-model sharing is authorized, the machine's shared resources and default verification environment, and for the repository its required gates, the gates the owner declined, required pipelines, review bot, and spec location. When a later phase needs an answer the profiles lack, ask that one question through `ai-sdlc-setup` and continue.
+The check's output is the configuration for this run: the owner's name, whether cross-model sharing is authorized, the machine's shared resources and default verification environment, the implementation level, the review round limit, the before-and-after and architecture diagram settings, the worker permissions, the full paths of the Command Center files under `commandCenter`, and for the repository its required gates, the gates the owner declined, branch pattern, worktree folder, team rules, work tracker, required pipelines, review bot, and spec location. Use these values as given; do not substitute a default of your own. When a later phase needs an answer the profile lacks, ask that one question through `ai-sdlc-setup` and continue.
 
 ### One worktree per story
 
-Run every story in its own worktree and branch so independent stories can run in parallel. Never share a worktree between stories or work in the owner's primary checkout. Fetch the remote first and base the branch on the current remote default branch, not a possibly stale local copy.
+Run every story in its own worktree and branch so independent stories can run in parallel. Never share a worktree between stories or work in the owner's primary checkout. Name the branch from the repository's branch pattern, replacing `{id}` with the work item id and `{slug}` with a short lowercase form of the title, and create the worktree at `<worktreeRoot>/<branch>` unless the harness creates worktrees itself. Fetch the remote first and base the branch on the current remote default branch, not a possibly stale local copy.
 
-Parallel stories on one machine must not compete for the shared resources in the machine profile. Ask the owner before stopping, replacing, or taking exclusive use of one, and say when it is restored.
+Parallel stories on one machine must not compete for the shared resources in the profile. Ask the owner before stopping, replacing, or taking exclusive use of one, and say when it is restored.
 
 ## 1. Plan
 
 ### Scout
 
-Before asking the owner anything, investigate the repository read-only and write a context pack: the relevant files and entry points, the conventions and rules that apply (agent instruction files, lint configuration, naming), the focused and full test commands, similar earlier changes, and known risks. The context pack opens the draft plan, goes into the spec, and is given to every later subagent. Correct it when a later phase finds it wrong.
+Before asking the owner anything, investigate the repository read-only and write a context pack: the relevant files and entry points, the conventions and rules that apply (agent instruction files, lint configuration, naming, and every entry in the profile's team rules: open each web address, read each file, and take each written instruction as given), the focused and full test commands, similar earlier changes, and known risks. The context pack opens the draft plan, goes into the spec, and is given to every later subagent. Correct it when a later phase finds it wrong.
 
 ### Feature lane
 
@@ -58,18 +58,18 @@ Use this lane when the owner reports broken existing behavior. Reproduce the bug
 
 Ask these with the rest of the frontier, each with a recommended answer, so nothing waits on the owner after approval:
 
-- **Before and after:** whether to capture it, the screen to compare, the environment (default: the machine profile's verification environment), and the before reference that `before-and-after` needs. When the before reference is the current running product, capture the before image right after approval, before any implementation changes it.
-- **Architecture diagram:** whether the PR description needs one, and its scope.
+- **Before and after:** when the profile says `ask`, whether to capture it; `always` and `never` are already the answer. When it will be captured: the screen to compare, the environment (default: the profile's verification environment), and the before reference that `before-and-after` needs. When the before reference is the current running product, capture the before image right after approval, before any implementation changes it.
+- **Architecture diagram:** when the profile says `ask`, whether the PR description needs one; `always` and `never` are already the answer. When it needs one: its scope.
 
-Cross-model sharing, required gates, mutation testing, pipelines, and the spec location are already answered by the profiles; do not ask them again.
+Cross-model sharing, required gates, mutation testing, pipelines, the spec location, the branch pattern, the implementation level, and the review round limit are already answered by the profile; do not ask them again.
 
 ### Write and approve the spec
 
-Write observable acceptance criteria and choose the lowest useful test level (unit, contract, integration, or UI). Before presenting the plan for approval, run the plan critique below when distinct providers are available and the profiles authorize cross-model sharing. Otherwise note the limitation and continue. Resolve material objections in the plan; model agreement alone does not settle a decision.
+Write observable acceptance criteria and choose the lowest useful test level (unit, contract, integration, or UI). Before presenting the plan for approval, run the plan critique below when distinct providers are available and the profile authorizes cross-model sharing. Otherwise note the limitation and continue. Resolve material objections in the plan; model agreement alone does not settle a decision.
 
 Stop and wait for the owner to approve the plan. Do not implement, edit the target repository, or open a pull request before approval.
 
-After approval, create the story worktree and branch. The spec holds the context pack, the problem (or bug reproduction and root cause), acceptance criteria, test level, out-of-scope items, settled decisions, and the run decisions above. When the repository profile gives a spec location, commit the spec there as `<branch-name>.md`, as the branch's first commit. When the spec location is `null`, keep the spec in the story's working notes outside the repository and put it in the pull request description. Later phases read the spec as the source of truth. When a later phase returns to phase 1, update the spec before continuing.
+After approval, create the story worktree and branch. The spec holds the context pack, the problem (or bug reproduction and root cause), acceptance criteria, test level, out-of-scope items, settled decisions, and the run decisions above. When the profile gives a spec location, commit the spec there as `<branch-name>.md`, as the branch's first commit. When the spec location is `null`, keep the spec in the story's working notes outside the repository and put it in the pull request description. Later phases read the spec as the source of truth. When a later phase returns to phase 1, update the spec before continuing.
 
 ### Plan critique
 
@@ -85,7 +85,7 @@ Run the focused tests against the unchanged implementation. Record the command a
 
 ## 3. Implement
 
-Read and follow `ponytail` at full, in the story worktree. The spec is the task. Stay inside it.
+Read and follow `ponytail` at the profile's implementation level, in the story worktree. The spec is the task. Stay inside it.
 
 If the ladder's first step says an approved part should not exist, return to phase 1 for that decision before continuing.
 
@@ -93,7 +93,7 @@ Turn the valid red test green without weakening or deleting its assertion. If th
 
 ## 4. Required gates and mutation testing
 
-Run every gate the repository profile requires, with the command the profile gives, before any model reviews the change. These checks give the same answer every time; model review does not replace them.
+Run every gate the profile requires for the repository, with the command the profile gives, before any model reviews the change. These checks give the same answer every time; model review does not replace them.
 
 - `test`, `lint`, `typecheck`, `build`: the repository's own commands.
 - `secrets`, `dependencies`, `staticAnalysis`: the profile's scanners. Run `dependencies` when a manifest or lockfile changed.
@@ -105,9 +105,9 @@ Record each command and its result. Report a gate the owner declined in the prof
 
 ## 5. Adversarial code review
 
-Read and follow `adversarial-code-review`. It is the single code review panel and already requires reviewers from distinct model classes. Keep it read-only. Send code to an additional provider only when the profiles authorize cross-model sharing; otherwise say so and review with what is authorized.
+Read and follow `adversarial-code-review`. It is the single code review panel and already requires reviewers from distinct model classes. Keep it read-only. Send code to an additional provider only when the profile authorizes cross-model sharing; otherwise say so and review with what is authorized.
 
-Fix findings that clear its bar, rerun the gates affected by the fix, then review the fix the same way. Continue only when the review reports no remaining findings, or the owner explicitly accepts the ones left open.
+Fix findings that clear its bar, rerun the gates affected by the fix, then review the fix the same way. When review has sent the change back as many times as the profile's review round limit and findings remain, stop and ask the owner how to proceed. Continue only when the review reports no remaining findings, or the owner explicitly accepts the ones left open.
 
 ## 6. Before and after
 
@@ -121,29 +121,29 @@ Run only when the spec says the PR description needs one. Read and follow the lo
 
 Fetch the remote and bring the story branch up to date with the current remote default branch, then rerun the gates the update affects. Create the pull request for the approved, reviewed change. The description links or contains the spec and includes the gate results from phase 4, the review verdict, the before-and-after comparison when captured, and the architecture diagram when drawn.
 
-When the repository profile lists required pipelines, the pull request is not reported ready until each has succeeded on its current head. Report each run's result and link. For a pipeline that only triggers on the default branch, queue it on the story branch when the CI system allows; otherwise tell the owner it has not run.
+When the profile lists required pipelines, the pull request is not reported ready until each has succeeded on its current head. Report each run's result and link. For a pipeline that only triggers on the default branch, queue it on the story branch when the CI system allows; otherwise tell the owner it has not run.
 
-When the repository profile names Greptile as the review bot, read and follow the local `greploop` skill on that pull request. If Greptile turns out not to be configured, report that limitation and continue; do not install an app or open another pull request.
+When the profile names Greptile as the review bot, read and follow the local `greploop` skill on that pull request. If Greptile turns out not to be configured, report that limitation and continue; do not install an app or open another pull request.
 
-On a later turn after that pull request is open, read the tail and the current head. The tail is the new comment, check, or review note. Earlier phases are already finished. A deployment comment, a stale failed check, a duplicate review-bot note, or a green-check notice ends the turn. Continue GrepLoop only when the tail is new Greptile feedback on the current head.
+Before answering or acting on any pull request comment, read the profile's team rules again and follow what they say about review. On a later turn after that pull request is open, read the tail and the current head. The tail is the new comment, check, or review note. Earlier phases are already finished. A deployment comment, a stale failed check, a duplicate review-bot note, or a green-check notice ends the turn. Continue GrepLoop only when the tail is new Greptile feedback on the current head.
 
 ## 9. Retro
 
 Look back over this run for what went wrong or took avoidable effort: a returned phase, an invalid test, a failing gate, a surviving mutant, a review finding, a review-bot cycle, or a correction from the owner. Most runs produce no durable lesson; report that plainly instead of inventing one.
 
-- For a lesson about the target repository, such as a convention, command, or setup gotcha, follow `learnings` and add it to that repository's guidance as its own commit on the PR branch. A gate or command that proved wrong is a repository profile change through `ai-sdlc-setup`.
+- For a lesson about the target repository, such as a convention, command, or setup gotcha, follow `learnings` and add it to that repository's guidance as its own commit on the PR branch. A gate or command that proved wrong is a profile change through `ai-sdlc-setup`.
 - For a lesson about this workflow or one of its skills, follow `self-improvement` and propose the change to the skill that would have prevented the problem. Apply it with the owner's approval, under the rules of the repository that holds the skills.
 
 Report the lessons recorded and where, or that there were none.
 
 ## Gates
 
-- A story starts only on a passing preflight check.
+- A story starts only on a passing preflight check, and every setting the profile answers is used as saved.
 - Each story runs in its own worktree, based on the current remote default branch.
 - Implementation waits for the owner's approval of the plan and the recorded spec.
 - Implementation waits for a valid failing test written by a subagent; a test-authoring or environment blocker is reported, not bypassed silently.
 - Model review waits for every required gate to pass and for killed or explained mutants on changed lines.
-- Private code is not sent to an additional model provider unless the profiles authorize it.
+- Private code is not sent to an additional model provider unless the profile authorizes it.
 - Before-and-after and the architecture diagram run only when the spec says so, and both finish before the pull request opens.
 - The pull request is reported ready only after its required pipelines succeed on the current head.
 - The run ends with a retro report.

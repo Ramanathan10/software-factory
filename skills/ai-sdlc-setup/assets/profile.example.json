@@ -4,5 +4,32 @@
   "crossModelReviewAuthorized": false,
   "sharedResources": ["localhost:5432 (dev Postgres)"],
   "defaultVerificationEnvironment": "localhost",
-  "repos": {}
+  "implementationLevel": "full",
+  "reviewRoundLimit": 3,
+  "beforeAndAfter": "ask",
+  "architectureDiagram": "ask",
+  "workerPermissions": "restricted",
+  "commandCenterPath": "/path/to/software-factory",
+  "adapters": {},
+  "repos": {
+    "owner/name": {
+      "gates": {
+        "test": "npm test",
+        "lint": "npm run lint",
+        "typecheck": "npx tsc --noEmit",
+        "build": "npm run build",
+        "secrets": "gitleaks git --no-banner",
+        "dependencies": null,
+        "staticAnalysis": null,
+        "mutation": "npx stryker run --mutate {files}"
+      },
+      "branchPattern": "story/{id}-{slug}",
+      "worktreeRoot": "/path/to/name-worktrees",
+      "teamRules": ["https://example.com/team-handbook", "docs/review-guide.md", "Reply to every pull request comment before resolving it."],
+      "readiness": { "tracker": "github", "checklist": ["prMergedToTarget", "prLinked", "userConfirm"] },
+      "requiredPipelines": [],
+      "reviewBot": "none",
+      "specDir": "docs/specs"
+    }
+  }
 }

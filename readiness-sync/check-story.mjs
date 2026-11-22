@@ -1,60 +1,49 @@
-// Read-only: node check-story.mjs <adoId|PCS-id> [--profile <file>] [--tests-pass]  (profile: readiness-profile.json in the AI SDLC home)
-// Reads one story through the az CLI, builds a snapshot, prints evaluate() output as JSON. Never writes to ADO.
-import { execFileSync } from 'node:child_process';
+// Read-only readiness check for one story. Never writes to a tracker.
+//   node check-story.mjs <story id> --repo <owner/name> [--tests-pass] [--snapshot]
+// The repository's `readiness` section of the AI SDLC profile says which tracker to read and which checks
+// apply. With --snapshot the story is not read here: a snapshot is taken from stdin, which is how a tracker
+// that only the agent's own tools can read is checked. The story id may carry a prefix, such as ABC-123.
 import { readFileSync } from 'node:fs';
-import { evaluate } from './engine.mjs';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
+import { evaluate, withDefaults } from './engine.mjs';
+import { trackers } from './trackers.mjs';
 
-const az = (...args) => JSON.parse(execFileSync('az', [...args.map(a => `"${a}"`), '-o', 'json'], { shell: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }));
-const id = Number(String(process.argv[2] ?? '').replace(/^PCS-/, ''));
-if (!id) throw new Error('Usage: node check-story.mjs <adoId|PCS-id> [--profile <file>] [--tests-pass]  (profile: readiness-profile.json in the AI SDLC home)');
-const flag = name => process.argv.indexOf(name);
-const profile = JSON.parse(readFileSync(flag('--profile') > 0 ? process.argv[flag('--profile') + 1] : new URL('./profiles/default.json', import.meta.url), 'utf8'));
-const { organization, project } = profile.ado;
-const org = `https://dev.azure.com/${organization}`;
-
-// Identities are compared by uniqueName (UPN), which is stable; display names are only a fallback for lookups.
-const user = JSON.parse(execFileSync('az', ['account', 'show', '--query', 'user.name', '-o', 'json'], { shell: true, encoding: 'utf8' }));
-const names = new Map();
-const who = identity => {
-  if (!identity) return undefined;
-  const key = identity.uniqueName ?? identity.displayName;
-  names.set(String(identity.displayName).toLowerCase(), key);
-  return key;
-};
-
-const item = wid => az('boards', 'work-item', 'show', '--id', wid, '--org', org);
-const relations = az('boards', 'work-item', 'show', '--id', id, '--expand', 'relations', '--org', org).relations ?? [];
-const story = item(id);
-const tail = url => url.split(/[/%]/).filter(Boolean).pop();
-const tasks = relations.filter(r => r.rel === 'System.LinkTypes.Hierarchy-Forward').map(r => {
-  const t = item(tail(r.url));
-  return { id: t.id, title: t.fields['System.Title'], state: t.fields['System.State'], assignee: who(t.fields['System.AssignedTo']) };
-});
-
-const prs = relations.filter(r => r.url.includes('/Git/PullRequestId/')).map(r => {
-  const [, repo, prId] = decodeURIComponent(r.url.split('/Git/PullRequestId/')[1]).split('/');
-  const pr = az('repos', 'pr', 'show', '--id', prId, '--org', org);
-  const threads = az('devops', 'invoke', '--area', 'git', '--resource', 'pullRequestThreads', '--route-parameters', `project=${project}`, `repositoryId=${repo}`, `pullRequestId=${prId}`, '--org', org, '--api-version', '7.1').value ?? [];
-  const reviewers = pr.reviewers.map(v => ({ name: who(v), vote: v.vote, isGroup: Boolean(v.isContainer) }));
-  // Commenter-only reviewers: people with a text comment who are not already in the reviewer list.
-  for (const thread of threads) for (const c of thread.comments ?? []) {
-    if (c.commentType === 'system') continue;
-    const name = who(c.author);
-    const existing = reviewers.find(v => v.name?.toLowerCase() === name?.toLowerCase());
-    if (existing) existing.commented = true; else reviewers.push({ name, vote: 0, commented: true });
+// Resolves to what was found, or to what the caller must do next; `problem` is set when nothing can be checked.
+export function checkStory({ id, repo, snapshot, testsPass }, { profile, table = trackers, run } = {}) {
+  const settings = withDefaults({ repository: repo, ...profile?.repos?.[repo]?.readiness });
+  if (settings.tracker === 'none') return { skipped: `No tracker is set for ${repo}, so there is no readiness check.` };
+  const tracker = table[settings.tracker];
+  if (!tracker) return { problem: `"${settings.tracker}" is not a known tracker. Known: ${Object.keys(table).join(', ')}.` };
+  const missing = tracker.needs.filter(name => !settings[name]);
+  if (missing.length) return { problem: `readiness.${missing.join(' and readiness.')} must be set for ${settings.tracker}. Run the ai-sdlc-setup skill.` };
+  if (!snapshot) {
+    if (tracker.reads === 'in-app') return { inApp: true, next: tracker.supply + ' Then run this again with --snapshot and that JSON on stdin.' };
+    snapshot = tracker.read(id, settings, run);
   }
-  return { id: pr.pullRequestId, status: pr.status, target: pr.targetRefName.replace('refs/heads/', ''), linked: true, reviewers };
-});
+  if (testsPass) snapshot = { ...snapshot, testsPass: true };
+  return { tracker: settings.tracker, story: snapshot.story.id, ...evaluate(snapshot, settings) };
+}
 
-// Profile handoff assignee may be a display name; resolve to uniqueName when that person appears on the story.
-const handoff = profile.doneDone?.handoffAssignee;
-if (handoff && names.has(handoff.toLowerCase())) profile.doneDone.handoffAssignee = names.get(handoff.toLowerCase());
-
-const effort = story.fields[profile.workItems.effortField];
-const snapshot = {
-  user,
-  story: { id, assignee: who(story.fields['System.AssignedTo']), effort: effort ?? profile.workItems.unestimatedValue },
-  tasks, prs,
-  testsPass: flag('--tests-pass') > 0 ? true : undefined
-};
-console.log(JSON.stringify({ state: story.fields['System.State'], snapshot, ...evaluate(snapshot, profile) }, null, 1));
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  const args = process.argv.slice(2);
+  const value = name => (args.includes(name) ? args[args.indexOf(name) + 1] : undefined);
+  const id = Number(String(args[0] ?? '').replace(/^[A-Za-z][A-Za-z0-9]*-/, ''));
+  const repo = value('--repo');
+  if (!id || !repo) {
+    console.error('Usage: node check-story.mjs <story id> --repo <owner/name> [--tests-pass] [--snapshot]   (--snapshot reads a snapshot from stdin)');
+    process.exit(2);
+  }
+  let profile = {};
+  try { profile = JSON.parse(readFileSync(join(process.env.AI_SDLC_HOME || join(homedir(), '.ai-sdlc'), 'profile.json'), 'utf8')); } catch { /* no profile: no tracker */ }
+  try {
+    const snapshot = args.includes('--snapshot') ? JSON.parse(readFileSync(0, 'utf8')) : undefined;
+    const result = checkStory({ id, repo, snapshot, testsPass: args.includes('--tests-pass') }, { profile });
+    console.log(JSON.stringify(result, null, 1));
+    process.exitCode = result.problem ? 1 : 0;
+  } catch (error) {
+    console.error(`The story could not be read: ${error.message}`);
+    process.exitCode = 1;
+  }
+}

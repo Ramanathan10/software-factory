@@ -1,7 +1,7 @@
 #!/usr/bin/env node
-// AI SDLC preflight: detect machine and repository facts, and check the saved profiles.
+// AI SDLC preflight: detect machine and repository facts, and check the saved profile.
 //   node preflight.mjs detect [repoDir]   facts for the setup interview
-//   node preflight.mjs check  [repoDir]   validate profiles and gate tools; exit 1 on problems
+//   node preflight.mjs check  [repoDir]   validate the profile and gate tools; exit 1 on problems
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync, readdirSync, realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
@@ -15,9 +15,8 @@ export const profileHome = (env = process.env) => env.AI_SDLC_HOME || join(homed
 
 const typeOf = value => (value === null ? 'null' : Array.isArray(value) ? 'array' : typeof value);
 
-// Validates the JSON Schema subset the profile schemas use.
+// Validates the JSON Schema subset the profile schema uses.
 export function validate(value, rules, at = 'profile') {
-  if (rules.$ref) rules = schema(rules.$ref);
   if (rules.enum) return rules.enum.includes(value) ? [] : [`${at} must be one of ${JSON.stringify(rules.enum)}`];
   const types = [rules.type ?? []].flat();
   if (types.length && !types.includes(typeOf(value))) return [`${at} must be ${types.join(' or ')}`];
@@ -71,7 +70,7 @@ export function loadProfiles(repo, env = process.env) {
   const slug = repoSlug(root);
   const machinePath = join(profileHome(env), 'profile.json');
   const machine = readJson(machinePath, problems, 'Machine profile');
-  // Each person keeps their own checks for a repository, so its profile lives in their machine profile, never in the repository.
+  // Each person keeps their own checks for a repository, so its section lives in their own profile, never in the repository.
   const repoProfile = machine?.repos?.[slug];
   const source = repoProfile ? `${machinePath} repos["${slug}"]` : null;
   return { root, slug, machinePath, machine, repoProfile, source, problems };
@@ -83,6 +82,44 @@ function gateProblem(name, command, root, env) {
   const local = /[\\/]/.test(tool);
   const found = local ? existsSync(isAbsolute(tool) ? tool : join(root, tool)) : onPath(tool, env);
   return found ? null : `gate ${name} needs "${tool}", which was not found${local ? ' in the repository' : ' on PATH'}`;
+}
+
+// The files Jarvis runs, by where each sits inside the folder that holds the Command Center.
+const commandCenterFiles = {
+  console: 'mission-console/jarvis.mjs',
+  harnesses: 'adapters/harnesses.mjs',
+  launcher: 'command-center/serve.mjs',
+  reference: 'mission-console/README.md',
+  readiness: 'readiness-sync/check-story.mjs',
+};
+const holdsCommandCenter = folder => Object.values(commandCenterFiles).every(file => existsSync(join(folder, file)));
+
+// Where the Command Center is, worked out from this script's real location: the checkout when the skills
+// are linked from it, or the extension folder beside the skills when a harness was given copies.
+export function findCommandCenter(script = realpathSync(fileURLToPath(import.meta.url))) {
+  const skills = resolve(script, '../../..');
+  return [resolve(skills, '..'), resolve(skills, '../extensions/ai-sdlc-console')].find(holdsCommandCenter) ?? null;
+}
+
+// Returns what is wrong with the saved Command Center folder, or null when Jarvis can run its files from it.
+function commandCenterProblem(saved, found) {
+  if (saved && holdsCommandCenter(saved)) return null;
+  const fix = found
+    ? `Set it to "${found}", where the Command Center is now.`
+    : 'Run "node install.mjs" from the software-factory checkout, then the ai-sdlc-setup skill.';
+  return saved ? `commandCenterPath "${saved}" does not hold the Command Center. ${fix}` : `profile.commandCenterPath is not set. ${fix}`;
+}
+
+export const DEFAULT_BRANCH_PATTERN = 'story/{id}-{slug}';
+
+// Returns what is wrong with a branch pattern, or null when a story branch can be named from it.
+export function branchPatternProblem(pattern) {
+  for (const placeholder of ['{id}', '{slug}']) if (!pattern.includes(placeholder)) return `must contain ${placeholder}`;
+  const fixed = pattern.replaceAll('{id}', '').replaceAll('{slug}', '');
+  if (/[{}]/.test(fixed)) return 'may use only the {id} and {slug} placeholders';
+  // What git refuses in a branch name: https://git-scm.com/docs/git-check-ref-format
+  if (/[\s~^:?*[\\]|\.\.|\/\/|^[/-]|[/.]$/.test(pattern)) return 'is not a valid git branch name';
+  return null;
 }
 
 const list = dir => (existsSync(dir) ? readdirSync(dir) : []);
@@ -130,12 +167,18 @@ export function nextSteps({ problems, warnings }) {
   ];
 }
 
-export function check(repo = '.', env = process.env) {
+export function check(repo = '.', env = process.env, found = findCommandCenter()) {
   const { root, slug, machinePath, machine, repoProfile, source, problems } = loadProfiles(repo, env);
-  if (!machine && !problems.length) problems.push(`No machine profile at ${machinePath}. Run the ai-sdlc-setup skill.`);
-  if (machine) problems.push(...validate(machine, schema('profile.schema.json'), 'machine profile'));
-  // A repository profile is validated with the machine profile that holds it.
-  if (!repoProfile) problems.push(`No repository profile for ${slug} in ${machinePath}. Run the ai-sdlc-setup skill.`);
+  if (!machine && !problems.length) problems.push(`No profile at ${machinePath}. Run the ai-sdlc-setup skill.`);
+  if (machine) problems.push(...validate(machine, schema('profile.schema.json')));
+  const centerPath = typeof machine?.commandCenterPath === 'string' ? machine.commandCenterPath : null;
+  const centerProblem = machine ? commandCenterProblem(centerPath, found) : null;
+  if (centerProblem) problems.push(centerProblem);
+  // A repository's section is validated with the profile that holds it.
+  if (!repoProfile) problems.push(`No repository section for ${slug} in ${machinePath}. Run the ai-sdlc-setup skill.`);
+  const branchPattern = repoProfile?.branchPattern ?? DEFAULT_BRANCH_PATTERN;
+  const patternProblem = typeof branchPattern === 'string' && branchPatternProblem(branchPattern);
+  if (patternProblem) problems.push(`repos.${slug}.branchPattern ${patternProblem}`);
 
   const gates = {};
   const skippedGates = [];
@@ -169,8 +212,22 @@ export function check(repo = '.', env = process.env) {
     crossModelReviewAuthorized: machine?.crossModelReviewAuthorized === true && repoProfile?.crossModelReviewAuthorized !== false,
     sharedResources: machine?.sharedResources ?? [],
     defaultVerificationEnvironment: machine?.defaultVerificationEnvironment ?? '',
+    implementationLevel: machine?.implementationLevel ?? 'full',
+    reviewRoundLimit: machine?.reviewRoundLimit ?? 3,
+    beforeAndAfter: machine?.beforeAndAfter ?? 'ask',
+    architectureDiagram: machine?.architectureDiagram ?? 'ask',
+    workerPermissions: machine?.workerPermissions ?? 'restricted',
+    // The full path of each file Jarvis runs, or null until the saved folder holds them.
+    commandCenter: machine && !centerProblem
+      ? { path: centerPath, ...Object.fromEntries(Object.entries(commandCenterFiles).map(([name, file]) => [name, join(centerPath, file)])) }
+      : null,
+    adapters: machine?.adapters ?? {},
     repo: {
-      root, slug, profileSource: source, gates, skippedGates,
+      root, slug, profileSource: source, gates, skippedGates, branchPattern,
+      // Each story's worktree goes in <worktreeRoot>/<branch>; by default a folder beside the repository.
+      worktreeRoot: repoProfile?.worktreeRoot ?? resolve(root, '..', basename(root) + '-worktrees'),
+      teamRules: repoProfile?.teamRules ?? [],
+      readiness: repoProfile?.readiness ?? { tracker: 'none' },
       requiredPipelines: repoProfile?.requiredPipelines ?? [],
       reviewBot: repoProfile?.reviewBot ?? 'none',
       // Absent means the default location; an explicit null keeps specs out of the repository.
@@ -191,6 +248,8 @@ export function detect(repo = '.', env = process.env) {
     node: process.version,
     tools,
     components: components(root, env),
+    // Saved as the profile's commandCenterPath without asking; null when the files are not installed.
+    commandCenterPath: findCommandCenter(),
     profiles: { home: profileHome(env), machineProfile: machinePath, machineProfileExists: Boolean(machine), repoProfileSource: source },
     repo: {
       root, slug,

@@ -9,7 +9,7 @@
 
 ## Capabilities and findings
 
-- The upstream skill directs `npx hyperframes` use and can install or refresh companion skills. Its CLI and media workflow may use external services, paid plans, or supplied credentials. A bundled image-location script reads `GEMINI_API_KEY` and sends image data to Google's API. Several templates load remote fonts or CDN JavaScript. These are unnecessary for Ram's explainer-video routing and are excluded here.
+- The upstream skill directs `npx hyperframes` use and can install or refresh companion skills. Its CLI and media workflow may use external services, paid plans, or supplied credentials. A bundled image-location script reads `GEMINI_API_KEY` and sends image data to Google's API. Several templates load remote fonts or CDN JavaScript. These are unnecessary for the owner's explainer-video routing and are excluded here.
 - The local edition reads the user's subject and local project, writes local video compositions and rendered output only after a video request, and uses an already available CLI. It has no executable helpers, network-loading templates, automatic updates, telemetry, or credential access. The HyperFrames engine itself remains a separate dependency and was not vetted or installed by this import.
 - The advisory scanner reported 0 high and 44 medium findings in the upstream folder, largely external-mutation and network markers. These are not proof of malicious behavior, but they justify excluding the optional scripts and templates. Registry popularity and audit badges were not treated as a safety guarantee.
 

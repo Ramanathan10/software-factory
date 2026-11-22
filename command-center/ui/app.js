@@ -1,3 +1,4 @@
+import { newlyWaiting, titleFor } from './attention.js';
 import { renderMarkdown } from './markdown.js';
 
 const $ = id => document.getElementById(id);
@@ -190,9 +191,29 @@ function renderStats() {
   const open = stories.filter(story => story.phase !== 'closed');
   $('stat-active').textContent = open.length;
   $('stat-agents').textContent = new Set(open.filter(isBusy).map(ownerOf)).size;
-  $('stat-waiting').textContent = open.filter(waitingOnYou).length;
+  const waiting = open.filter(waitingOnYou);
+  $('stat-waiting').textContent = waiting.length;
   $('stat-shipped').textContent = stories.length - open.length;
-  $('stat-waiting').parentElement.classList.toggle('hot', open.some(waitingOnYou));
+  $('stat-waiting').parentElement.classList.toggle('hot', waiting.length > 0);
+  document.title = titleFor(waiting.length);
+  announce(waiting);
+}
+
+// Tells the owner, once, about each thing that starts waiting on them, even when this tab is in the
+// background. A new question on a story that was already waiting counts as a new thing.
+let announced = null;
+function announce(waiting) {
+  const { seen, fresh } = newlyWaiting(announced, waiting.map(story => {
+    const questions = openQuestions(story);
+    const needs = questions[0]?.prompt ?? (story.phase === 'approval' ? 'The plan is ready for your approval.' : 'A decision is waiting on you.');
+    return { key: [story.id, story.phase, ...questions.map(question => question.id)].join('|'), story, needs };
+  }));
+  announced = seen;
+  if (globalThis.Notification?.permission !== 'granted') return;
+  for (const { story, needs } of fresh) {
+    const notice = new Notification(story.id + ' is waiting on you', { body: story.title + '\n' + needs, tag: story.id });
+    notice.onclick = () => { window.focus(); setFilter('approver'); };
+  }
 }
 
 function renderCrew() {
@@ -597,7 +618,7 @@ function openDetail(id) {
       row('Harness', story.harness), row('Branch', story.branch), row('Worktree', story.worktree),
       row('Pipeline run', story.pipeline && el('a', { href: story.pipeline, target: '_blank', rel: 'noopener' }, story.pipeline)),
       row('Pull request', story.pr && el('a', { href: story.pr, target: '_blank', rel: 'noopener' }, story.pr)),
-      row('Review round', story.reviewRounds ? Math.min(story.reviewRounds + 1, 3) + ' of 3' : null),
+      row('Review round', story.reviewRounds ? String(story.reviewRounds + 1) : null),
       row('Blocked', story.blocked)),
     hasDesign(story) && el('p', {}, el('button', { type: 'button', class: 'primary', onclick: () => openDesign(id) }, 'Read approved plan and design')),
     story.plan && el('section', {}, el('h3', {}, 'Plan'), md(story.plan)),
@@ -664,6 +685,12 @@ meta = await (await fetch('/api/meta')).json();
 if (!['lanes', 'agents', 'track'].includes(view)) view = 'lanes';
 for (const button of document.querySelectorAll('.views button')) button.addEventListener('click', () => setView(button.dataset.view));
 $('stat-waiting-button').addEventListener('click', () => setFilter('approver'));
+// The browser only allows asking for notification permission from a click, so offer a button until it is answered.
+$('notify').hidden = globalThis.Notification?.permission !== 'default';
+$('notify').addEventListener('click', async () => {
+  await Notification.requestPermission();
+  $('notify').hidden = true;
+});
 document.addEventListener('keydown', event => {
   if (event.key === 'Escape' && filterRole && !$('detail').open) setFilter(filterRole);
 });

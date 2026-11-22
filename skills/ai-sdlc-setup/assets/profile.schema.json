@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "AI SDLC machine profile",
-  "description": "Facts about one person on one machine. Lives at profile.json in the AI SDLC home (AI_SDLC_HOME, default ~/.ai-sdlc). Never committed. Holds names and settings only, never credentials.",
+  "title": "AI SDLC profile",
+  "description": "One person's way of working on one machine, with a section for each repository they run stories in. Lives at profile.json in the AI SDLC home (AI_SDLC_HOME, default ~/.ai-sdlc). Never committed and never written into a repository. Holds names, commands, and settings only, never credentials.",
   "type": "object",
   "required": ["schemaVersion", "ownerName", "crossModelReviewAuthorized"],
   "additionalProperties": false,
@@ -12,10 +12,82 @@
     "sharedResources": { "description": "Local services, databases, ports, or hosts that parallel stories must not fight over.", "type": "array", "items": { "type": "string" } },
     "defaultVerificationEnvironment": { "description": "Where before-and-after and live tests run by default.", "type": "string" },
     "declinedComponents": { "description": "Optional components the owner chose not to install, such as hyperframes or ffmpeg, so the check stops raising them.", "type": "array", "items": { "type": "string", "minLength": 1 } },
-    "repos": {
-      "description": "The owner's profile for each repository, keyed by owner/name.",
+    "implementationLevel": { "description": "The ponytail level the implementation phase uses. Default: full.", "enum": ["lite", "full", "ultra"] },
+    "reviewRoundLimit": { "description": "How many times review may return a story to build before the owner is asked how to proceed. Default: 3.", "enum": [1, 2, 3, 4, 5] },
+    "beforeAndAfter": { "description": "Whether a story captures a before-and-after comparison: always, never, or ask during planning. Default: ask.", "enum": ["always", "never", "ask"] },
+    "architectureDiagram": { "description": "Whether the pull request description gets an architecture diagram: always, never, or ask during planning. Default: ask.", "enum": ["always", "never", "ask"] },
+    "commandCenterPath": { "description": "The folder that holds the Command Center files Jarvis runs: the software-factory checkout, or the extension folder for a harness that needs copies. Setup saves what detect reports; the check refuses a folder that no longer holds them.", "type": "string", "minLength": 1 },
+    "workerPermissions": { "description": "What a story worker started from the command line may do without asking. restricted: edit files in its worktree and run git, gh, node, and the programs the gates use. unrestricted: run anything. Default: restricted.", "enum": ["restricted", "unrestricted"] },
+    "adapters": {
+      "description": "Answers that only one agent harness needs, keyed by adapter folder name. Each adapter's setup document defines its own section.",
       "type": "object",
-      "additionalProperties": { "$ref": "repo-profile.schema.json" }
+      "additionalProperties": { "type": "object" }
+    },
+    "repos": {
+      "description": "The owner's settings for each repository, keyed by owner/name.",
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["gates"],
+        "additionalProperties": false,
+        "properties": {
+          "schemaVersion": { "description": "Accepted from profiles saved before the two schemas were merged.", "enum": [1] },
+          "gates": {
+            "description": "Checks that must pass before a pull request opens. A command string makes the gate required; null means the owner decided it is not required. {files} is replaced with the changed production files.",
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "test": { "type": ["string", "null"] },
+              "lint": { "type": ["string", "null"] },
+              "typecheck": { "type": ["string", "null"] },
+              "build": { "type": ["string", "null"] },
+              "secrets": { "type": ["string", "null"] },
+              "dependencies": { "type": ["string", "null"] },
+              "staticAnalysis": { "type": ["string", "null"] },
+              "mutation": { "type": ["string", "null"] }
+            }
+          },
+          "branchPattern": { "description": "How a story's branch is named. {id} is replaced with the work item id and {slug} with a short form of its title. Default: story/{id}-{slug}.", "type": "string", "minLength": 1 },
+          "worktreeRoot": { "description": "The folder each story's worktree is created in, as <worktreeRoot>/<branch>. Default: a folder named <repository>-worktrees beside the repository.", "type": "string", "minLength": 1 },
+          "teamRules": { "description": "How this repository's team works, for the agent to follow: each entry is a web address, a file path, or an instruction written out. Read at planning and again when addressing pull request comments.", "type": "array", "items": { "type": "string", "minLength": 1 } },
+          "readiness": {
+            "description": "The read-only check that a story is finished in the team's work tracker. Leave out, or set tracker to none, for a repository without one.",
+            "type": "object",
+            "required": ["tracker"],
+            "additionalProperties": false,
+            "properties": {
+              "tracker": { "description": "Where the repository's stories are tracked.", "enum": ["none", "azure-devops", "github", "linear"] },
+              "organization": { "description": "Azure DevOps organization name.", "type": "string" },
+              "project": { "description": "Azure DevOps project name.", "type": "string" },
+              "effortField": { "description": "Azure DevOps field that holds a story's effort. Default: Microsoft.VSTS.Scheduling.StoryPoints.", "type": "string" },
+              "unestimatedValue": { "description": "The effort value that means not estimated yet. Default: null.", "type": ["number", "null"] },
+              "closedTaskStates": { "description": "Task states that count as finished. Default: Closed, Done.", "type": "array", "items": { "type": "string", "minLength": 1 } },
+              "targetBranch": { "description": "The branch a story's pull requests must be merged into. Default: main.", "type": "string", "minLength": 1 },
+              "checklist": { "description": "The checks that apply. Default: prMergedToTarget, prLinked, userConfirm.", "type": "array", "items": { "enum": ["testsPass", "tasksClosed", "prMergedToTarget", "prLinked", "effortSet", "userConfirm"] } },
+              "handoffTaskTitle": { "description": "Title of the task that records the story was handed off for final review, if the team uses one.", "type": "string" },
+              "handoffAssignee": { "description": "Who that handoff task is assigned to.", "type": "string" },
+              "phases": { "description": "Console phases at which Jarvis runs the check. Default: ci, merge, closed.", "type": "array", "items": { "type": "string", "minLength": 1 } }
+            }
+          },
+          "requiredPipelines": {
+            "description": "CI pipelines that must succeed on the pull request head before it is reported ready.",
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["name"],
+              "additionalProperties": false,
+              "properties": {
+                "name": { "type": "string", "minLength": 1 },
+                "url": { "type": "string" },
+                "triggersOnlyOnDefaultBranch": { "type": "boolean" }
+              }
+            }
+          },
+          "reviewBot": { "description": "Automated PR reviewer to iterate with after the pull request opens.", "enum": ["greptile", "none"] },
+          "specDir": { "description": "Where the approved spec is committed. null keeps the spec out of the repository and puts it in the pull request description instead.", "type": ["string", "null"] },
+          "crossModelReviewAuthorized": { "description": "Set false to forbid sending this repository's plans and code to additional model providers, whatever the top-level setting says.", "type": "boolean" }
+        }
+      }
     }
   }
 }

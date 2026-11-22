@@ -18,6 +18,7 @@
       <button type="button" class="warn" id="stat-waiting-button" title="Open your inbox"><strong id="stat-waiting">0</strong><span>waiting on you</span></button>
       <div><strong id="stat-shipped">0</strong><span>shipped</span></div>
     </div>
+    <button type="button" class="link" id="notify" title="Show a desktop notification when a story starts waiting on you" hidden>Notify me</button>
     <time id="clock"></time>
   </header>
 
@@ -35,7 +36,7 @@
         <div class="filter" id="filter" hidden></div>
       </div>
       <div class="board" id="board" aria-label="Where every story is"></div>
-      <p class="empty" id="empty" hidden>No stories yet. Tell Jarvis what to build and it will appear here.</p>
+      <p class="empty" id="empty" hidden>No stories yet. In your agent, say "Be Jarvis. Run AI SDLC." and what to build. The first run asks the setup questions once; the story then appears here.</p>
     </section>
     <aside class="feed" id="feed-panel">
       <h2><span class="feed-title">Live feed <span id="feed-rate"></span></span>

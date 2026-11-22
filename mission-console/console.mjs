@@ -221,7 +221,7 @@ function renderStory(story) {
     'tag' + (state.decision || state.alert ? ' decision' : '') + (story.phase === 'closed' ? ' closed' : '')));
   const harness = story.harness ?? (story.phase === 'closed' ? 'Harness not recorded' : 'Harness selection required');
   ui('story-status').append(node('span', ' · ' + harness, 'muted'));
-  const round = ['review', 'building'].includes(story.phase) && story.reviewRounds ? ' · Review round ' + Math.min(story.reviewRounds + 1, 3) + ' of 3' : '';
+  const round = ['review', 'building'].includes(story.phase) && story.reviewRounds ? ' · Review round ' + (story.reviewRounds + 1) : '';
   ui('story-skills').textContent = roles[state.owner].skills.join(' · ') + round;
   ui('current-assignment').textContent = story.worker
     ? roleLabel(roles[story.worker.role] ? story.worker.role : phases[story.phase][0]) +

@@ -1,15 +1,17 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, rmdirSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, rmdirSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { check, componentSeverity, components, detect, nextSteps, validate } from './preflight.mjs';
+import { branchPatternProblem, check, componentSeverity, components, detect, findCommandCenter, nextSteps, validate } from './preflight.mjs';
 
 const asset = name => JSON.parse(readFileSync(fileURLToPath(new URL(`../assets/${name}`, import.meta.url)), 'utf8'));
-const machine = { schemaVersion: 1, ownerName: 'Sam', crossModelReviewAuthorized: true };
-const repoProfile = gates => ({ schemaVersion: 1, gates });
+// This checkout holds the Command Center, so it is the folder a profile saved on this machine would name.
+const checkout = findCommandCenter();
+const machine = { schemaVersion: 1, ownerName: 'Sam', crossModelReviewAuthorized: true, commandCenterPath: checkout };
+const repoProfile = gates => ({ gates });
 
 function workspace(t, { machineProfile, repoEntry } = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'ai-sdlc-preflight-'));
@@ -25,9 +27,8 @@ function workspace(t, { machineProfile, repoEntry } = {}) {
   return { repo, env: { ...process.env, AI_SDLC_HOME: home } };
 }
 
-test('example profiles satisfy their schemas', () => {
+test('the example profile satisfies the schema', () => {
   assert.deepEqual(validate(asset('profile.example.json'), asset('profile.schema.json')), []);
-  assert.deepEqual(validate(asset('repo-profile.example.json'), asset('repo-profile.schema.json')), []);
 });
 
 test('validate reports missing, mistyped, and unknown fields', () => {
@@ -43,8 +44,8 @@ test('check sends a machine without profiles to setup', t => {
   const { repo, env } = workspace(t);
   const result = check(repo, env);
   assert.equal(result.ok, false);
-  assert.match(result.problems.join('\n'), /No machine profile/);
-  assert.match(result.problems.join('\n'), /No repository profile for acme\/widgets/);
+  assert.match(result.problems.join('\n'), /No profile at/);
+  assert.match(result.problems.join('\n'), /No repository section for acme\/widgets/);
 });
 
 test('check passes with a repository profile in the machine profile and reports skipped gates', t => {
@@ -56,12 +57,58 @@ test('check passes with a repository profile in the machine profile and reports 
   assert.deepEqual(result.repo.skippedGates, ['mutation']);
 });
 
+test('check reports the way-of-working settings, with defaults for the ones not saved', t => {
+  const defaults = workspace(t, { machineProfile: machine, repoEntry: repoProfile({}) });
+  const byDefault = check(defaults.repo, defaults.env);
+  assert.deepEqual(
+    [byDefault.implementationLevel, byDefault.reviewRoundLimit, byDefault.beforeAndAfter, byDefault.architectureDiagram, byDefault.workerPermissions, byDefault.repo.branchPattern],
+    ['full', 3, 'ask', 'ask', 'restricted', 'story/{id}-{slug}']);
+  assert.deepEqual(byDefault.adapters, {});
+
+  const saved = workspace(t, {
+    machineProfile: { ...machine, implementationLevel: 'lite', reviewRoundLimit: 2, beforeAndAfter: 'never', architectureDiagram: 'always', workerPermissions: 'unrestricted', adapters: { copilot: { repoAliases: {} } } },
+    repoEntry: { ...repoProfile({}), branchPattern: 'feature/{id}-{slug}', worktreeRoot: '/work/trees' },
+  });
+  const result = check(saved.repo, saved.env);
+  assert.deepEqual(result.problems, []);
+  assert.deepEqual(
+    [result.implementationLevel, result.reviewRoundLimit, result.beforeAndAfter, result.architectureDiagram, result.workerPermissions, result.repo.branchPattern],
+    ['lite', 2, 'never', 'always', 'unrestricted', 'feature/{id}-{slug}']);
+  assert.deepEqual(result.adapters, { copilot: { repoAliases: {} } });
+  assert.equal(result.repo.worktreeRoot, '/work/trees');
+  // Not saved: a folder named for the repository, beside it.
+  assert.equal(byDefault.repo.worktreeRoot, join(byDefault.repo.root, '..', 'repo-worktrees'));
+});
+
+test('check rejects a setting outside its fixed choices', t => {
+  const { repo, env } = workspace(t, { machineProfile: { ...machine, implementationLevel: 'careful', reviewRoundLimit: 9 }, repoEntry: repoProfile({}) });
+  const problems = check(repo, env).problems.join('\n');
+  assert.match(problems, /implementationLevel must be one of/);
+  assert.match(problems, /reviewRoundLimit must be one of/);
+});
+
+test('a branch pattern needs both placeholders, no others, and a name git accepts', t => {
+  for (const pattern of ['story/{id}-{slug}', 'pbi/{id}-{slug}', '{slug}_{id}', 'team/feature/{id}/{slug}']) {
+    assert.equal(branchPatternProblem(pattern), null, pattern);
+  }
+  assert.match(branchPatternProblem('story/{slug}'), /must contain \{id\}/);
+  assert.match(branchPatternProblem('story/{id}'), /must contain \{slug\}/);
+  assert.match(branchPatternProblem('{user}/{id}-{slug}'), /only the \{id\} and \{slug\}/);
+  for (const pattern of ['my story/{id}-{slug}', '/{id}-{slug}', '{id}-{slug}/', 'a..b/{id}-{slug}', 'a//{id}-{slug}', 'a:{id}-{slug}', '-{id}-{slug}', '{id}-{slug}.']) {
+    assert.match(branchPatternProblem(pattern), /not a valid git branch name/, pattern);
+  }
+  const { repo, env } = workspace(t, { machineProfile: machine, repoEntry: { ...repoProfile({}), branchPattern: 'story/{slug}' } });
+  const result = check(repo, env);
+  assert.equal(result.ok, false);
+  assert.match(result.problems.join('\n'), /repos\.acme\/widgets\.branchPattern must contain \{id\}/);
+});
+
 test('a profile file inside the repository is not read', t => {
   const { repo, env } = workspace(t, { machineProfile: machine });
   writeFileSync(join(repo, '.ai-sdlc.json'), JSON.stringify(repoProfile({ test: 'git --version' })));
   const result = check(repo, env);
   assert.deepEqual(result.repo.gates, {});
-  assert.match(result.problems.join('\n'), /No repository profile for acme\/widgets/);
+  assert.match(result.problems.join('\n'), /No repository section for acme\/widgets/);
 });
 
 test('check reports an invalid repository profile', t => {
@@ -161,4 +208,51 @@ test('the CLI runs when the skill folder is reached through a link', t => {
     if (process.platform === 'win32') rmdirSync(link); else unlinkSync(link);
   }
   assert.equal(JSON.parse(output).repo.slug, 'acme/widgets');
+  // The linked script still finds the checkout it really lives in.
+  assert.equal(JSON.parse(output).commandCenterPath, checkout);
+});
+
+test('check gives the full path of each Command Center file from the saved folder', t => {
+  const { repo, env } = workspace(t, { machineProfile: machine, repoEntry: repoProfile({}) });
+  const { commandCenter, problems } = check(repo, env);
+  assert.deepEqual(problems, []);
+  assert.equal(commandCenter.path, checkout);
+  assert.deepEqual(Object.keys(commandCenter), ['path', 'console', 'harnesses', 'launcher', 'reference', 'readiness']);
+  for (const name of ['console', 'harnesses', 'launcher', 'reference', 'readiness']) assert.ok(existsSync(commandCenter[name]), name);
+  assert.equal(realpathSync(commandCenter.console), realpathSync(join(checkout, 'mission-console', 'jarvis.mjs')));
+});
+
+test('check refuses a saved folder that no longer holds the Command Center, and names where it is now', t => {
+  const moved = workspace(t, { machineProfile: { ...machine, commandCenterPath: join(tmpdir(), 'old-checkout-that-moved') }, repoEntry: repoProfile({}) });
+  const result = check(moved.repo, moved.env);
+  assert.equal(result.ok, false);
+  assert.equal(result.commandCenter, null);
+  assert.match(result.problems.join('\n'), /old-checkout-that-moved" does not hold the Command Center\. Set it to ".+", where the Command Center is now\./);
+
+  const { commandCenterPath, ...unset } = machine;
+  const never = workspace(t, { machineProfile: unset, repoEntry: repoProfile({}) });
+  assert.match(check(never.repo, never.env).problems.join('\n'), /profile\.commandCenterPath is not set\. Set it to "/);
+
+  // Nothing installed anywhere: the fix is the installer, not a path.
+  assert.match(check(never.repo, never.env, null).problems.join('\n'), /commandCenterPath is not set\. Run "node install\.mjs"/);
+});
+
+test('check passes on the team rules and the tracker a repository saved, and on none by default', t => {
+  const plain = workspace(t, { machineProfile: machine, repoEntry: repoProfile({}) });
+  assert.deepEqual([check(plain.repo, plain.env).repo.teamRules, check(plain.repo, plain.env).repo.readiness], [[], { tracker: 'none' }]);
+
+  const teamRules = ['https://example.test/handbook', 'Reply to every pull request comment before resolving it.'];
+  const readiness = { tracker: 'azure-devops', organization: 'your-org', project: 'Your Project', checklist: ['tasksClosed', 'effortSet'], unestimatedValue: -1 };
+  const saved = workspace(t, { machineProfile: machine, repoEntry: { ...repoProfile({}), teamRules, readiness } });
+  const result = check(saved.repo, saved.env);
+  assert.deepEqual(result.problems, []);
+  assert.deepEqual([result.repo.teamRules, result.repo.readiness], [teamRules, readiness]);
+});
+
+test('check rejects a tracker or a readiness check that does not exist', t => {
+  const { repo, env } = workspace(t, { machineProfile: machine, repoEntry: { ...repoProfile({}), teamRules: [''], readiness: { tracker: 'jira', checklist: ['coffeeDrunk'] } } });
+  const problems = check(repo, env).problems.join('\n');
+  assert.match(problems, /readiness\.tracker must be one of/);
+  assert.match(problems, /readiness\.checklist\[0\] must be one of/);
+  assert.match(problems, /teamRules\[0\] must not be empty/);
 });

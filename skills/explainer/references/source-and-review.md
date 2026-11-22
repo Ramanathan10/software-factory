@@ -47,6 +47,6 @@ Check skill frontmatter, local reference resolution, Git whitespace, and static 
 
 ## Local expansion
 
-Ram requested a broader explanation skill on October 29, 2026: clear writing, diagrams and images, interactive HTML, and explainer video when requested. The ASD-STE100 reference is the [official STEMG site](https://asd-ste100.org/); the skill offers an inspired plain-English style without claiming formal compliance. The video path is conditional on available tools and separate authorization for any paid voice service. No video generator or credential access is bundled.
+The owner requested a broader explanation skill on October 29, 2026: clear writing, diagrams and images, interactive HTML, and explainer video when requested. The ASD-STE100 reference is the [official STEMG site](https://asd-ste100.org/); the skill offers an inspired plain-English style without claiming formal compliance. The video path is conditional on available tools and separate authorization for any paid voice service. No video generator or credential access is bundled.
 
-Ram later specified five explicit output choices and a confirmation gate before the explanation, including when the request names a format. The “80% of the way to ASD-STE100” label is a qualitative style preference, not a compliance test or certified percentage.
+The owner later specified five explicit output choices and a confirmation gate before the explanation, including when the request names a format. The “80% of the way to ASD-STE100” label is a qualitative style preference, not a compliance test or certified percentage.

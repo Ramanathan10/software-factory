@@ -9,4 +9,4 @@ Use this only after `SKILL.md` and only for an explainer video.
 5. Build and inspect the smallest complete section first. Check source-to-screen accuracy, timing, legibility, reduced-motion alternatives, and the transition into the next section before extending the film.
 6. Run the installed CLI's checks and inspect snapshots. Review the rendered file, not only the HTML preview. Record any unverified audio or rendering limitation in the delivery note.
 
-The upstream [explainer reference](https://github.com/heygen-com/hyperframes/blob/e1a8c7f1730149a81d5aa5863b963487a2e3955e/skills/hyperframes/references/types/explainer.md) inspired this concise local workflow. It is adapted for Ram's explanation tasks, not copied as a general-purpose film-production policy.
+The upstream [explainer reference](https://github.com/heygen-com/hyperframes/blob/e1a8c7f1730149a81d5aa5863b963487a2e3955e/skills/hyperframes/references/types/explainer.md) inspired this concise local workflow. It is adapted for the owner's explanation tasks, not copied as a general-purpose film-production policy.
