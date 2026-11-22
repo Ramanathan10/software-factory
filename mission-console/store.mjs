@@ -2,20 +2,23 @@ import { createHash } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import { realpathSync, statSync } from 'node:fs';
 import { extname, isAbsolute } from 'node:path';
-import { mediaTypes } from './media.mjs';
+import { documentTypes, mediaTypes } from './media.mjs';
 import { harnessKey, phases, roles } from './roles.mjs';
 
-const workerPhases = new Set(['planning', 'testing', 'red', 'building', 'review', 'comparison', 'diagram', 'ci']);
+const workerPhases = new Set(['scout', 'planning', 'testing', 'red', 'building', 'gates', 'mutation', 'review', 'comparison', 'diagram', 'ci', 'retro']);
 const transitions = {
+  scout: 'planning',
   testing: 'red',
   red: 'building',
-  building: 'review',
+  building: 'gates',
+  gates: 'mutation',
+  mutation: 'review',
   review: 'comparison-choice',
   comparison: 'publishing',
 };
 const wakes = new Set([
-  'create', 'question', 'answer', 'plan', 'approve', 'handoff', 'return-to-build',
-  'comparison-choice', 'replan', 'blocked', 'resume', 'assign-worktree', 'release-worker', 'select-harness',
+  'create', 'question', 'answer', 'plan', 'approve', 'plan-feedback', 'handoff', 'return-to-build',
+  'comparison-choice', 'replan', 'return-to-testing', 'retro-start', 'blocked', 'resume', 'assign-worktree', 'release-worker', 'select-harness',
   'pr-opened', 'pr-ready', 'pr-recheck', 'merged',
   'request-cleanup', 'cleanup-blocked',
   'diagram-start',
@@ -47,7 +50,7 @@ function samePhase(story, phase) {
 }
 
 function addQuestion(story, input) {
-  samePhase(story, 'planning');
+  requireThat(story.phase !== 'closed', 'The story is closed.', 409);
   const id = identifier(input.question, 'question ID');
   requireThat(!story.questions.some(question => question.id === id), 'Question ID already exists.', 409);
   requireThat(Array.isArray(input.options) && input.options.length >= 2 && input.options.length <= 3, 'Provide two or three options.');
@@ -59,7 +62,7 @@ function addQuestion(story, input) {
 }
 
 function answerQuestion(story, input) {
-  samePhase(story, 'planning');
+  requireThat(story.phase !== 'closed', 'The story is closed.', 409);
   const question = story.questions.find(question => question.id === input.question);
   requireThat(question && !question.answer, 'Question is unavailable or already answered.', 409);
   if (typeof input.answer === 'number') {
@@ -128,14 +131,33 @@ function apply(story, input, now) {
       requireThat(story.questions.every(question => question.answer), 'The plan still has open questions.', 409);
       story.plan = string(input.detail, 'plan', 16000);
       delete story.draftPlan;
+      delete story.feedback;
       story.phase = 'approval';
       return 'Planner submitted the plan for approval.';
     case 'approve':
       samePhase(story, 'approval');
       story.phase = 'testing';
       return 'Plan approved.';
+    case 'plan-feedback': {
+      samePhase(story, 'approval');
+      const comments = input.comments ?? [];
+      requireThat(Array.isArray(comments) && comments.length <= 50, 'Send at most 50 plan comments.');
+      const parsed = comments.map(item => ({
+        quote: string(item?.quote, 'commented plan text', 2000),
+        comment: string(item?.comment, 'plan comment', 4000),
+      }));
+      const note = input.note === undefined || input.note === '' ? undefined : string(input.note, 'plan feedback', 8000);
+      requireThat(parsed.length || note, 'Add a comment or a note before requesting changes.');
+      story.feedback = { comments: parsed, note, at: now };
+      story.draftPlan = { text: story.plan, at: now, answers: story.questions.filter(question => question.answer).length };
+      delete story.plan;
+      story.phase = 'planning';
+      return ['the owner requested plan changes.', note,
+        ...parsed.map((item, n) => (n + 1) + '. On "' + item.quote.replace(/\s+/g, ' ').slice(0, 300) + '": ' + item.comment)]
+        .filter(Boolean).join('\n');
+    }
     case 'activity':
-      requireThat(workerPhases.has(story.phase), 'This phase has no reporting worker.', 409);
+      requireThat(workerPhases.has(story.phase) || ['publishing', 'merge'].includes(story.phase), 'This phase has no reporting worker.', 409);
       requireThat(input.assignment === story.worker?.id, 'Report from the current assignment.', 409);
       if (input.file !== undefined) {
         const path = string(input.file, 'file', 1000);
@@ -146,11 +168,16 @@ function apply(story, input, now) {
         if (previous >= 0) story.files[previous] = file;
         else story.files.push(file);
       }
+      if (input.pipeline !== undefined) {
+        const parsed = URL.parse(string(input.pipeline, 'pipeline run URL', 500));
+        requireThat(parsed?.protocol === 'https:', 'Use an https pipeline run URL.');
+        story.pipeline = parsed.href;
+      }
       story.activity = { at: now, role: phases[story.phase][0] };
       return string(input.detail, 'activity');
     case 'artifact': {
       requireThat(input.assignment === story.worker?.id, 'Report from the current assignment.', 409);
-      requireThat(['before', 'after', 'diagram', 'recording'].includes(input.kind), 'Choose an evidence kind.');
+      requireThat(['before', 'after', 'diagram', 'recording', 'document'].includes(input.kind), 'Choose an evidence kind.');
       const path = string(input.path, 'evidence path', 2000);
       requireThat(isAbsolute(path), 'Use an absolute evidence file path.');
       let realPath;
@@ -161,8 +188,10 @@ function apply(story, input, now) {
       } catch {
         throw new InputError('The evidence file is unavailable.');
       }
-      requireThat(stat.isFile() && stat.size > 0 && mediaTypes[extname(realPath).toLowerCase()],
-        'Register a nonempty PNG, JPEG, WebP, MP4, or WebM file.');
+      const document = input.kind === 'document';
+      requireThat(stat.isFile() && stat.size > 0 && (document ? stat.size <= 1048576 && documentTypes[extname(realPath).toLowerCase()]
+        : mediaTypes[extname(realPath).toLowerCase()]),
+        document ? 'Register a nonempty Markdown, JSON, or text file up to 1 MiB.' : 'Register a nonempty PNG, JPEG, WebP, MP4, or WebM file.');
       const artifact = { id: input.key, kind: input.kind, caption: string(input.detail, 'evidence caption', 1000),
         path: realPath, size: stat.size, mtimeMs: stat.mtimeMs, at: now };
       story.artifacts ??= [];
@@ -194,19 +223,37 @@ function apply(story, input, now) {
         story.diagram.detail = evidence;
         return evidence;
       }
+      if (story.phase === 'retro') {
+        requireThat(['ci', 'merge'].includes(story.retro?.returnPhase), 'Retro return phase is unavailable.', 409);
+        const lessons = string(input.detail, 'retro lessons');
+        story.phase = story.retro.returnPhase;
+        story.retro.completedAt = now;
+        story.retro.detail = lessons;
+        return lessons;
+      }
       requireThat(transitions[story.phase], 'This phase has no handoff.', 409);
-      if (story.phase === 'red' || story.phase === 'building') string(input.command, 'verification command');
+      if (['red', 'building', 'gates', 'mutation'].includes(story.phase)) string(input.command, 'verification command');
       story.phase = transitions[story.phase];
       return string(input.detail, 'handoff evidence');
     case 'diagram-start':
-      requireThat(['publishing', 'ci', 'merge'].includes(story.phase), 'Start diagram work after review and the comparison decision.', 409);
-      story.diagram = { returnPhase: story.phase, startedAt: now, detail: string(input.detail, 'diagram scope') };
+      requireThat(['review', 'comparison', 'publishing', 'ci', 'merge'].includes(story.phase), 'Start diagram work after review.', 409);
+      story.diagram = { returnPhase: ['review', 'comparison'].includes(story.phase) ? 'publishing' : story.phase, startedAt: now, detail: string(input.detail, 'diagram scope') };
       story.phase = 'diagram';
       return 'Rocket started architecture diagram work.';
+    case 'retro-start':
+      requireThat(['ci', 'merge'].includes(story.phase), 'Start the retro while the pull request is open.', 409);
+      story.retro = { returnPhase: story.phase, startedAt: now, detail: string(input.detail, 'retro scope') };
+      story.phase = 'retro';
+      return 'Retro started.';
     case 'return-to-build':
-      samePhase(story, 'review');
+      requireThat(['review', 'gates'].includes(story.phase), 'Return to build from review or the deterministic gates.', 409);
+      if (story.phase === 'review') story.reviewRounds = (story.reviewRounds ?? 0) + 1;
       story.phase = 'building';
       return string(input.detail, 'review finding');
+    case 'return-to-testing':
+      samePhase(story, 'mutation');
+      story.phase = 'testing';
+      return string(input.detail, 'surviving mutants');
     case 'replan':
       requireThat(story.phase !== 'planning' && story.phase !== 'closed',
         'This phase cannot reopen planning.', 409);
@@ -215,6 +262,7 @@ function apply(story, input, now) {
       delete story.readyHead;
       delete story.draftPlan;
       delete story.diagram;
+      delete story.retro;
       delete story.comparisonRequested;
       return string(input.detail, 'unresolved decision');
     case 'assign-worktree': {
@@ -270,7 +318,7 @@ function apply(story, input, now) {
       story.phase = 'ci';
       return string(input.detail, 'new head or check regression');
     case 'merged':
-      requireThat(['ci', 'merge'].includes(story.phase), 'There is no open PR to reconcile in this phase.', 409);
+      requireThat(['ci', 'merge', 'retro'].includes(story.phase), 'There is no open PR to reconcile in this phase.', 409);
       story.phase = 'closed';
       delete story.blocked;
       return string(input.detail, 'merge evidence');
@@ -298,12 +346,13 @@ export function openStore(path) {
   const receipt = db.prepare('SELECT seq, request FROM events WHERE key = ?');
   const insert = db.prepare('INSERT INTO events (key, story, request, event, pending) VALUES (?, ?, ?, ?, ?)');
   const recent = db.prepare('SELECT seq, event FROM events WHERE story = ? ORDER BY seq DESC LIMIT 40');
+  const firstEvent = db.prepare('SELECT event FROM events WHERE story = ? ORDER BY seq LIMIT 1');
   const all = db.prepare('SELECT state FROM stories ORDER BY id');
   const pending = db.prepare('SELECT seq, story, event FROM events WHERE pending = 1 ORDER BY seq');
   const storyPending = db.prepare('SELECT seq, story, event FROM events WHERE pending = 1 AND story = ? ORDER BY seq');
   const pendingDecision = db.prepare(`SELECT seq, event FROM events
     WHERE pending = 1 AND story = ? AND json_extract(event, '$.phase') = ?
-    AND json_extract(event, '$.type') IN ('answer', 'approve', 'comparison-choice')
+    AND json_extract(event, '$.type') IN ('answer', 'approve', 'plan-feedback', 'comparison-choice')
     AND seq > COALESCE((SELECT MAX(seq) FROM events
       WHERE story = ? AND json_extract(event, '$.phase') != ?), 0)
     ORDER BY seq DESC LIMIT 1`);
@@ -326,7 +375,9 @@ export function openStore(path) {
   function withHistory(story) {
     const events = recent.all(story.id).map(({ seq, event }) => ({ seq, ...JSON.parse(event) }));
     const decision = pendingDecision.get(story.id, story.phase, story.id, story.phase);
-    return { ...story, events, pendingDecision: decision ? { seq: decision.seq, at: JSON.parse(decision.event).at } : null };
+    const first = story.createdAt ? null : firstEvent.get(story.id);
+    const createdAt = story.createdAt ?? (first ? JSON.parse(first.event).at : story.updatedAt);
+    return { ...story, createdAt, events, pendingDecision: decision ? { seq: decision.seq, at: JSON.parse(decision.event).at } : null };
   }
 
   return {
@@ -402,7 +453,7 @@ export function openStore(path) {
             id, title, brief: string(input.detail, 'initial brief', 16000),
             branch: string(input.branch, 'branch', 200), worktree: string(input.worktree, 'worktree', 1000),
             harness: string(input.harness, 'harness', 100),
-            phase: 'planning', revision: 0, questions: [], files: []
+            phase: 'scout', revision: 0, questions: [], files: [], createdAt: now
           };
           detail = title;
         } else {

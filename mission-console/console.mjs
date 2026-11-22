@@ -2,14 +2,19 @@ import { harnessKey, phases, roles } from './roles.mjs';
 
 const ui = id => document.getElementById(id);
 const workflow = [
+  ['Scout', ['scout']],
   ['Plan', ['planning', 'approval']],
   ['Test', ['testing', 'red']],
   ['Build', ['building']],
+  ['Gates', ['gates']],
+  ['Mutation', ['mutation']],
   ['Review', ['review']],
   ['Before & after', ['comparison-choice', 'comparison']],
   ['Architecture', ['diagram']],
-  ['PR', ['publishing', 'ci', 'merge', 'closed']],
+  ['PR', ['publishing', 'ci', 'merge', 'retro', 'closed']],
 ];
+const planPhases = new Set(['approval', 'testing', 'red', 'building', 'gates', 'mutation', 'review', 'comparison-choice',
+  'comparison', 'diagram', 'publishing', 'ci', 'merge', 'retro', 'closed']);
 let stories = [];
 let selected;
 let view = 'stories';
@@ -18,6 +23,8 @@ let submitting = false;
 let questionStory;
 let detailKey;
 let evidenceKey;
+let storyTab = 'overview';
+let planKey;
 
 const observations = {
   failed: 'CI failed', passed: 'Reported checks passed', running: 'Checks still running',
@@ -214,13 +221,15 @@ function renderStory(story) {
     'tag' + (state.decision || state.alert ? ' decision' : '') + (story.phase === 'closed' ? ' closed' : '')));
   const harness = story.harness ?? (story.phase === 'closed' ? 'Harness not recorded' : 'Harness selection required');
   ui('story-status').append(node('span', ' · ' + harness, 'muted'));
-  ui('story-skills').textContent = roles[state.owner].skills.join(' · ');
+  const round = ['review', 'building'].includes(story.phase) && story.reviewRounds ? ' · Review round ' + Math.min(story.reviewRounds + 1, 3) + ' of 3' : '';
+  ui('story-skills').textContent = roles[state.owner].skills.join(' · ') + round;
   ui('current-assignment').textContent = story.worker
     ? roleLabel(roles[story.worker.role] ? story.worker.role : phases[story.phase][0]) +
       (story.cleanup ? ' must be stopped and released for cleanup.' : ' has the current assignment.') + ' Session ' + story.worker.session + '.'
     : story.phase === 'diagram' ? 'Rocket is awaiting assignment.' : '';
   ui('branch').textContent = story.worktree + ' / ' + story.branch;
   renderEvidence(story);
+  renderPlanTab(story);
   ui('delete-story').hidden = Boolean(story.cleanup);
   if (!detailKey?.startsWith(story.id + ':') || story.cleanup) ui('delete-story').open = false;
   ui('pipeline').replaceChildren(...steps.map(([label, phases], index) => {
@@ -307,7 +316,7 @@ function renderEvidence(story) {
     const figure = node('figure');
     const url = '/api/media?' + new URLSearchParams({ story: story.id, id: artifact.id });
     const video = /\.(mp4|webm)$/i.test(artifact.path);
-    const media = node(video ? 'video' : 'img');
+    const media = node(video ? 'video' : artifact.kind === 'document' ? 'span' : 'img');
     media.src = url;
     if (video) {
       media.controls = true;
@@ -317,7 +326,16 @@ function renderEvidence(story) {
       media.alt = artifact.caption;
       media.loading = 'lazy';
     }
-    const label = { before: 'Before', after: 'After', diagram: 'Architecture diagram', recording: 'Recording' }[artifact.kind];
+    const label = { before: 'Before', after: 'After', diagram: 'Architecture diagram', recording: 'Recording', document: 'Document' }[artifact.kind];
+    if (artifact.kind === 'document') {
+      const item = node('figure');
+      const open = node('a', 'Open ' + artifact.path.split(/[\\/]/).pop());
+      open.href = url;
+      open.target = '_blank';
+      open.rel = 'noopener';
+      item.append(node('figcaption', label + ' · ' + artifact.caption), open);
+      return item;
+    }
     figure.append(node('figcaption', label + ' · ' + artifact.caption), media);
     const link = node('a', 'Open capture');
     link.href = url;
@@ -330,6 +348,78 @@ function renderEvidence(story) {
     }, { once: true });
     return figure;
   }));
+}
+
+function inline(parent, text) {
+  text.split(/(`[^`]+`|\*\*[^*]+\*\*)/).forEach(part => {
+    if (part.startsWith('`') && part.endsWith('`') && part.length > 2) parent.append(node('code', part.slice(1, -1)));
+    else if (part.startsWith('**') && part.endsWith('**') && part.length > 4) parent.append(node('strong', part.slice(2, -2)));
+    else if (part) parent.append(part);
+  });
+}
+
+function renderMarkdown(container, text) {
+  const blocks = [];
+  let list;
+  let fence;
+  let paragraph;
+  const flush = () => { paragraph = undefined; };
+  for (const line of text.split(/\r?\n/)) {
+    if (line.startsWith('```')) {
+      if (fence) { blocks.push(fence); fence = undefined; } else { fence = node('pre'); flush(); list = undefined; }
+      continue;
+    }
+    if (fence) { fence.textContent += (fence.textContent ? '\n' : '') + line; continue; }
+    const heading = /^(#{1,4})\s+(.*)$/.exec(line);
+    const item = /^\s*(?:[-*]|\d+\.)\s+(.*)$/.exec(line);
+    if (heading) { flush(); list = undefined; const h = node('h' + (heading[1].length + 3)); inline(h, heading[2]); blocks.push(h); }
+    else if (item) {
+      flush();
+      if (!list) { list = node('ul'); blocks.push(list); }
+      const li = node('li');
+      inline(li, item[1]);
+      list.append(li);
+    } else if (!line.trim()) { flush(); list = undefined; }
+    else {
+      list = undefined;
+      if (!paragraph) { paragraph = node('p'); blocks.push(paragraph); } else paragraph.append(' ');
+      inline(paragraph, line);
+    }
+  }
+  if (fence) blocks.push(fence);
+  container.replaceChildren(...blocks);
+}
+
+function planDocument(story) {
+  const documents = (story.artifacts ?? []).filter(artifact => artifact.kind === 'document' && /\.md$/i.test(artifact.path));
+  return documents.findLast(artifact => /design/i.test(artifact.path.split(/[\\/]/).pop()));
+}
+
+async function renderPlanTab(story) {
+  const available = planPhases.has(story.phase) && Boolean(story.plan || planDocument(story));
+  ui('story-tabs').hidden = !available;
+  if (!available) storyTab = 'overview';
+  ui('overview-tab').setAttribute('aria-pressed', String(storyTab === 'overview'));
+  ui('plan-tab').setAttribute('aria-pressed', String(storyTab === 'plan'));
+  ui('plan-view').hidden = storyTab !== 'plan';
+  ui('story-main').hidden = storyTab === 'plan';
+  if (storyTab !== 'plan') return;
+  const document = planDocument(story);
+  const key = JSON.stringify([story.id, story.revision, document?.id, document?.mtimeMs]);
+  if (key === planKey) return;
+  planKey = key;
+  let text = story.plan ?? '';
+  ui('plan-source').textContent = document ? 'Preserved design · ' + document.path : 'Approved plan recorded in the story (no design file registered).';
+  if (document) {
+    try {
+      const response = await fetch('/api/media?' + new URLSearchParams({ story: story.id, id: document.id }));
+      if (!response.ok) throw new Error();
+      text = await response.text();
+    } catch {
+      ui('plan-source').textContent = 'The preserved design is unavailable or changed. Showing the plan recorded in the story.';
+    }
+  }
+  renderMarkdown(ui('plan-rendered'), text);
 }
 
 function activityAge(story) {
@@ -416,6 +506,8 @@ async function decide(id, event, button) {
   }
 }
 
+ui('overview-tab').addEventListener('click', () => { storyTab = 'overview'; render(); });
+ui('plan-tab').addEventListener('click', () => { storyTab = 'plan'; planKey = undefined; render(); });
 ui('stories-tab').addEventListener('click', () => { view = 'stories'; renderOverview(); });
 ui('crew-tab').addEventListener('click', () => { view = 'crew'; renderOverview(); });
 ui('harness-filter').addEventListener('change', () => {

@@ -6,6 +6,10 @@ export const mediaTypes = {
   '.mp4': 'video/mp4', '.webm': 'video/webm',
 };
 
+export const documentTypes = {
+  '.md': 'text/markdown; charset=utf-8', '.json': 'application/json', '.txt': 'text/plain; charset=utf-8',
+};
+
 export async function sendMedia(request, response, artifact) {
   let file;
   try {
@@ -33,7 +37,7 @@ export async function sendMedia(request, response, artifact) {
       }
     }
     response.writeHead(range ? 206 : 200, {
-      'Content-Type': mediaTypes[extname(artifact.path).toLowerCase()],
+      'Content-Type': mediaTypes[extname(artifact.path).toLowerCase()] ?? documentTypes[extname(artifact.path).toLowerCase()],
       'Content-Length': end - start + 1,
       'Accept-Ranges': 'bytes', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff',
       ...(range ? { 'Content-Range': 'bytes ' + start + '-' + end + '/' + size } : {}),

@@ -6,7 +6,7 @@ export const roles = {
   implementer: { job: 'Implementer', alias: 'Iron Man', skills: ['Ponytail'] },
   reviewer: { job: 'Independent reviewer', alias: 'Doctor Strange', skills: ['Adversarial Code Review'] },
   verifier: { job: 'Before-and-after verifier', alias: 'Bruce Banner', skills: ['Before and After'] },
-  watcher: { job: 'PR watcher', alias: 'Hawkeye', skills: ['GrepLoop · Current-head checks and feedback'] },
+  watcher: { job: 'PR watcher', alias: 'Hawkeye', skills: ['PR checks · Current-head checks and feedback'] },
   diagrammer: { job: 'Architecture diagram designer', alias: 'Rocket', skills: ['Diagram Design'] },
   approver: { job: 'Human approver', alias: 'Fury', skills: [] },
 };
@@ -16,11 +16,14 @@ export function harnessKey(harness) {
 }
 
 export const phases = {
+  scout: ['scout', 'Scouting'],
   planning: ['planner', 'Planning'],
   approval: ['approver', 'Plan approval'],
   testing: ['tester', 'Writing tests'],
   red: ['coordinator', 'Verify red'],
   building: ['implementer', 'Implementation'],
+  gates: ['implementer', 'Deterministic gates'],
+  mutation: ['tester', 'Mutation check'],
   review: ['reviewer', 'Review'],
   'comparison-choice': ['approver', 'Before-and-after decision'],
   comparison: ['verifier', 'Capture before and after'],
@@ -28,5 +31,6 @@ export const phases = {
   publishing: ['coordinator', 'Open pull request'],
   ci: ['watcher', 'Watching checks'],
   merge: ['watcher', 'PR ready to merge'],
+  retro: ['coordinator', 'Retro'],
   closed: ['coordinator', 'Merged'],
 };

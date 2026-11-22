@@ -4,7 +4,7 @@ Mission Console is the optional local dashboard for AI SDLC. Jarvis coordinates 
 
 ## Run it
 
-Use Node.js 24 or later. There is no package installation. From the software-factory checkout, run this preview with sample data:
+Use Node.js 24 or later (Node 22 needs `--experimental-sqlite`). There is no package installation. From the software-factory checkout, run this preview with sample data:
 
 ```powershell
 node ./mission-console/jarvis.mjs demo
@@ -51,7 +51,7 @@ Choose one harness before planning and use it for the whole story. For example, 
 
 Run independent reviews through the selected harness. An optional cross-model panel still needs distinct providers and permission to share the material. If it would require another harness, report that limitation under the existing AI SDLC rules.
 
-The dashboard, story database, event CLI, and phase rules are shared. The chosen harness supplies the shell, repository access, agent delegation, and permissions. Launch an agent in the target repo and give it the canonical `skills/ai-sdlc/SKILL.md` path from the agent-skills repository, this reference, the absolute database path, and the story ID. Use the harness's skill picker if it discovers the canonical skill. A direct path works for a harness that can read local files.
+The dashboard, story database, event CLI, and phase rules are shared. The chosen harness supplies the shell, repository access, agent delegation, and permissions. Launch an agent in the target repo and give it the `ai-sdlc` skill, the [Jarvis skill](../skills/jarvis/SKILL.md), this reference, the absolute database path, and the story ID. Use the harness's skill picker if it discovers the canonical skill. A direct path works for a harness that can read local files.
 
 | Harness | Using the shared console |
 |---|---|
@@ -71,17 +71,17 @@ The packet includes the story's selected harness, current state, evidence, recor
 
 ## Personas, roles, and skills
 
-The dashboard always shows the persona and its role. Crew lists the skills each persona is responsible for, and the story detail shows the skills for its current role. The persona map lives in [roles.mjs](roles.mjs); the AI SDLC skill itself has no personas. A request such as “Run Grill Me” still resolves to Captain America’s job. Skill names and entrypoints are shared across harnesses and each skill defines its own procedure.
+The dashboard always shows the persona and its role. Crew lists the skills each persona is responsible for, and the story detail shows the skills for its current role. The persona map is in the [Jarvis skill](../skills/jarvis/SKILL.md) and `roles.mjs`; the `ai-sdlc` skill itself has no personas. A request such as “Run Grill Me” still resolves to Captain America’s job. Skill names and entrypoints are shared across harnesses and each skill defines its own procedure.
 
 ## Jarvis coordination
 
 1. Set up a stable story ID and record the brief and intended branch and worktree. Use a separate worktree for each active story and verify its identity before delegating writes. A story advances in AI SDLC order. Independent stories can run concurrently, including two Bruce Banner test assignments, subject to available host worker slots and shared resources.
 2. Cap runs Grill Me. Record the current working plan using `draft-plan` before asking the first frontier and refresh it after each round of answers. Keep goals, scope, decisions, and open questions in the draft. The dashboard shows saved answers immediately and flags a draft that predates them. After recording a question, keep the active session available for the answer with a story-scoped `wait`; acknowledge earlier handled events so the wait can return the next one. If the session ends, the console shows a resume message the user can paste into Jarvis. Close the frontier before posting the proposed plan. Fury's approval is a separate transition.
 3. Jarvis dispatches workers through the chosen harness. Record its assignment when a session reference is available. Record meaningful progress and changed files using observations from the worker or worktree. The dashboard shows the harness label and the age of the latest report. A recent report is evidence of activity at that time. Verify live runtime status using the host before claiming a worker is still running. Keep secrets and sensitive diffs out of reports.
-4. Record handoffs after the actual AI SDLC gate passes. Attach the exact red or green verification command and what it demonstrated. On review findings, return the story to build. On an unresolved scope decision, return it to Cap and ask for a new approval. If a PR already exists, update and register the same PR after the new review. Apply the existing AI SDLC gates for cross-model sharing, optional before-and-after, PR creation, and GrepLoop.
+4. Record handoffs after the actual AI SDLC gate passes. Attach the exact red or green verification command and what it demonstrated. On review findings, return the story to build. On an unresolved scope decision, return it to Cap and ask for a new approval. If a PR already exists, update and register the same PR after the new review. Apply the existing AI SDLC gates for cross-model sharing, optional before-and-after, and PR creation.
 5. On resume, read the current story snapshots and pending wakes. Reconcile the reported phase with the host, worktree and forge before dispatching or retrying. For example, check whether the branch already has a PR before opening another. Acknowledge the particular wake once it has been handled or superseded by verified state. Acknowledgement retains history. Run one Jarvis coordinator per database. SQLite serializes writes, while coordinating and claiming agent executions stays with the host.
 
-For every human decision in a console-managed story, write its prerequisite evidence and decision state before pointing Ram to the dashboard. Planning uses question records, approval uses the submitted plan, and before-and-after uses the `comparison-choice` phase. Keep the CLI wait active after surfacing a question. A chat question or native picker is not a console event. If Ram answers through chat, record that explicit response against the still-open decision once. Reconcile the latest revision to avoid overwriting a concurrent dashboard answer. Report a disagreement between two answers to Ram.
+For every human decision in a console-managed story, write its prerequisite evidence and decision state before pointing the owner to the dashboard. Planning uses question records, approval uses the submitted plan, and before-and-after uses the `comparison-choice` phase. Keep the CLI wait active after surfacing a question. A chat question or native picker is not a console event. If the owner answers through chat, record that explicit response against the still-open decision once. Reconcile the latest revision to avoid overwriting a concurrent dashboard answer. Report a disagreement between two answers to the owner.
 
 ## Record and recover
 
@@ -122,14 +122,15 @@ The `ack` argument is the exact sequence number reported by `pending`. Use it on
 | `question` | `question` (unique within the story), `prompt`, `options`, `recommended` (zero-based option index). |
 | `answer` | `question` and `answer` (option index or custom text). Use the dashboard or record Fury's explicit response. |
 | `draft-plan` | `detail` contains the latest working plan while planning. Include the current `assignment` when a planner is assigned. Updating a draft does not request approval. |
-| `diagram-start` | `detail` gives Rocket's architecture diagram scope. Start from publishing, CI, or merge-ready after releasing any existing worker. Assign Rocket in the diagram phase. Release him and record a `handoff` to return to the prior phase with the evidence. |
-| `artifact` | `kind` is `before`, `after`, `diagram`, or `recording`. `path` is an existing absolute PNG, JPEG, WebP, MP4, or WebM file, and `detail` describes the capture. Include the current `assignment` when a worker is assigned. The dashboard renders images and videos from registered paths. Keep the files available until cleanup and register again if a capture changes. |
+| `diagram-start` | `detail` gives Rocket's architecture diagram scope. Start from review, comparison, publishing, CI, or merge-ready after releasing any existing worker. Assign Rocket in the diagram phase. Release him and record a `handoff` with the evidence. It returns to the prior PR phase, or to publishing when started from review or comparison. |
+| `artifact` | `kind` is `before`, `after`, `diagram`, `recording`, or `document`. `path` is an existing absolute PNG, JPEG, WebP, MP4, or WebM file (for `document`: a .md, .json, or .txt file up to 1 MiB, such as the context pack, approved design, gate results, or retro), and `detail` describes the capture. Include the current `assignment` when a worker is assigned. The dashboard renders images and videos from registered paths. Keep the files available until cleanup and register again if a capture changes. |
 | `plan` | `detail` contains Cap’s proposed plan. All questions must be answered. |
 | `approve` | Record Fury’s explicit plan approval. Starts test authoring. |
 | `assign-worker`, `release-worker` | Assignment takes `session` (non-secret reference in the selected harness). Release takes `assignment` (the current `worker.id`) and `detail` confirming the worker is idle or stopped. Release before changing phases or assigning a replacement. |
 | `activity` | `detail` reports an observation. Include the matching `assignment` when a worker is assigned. With no worker assignment, Jarvis can record an untagged observation. Optional `file`, `change`, and `diff` add a changed-file entry. |
-| `handoff` | `detail` provides evidence for the current phase. Provide `command` for verified red or verified build checks. |
-| `return-to-build`, `replan` | `detail` identifies a verified review finding or reopened scope decision. |
+| `handoff` | `detail` provides evidence for the current phase. Provide `command` for verified red, build, gate, or mutation checks. |
+| `return-to-build`, `return-to-testing`, `replan` | `detail` identifies a verified review or gate finding (`return-to-build`, from review or gates; each review return counts a round, shown as Review round N of 3), surviving mutants (`return-to-testing`, from mutation), or a reopened scope decision. |
+| `retro-start` | `detail` gives the retro scope. Allowed while the PR is open (CI or merge-ready), so the retro runs before the story closes. A `handoff` with the lessons returns to the prior phase, and `merged` is also accepted from the retro phase. |
 | `blocked`, `resume` | `detail` gives the blocker or its resolution. |
 | `assign-worktree` | `branch` and `worktree` record verified coordinates after assignment or recovery. Keep the branch of any existing PR. |
 | `comparison-choice` | `run` is Fury’s explicit before-and-after choice. |
@@ -155,3 +156,9 @@ Firstmate is the architecture reference. This implementation uses original code 
 Out of scope for this PR are the upstream repository and scripts, Treehouse, Orca, tmux or other Firstmate session adapters, `no-mistakes` and its delivery modes, persistent or SSH secondmates, automatic worktree allocation or cleanup, waking closed agent chats, agent recovery or relaunch, Relay, fleet/backlog sync, self-updates, and automatic merges. GitHub and the current agent host remain external systems for their existing jobs. The dashboard polls explicit records and has no ability to spawn agents or run shell commands.
 
 [Firstmate architecture](https://github.com/kunchenguid/firstmate/blob/main/docs/architecture.md) · [Watcher continuity](https://github.com/kunchenguid/firstmate/blob/main/docs/watcher-continuity.md)
+
+## Phases and the Plan view
+
+New stories start in `scout` (`handoff` to planning with the context pack registered as a `document`). The order is scout, planning, approval, testing, red, building, gates, mutation, review, comparison, diagram, publishing, ci, merge, closed, with retro entered from ci or merge. Gates and mutation handoffs require the `command` run; gate results are recorded as ordinary `activity` events. A review cap escalation is a normal `question` event with the round counter in `detail`.
+
+Once a plan exists, the story page shows a **Plan** tab beside **Overview**. It renders the latest registered `document` whose file name contains `design` (for example `docs/design.md`), falling back to the plan stored in the story. Register the updated design file again after each new approval.

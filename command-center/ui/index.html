@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AI SDLC Command Center</title>
+  <link rel="stylesheet" href="/app.css">
+</head>
+<body>
+  <header class="bar">
+    <div class="brand">
+      <span class="live" id="live"><i></i><b id="live-label">CONNECTING</b></span>
+      <h1>JARVIS <span>Command Center</span></h1>
+    </div>
+    <div class="stats">
+      <div><strong id="stat-active">0</strong><span>stories in flight</span></div>
+      <div><strong id="stat-agents">0</strong><span>agents working</span></div>
+      <button type="button" class="warn" id="stat-waiting-button" title="Open your inbox"><strong id="stat-waiting">0</strong><span>waiting on you</span></button>
+      <div><strong id="stat-shipped">0</strong><span>shipped</span></div>
+    </div>
+    <time id="clock"></time>
+  </header>
+
+  <section class="crew" id="crew" aria-label="Who is working"></section>
+
+  <main class="layout">
+    <section class="board-wrap">
+      <div class="decisions" id="decisions" hidden></div>
+      <div class="toolbar">
+        <div class="views" role="tablist" aria-label="Layout">
+          <button type="button" role="tab" data-view="lanes" title="Columns per stage">Lanes</button>
+          <button type="button" role="tab" data-view="agents" title="One row per agent">Agents</button>
+          <button type="button" role="tab" data-view="track" title="One row per story with its stage progress">Track</button>
+        </div>
+        <div class="filter" id="filter" hidden></div>
+      </div>
+      <div class="board" id="board" aria-label="Where every story is"></div>
+      <p class="empty" id="empty" hidden>No stories yet. Tell Jarvis what to build and it will appear here.</p>
+    </section>
+    <aside class="feed" id="feed-panel">
+      <h2><span class="feed-title">Live feed <span id="feed-rate"></span></span>
+        <b class="feed-unread" id="feed-unread" hidden></b>
+        <button type="button" class="feed-toggle" id="feed-toggle" title="Minimize live feed" aria-label="Minimize live feed" aria-expanded="true">−</button></h2>
+      <ol id="feed"></ol>
+    </aside>
+  </main>
+
+  <dialog id="detail" class="win"><header class="win-bar"><span class="win-title"></span><span class="win-ctl"><button type="button" data-win="min" title="Minimize" aria-label="Minimize">&#x2013;</button><button type="button" data-win="max" title="Maximize" aria-label="Maximize">&#x25A1;</button><button type="button" data-win="close" class="close" title="Close" aria-label="Close">&#x2715;</button></span></header><div id="detail-body" class="win-body"></div></dialog>
+  <dialog id="plan-reader" class="reader win"><header class="win-bar"><span class="win-title"></span><span class="win-ctl"><button type="button" data-win="min" title="Minimize" aria-label="Minimize">&#x2013;</button><button type="button" data-win="max" title="Maximize" aria-label="Maximize">&#x25A1;</button><button type="button" data-win="close" class="close" title="Close" aria-label="Close">&#x2715;</button></span></header><div id="plan-body" class="win-body"></div><form method="dialog" class="reader-actions"><span id="plan-actions"></span></form></dialog>
+  <div id="dock" aria-label="Minimized windows"></div>
+  <div class="toast" id="toast" role="status"></div>
+  <script type="module" src="/app.js"></script>
+</body>
+</html>

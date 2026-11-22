@@ -1,0 +1,6 @@
+interface:
+  display_name: "GrepLoop"
+  short_description: "Resolve Greptile PR feedback in bounded cycles"
+  default_prompt: "Use $greploop on this pull request and address verified Greptile findings."
+policy:
+  allow_implicit_invocation: true

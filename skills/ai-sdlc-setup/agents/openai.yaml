@@ -1,0 +1,6 @@
+interface:
+  display_name: "AI SDLC Setup"
+  short_description: "Interview and save the AI SDLC profile"
+  default_prompt: "Use $ai-sdlc-setup to set up AI SDLC on this machine and for this repository."
+policy:
+  allow_implicit_invocation: false

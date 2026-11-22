@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "ownerName": "Your Name",
+  "crossModelReviewAuthorized": false,
+  "sharedResources": ["localhost:5432 (dev Postgres)"],
+  "defaultVerificationEnvironment": "localhost",
+  "repos": {}
+}

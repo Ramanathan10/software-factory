@@ -1,0 +1,6 @@
+interface:
+  display_name: "AI SDLC"
+  short_description: "Run the AI software development lifecycle"
+  default_prompt: "Use $ai-sdlc for this idea: check setup, scout and grill the plan, record the spec, have a subagent write failing tests, implement, run the required gates, review, open a pull request, and run a retro."
+policy:
+  allow_implicit_invocation: false

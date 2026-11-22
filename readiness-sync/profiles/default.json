@@ -1,0 +1,28 @@
+{
+  "name": "default",
+  "ado": { "organization": "", "project": "", "team": "" },
+  "workItems": {
+    "storyType": "User Story",
+    "effortField": "Microsoft.VSTS.Scheduling.StoryPoints",
+    "unestimatedValue": null,
+    "closedTaskStates": ["Closed", "Done"]
+  },
+  "prTasks": {
+    "enabled": false,
+    "prTitle": "PR",
+    "reviewTitle": "PR Review",
+    "positiveVotes": [10, 5],
+    "reviewerMembers": []
+  },
+  "doneDone": {
+    "targetBranch": "main",
+    "checklist": ["tasksClosed", "prMergedToTarget", "prLinked", "userConfirm"],
+    "handoffTaskTitle": "",
+    "handoffAssignee": ""
+  },
+  "triggers": {
+    "consolePhases": ["ci", "merge", "closed"],
+    "adoEvents": ["git.pullrequest.merged", "workitem.updated"]
+  },
+  "safety": { "mode": "observe" }
+}

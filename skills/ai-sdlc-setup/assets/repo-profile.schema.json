@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "AI SDLC repository profile",
+  "description": "Facts about one repository that every person and agent working in it shares. Lives at .ai-sdlc.json in the repository root, or under repos[\"owner/name\"] in the machine profile when the repository cannot hold the file. Holds names and commands only, never credentials.",
+  "type": "object",
+  "required": ["schemaVersion", "gates"],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": { "enum": [1] },
+    "gates": {
+      "description": "Checks that must pass before a pull request opens. A command string makes the gate required; null means the owner decided it is not required. {files} is replaced with the changed production files.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "test": { "type": ["string", "null"] },
+        "lint": { "type": ["string", "null"] },
+        "typecheck": { "type": ["string", "null"] },
+        "build": { "type": ["string", "null"] },
+        "secrets": { "type": ["string", "null"] },
+        "dependencies": { "type": ["string", "null"] },
+        "staticAnalysis": { "type": ["string", "null"] },
+        "mutation": { "type": ["string", "null"] }
+      }
+    },
+    "requiredPipelines": {
+      "description": "CI pipelines that must succeed on the pull request head before it is reported ready.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name"],
+        "additionalProperties": false,
+        "properties": {
+          "name": { "type": "string", "minLength": 1 },
+          "url": { "type": "string" },
+          "triggersOnlyOnDefaultBranch": { "type": "boolean" }
+        }
+      }
+    },
+    "reviewBot": { "description": "Automated PR reviewer to iterate with after the pull request opens.", "enum": ["greptile", "none"] },
+    "specDir": { "description": "Where the approved spec is committed. null keeps the spec out of the repository and puts it in the pull request description instead.", "type": ["string", "null"] },
+    "crossModelReviewAuthorized": { "description": "Set false to forbid sending this repository's plans and code to additional model providers, whatever the machine profile says.", "type": "boolean" }
+  }
+}

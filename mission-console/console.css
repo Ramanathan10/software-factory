@@ -99,3 +99,7 @@ a { color: var(--blue); }
 @media (pointer: coarse) {
   button, label, select { min-height: 44px; }
 }
+
+#story-tabs { margin-bottom: 14px; }
+#plan-rendered { max-width: 78ch; line-height: 1.5; }
+#plan-rendered pre { overflow-x: auto; }

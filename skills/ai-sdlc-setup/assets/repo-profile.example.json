@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "gates": {
+    "test": "npm test",
+    "lint": "npm run lint",
+    "typecheck": "npx tsc --noEmit",
+    "build": "npm run build",
+    "secrets": "gitleaks git --no-banner",
+    "dependencies": "osv-scanner scan -r .",
+    "staticAnalysis": null,
+    "mutation": "npx stryker run --mutate {files}"
+  },
+  "requiredPipelines": [],
+  "reviewBot": "none",
+  "specDir": "docs/specs"
+}

@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "AI SDLC machine profile",
+  "description": "Facts about one person on one machine. Lives at profile.json in the AI SDLC home (AI_SDLC_HOME, default ~/.ai-sdlc). Never committed. Holds names and settings only, never credentials.",
+  "type": "object",
+  "required": ["schemaVersion", "ownerName", "crossModelReviewAuthorized"],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": { "enum": [1] },
+    "ownerName": { "description": "The person the skills call \"the owner\".", "type": "string", "minLength": 1 },
+    "crossModelReviewAuthorized": { "description": "Whether plans and code may be sent to additional model providers for critique and review.", "type": "boolean" },
+    "sharedResources": { "description": "Local services, databases, ports, or hosts that parallel stories must not fight over.", "type": "array", "items": { "type": "string" } },
+    "defaultVerificationEnvironment": { "description": "Where before-and-after and live tests run by default.", "type": "string" },
+    "repos": {
+      "description": "Repository profiles for repositories that cannot hold .ai-sdlc.json, keyed by owner/name.",
+      "type": "object",
+      "additionalProperties": { "$ref": "repo-profile.schema.json" }
+    }
+  }
+}

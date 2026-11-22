@@ -27,10 +27,12 @@ function fixture(t) {
 }
 
 function start(store, story, harness = 'Codex') {
-  return store.record({
+  const created = store.record({
     story, key: story + '-start', type: 'create', title: 'Implement ' + story,
     detail: 'Use an isolated branch.', branch: story, worktree: '/worktrees/' + story, harness,
   });
+  store.record({ story, key: story + '-scout', type: 'handoff', revision: created.revision, detail: 'Context pack ready.' });
+  return created;
 }
 
 function writer(store, story) {
@@ -39,6 +41,43 @@ function writer(store, story) {
     return store.record({ story, type, revision, key: story + '-' + revision, ...input });
   };
 }
+
+test('plan feedback returns the plan to planning with the owner\'s comments until a revised plan arrives', t => {
+  const store = fixture(t)();
+  start(store, 'fb');
+  const record = writer(store, 'fb');
+  const find = () => store.snapshot().find(item => item.id === 'fb');
+  record('plan', { detail: '## Scope\n- Browse nested attributes' });
+  assert.ok(Date.parse(find().createdAt) <= Date.parse(find().updatedAt));
+  assert.throws(() => record('plan-feedback', {}), /comment or a note/);
+  record('plan-feedback', { note: 'Tighten scope.', comments: [{ quote: 'Browse nested attributes', comment: 'Also cover write.' }] });
+  const story = find();
+  assert.equal(story.phase, 'planning');
+  assert.equal(story.plan, undefined);
+  assert.equal(story.draftPlan.text, '## Scope\n- Browse nested attributes');
+  assert.match(story.events[0].detail, /Tighten scope\.[\s\S]*On "Browse nested attributes": Also cover write\./);
+  assert.equal(store.pending().at(-1).type, 'plan-feedback');
+  record('plan', { detail: '## Scope\n- Browse and write nested attributes' });
+  assert.equal(find().feedback, undefined);
+  assert.equal(find().phase, 'approval');
+});
+
+test('a decision raised after planning waits on the owner without changing the phase', t => {
+  const store = fixture(t)();
+  start(store, 'mid');
+  const record = writer(store, 'mid');
+  record('plan', { detail: 'Plan.' });
+  record('approve');
+  record('activity', { detail: 'Queued the release run.', pipeline: 'https://dev.azure.com/org/project/_build/results?buildId=1' });
+  assert.equal(store.snapshot().find(item => item.id === 'mid').pipeline, 'https://dev.azure.com/org/project/_build/results?buildId=1');
+  assert.throws(() => record('activity', { detail: 'x', pipeline: 'javascript:alert(1)' }), /https pipeline/);
+  record('question', { question: 'pipeline', prompt: 'Queue the release run?', options: ['Yes', 'No'], recommended: 0 });
+  assert.equal(store.pending().at(-1).type, 'question');
+  record('answer', { question: 'pipeline', answer: 0 });
+  const story = store.snapshot().find(item => item.id === 'mid');
+  assert.equal(story.phase, 'testing');
+  assert.equal(story.questions[0].answer, 'Yes');
+});
 
 test('approval, red evidence, and PR transitions hold independently across stories', t => {
   const store = fixture(t)();
@@ -59,6 +98,8 @@ test('approval, red evidence, and PR transitions hold independently across stori
   assert.throws(() => record('handoff', { detail: 'Green', command: 'npm test' }), /Resume or replan/);
   record('resume', { detail: 'Test database is ready.' });
   record('handoff', { detail: 'Focused and broader tests passed.', command: 'npm test' });
+  record('handoff', { detail: 'Gates passed.', command: 'npm run lint' });
+  record('handoff', { detail: 'No surviving mutants.', command: 'npx stryker run' });
   record('handoff', { detail: 'Independent review completed.' });
   record('comparison-choice', { run: true });
   assert.throws(() => record('pr-opened', { url: 'https://github.com/example/repo/pull/2' }), /Expected phase publishing/);
@@ -92,12 +133,14 @@ test('a PR-stage scope decision can replan, recover the worktree, and reuse the 
     record('handoff', { detail: 'Tests ready.' });
     record('handoff', { detail: 'Expected failure observed.', command: 'npm test' });
     record('handoff', { detail: 'Relevant checks passed.', command: 'npm test' });
+    record('handoff', { detail: 'Gates passed.', command: 'npm run lint' });
+    record('handoff', { detail: 'No surviving mutants.', command: 'npx stryker run' });
     record('handoff', { detail: 'Review complete.' });
     record('comparison-choice', { run: false });
   };
   toPublishing();
   record('pr-opened', { url });
-  record('replan', { detail: 'GrepLoop raised a scope decision.' });
+  record('replan', { detail: 'PR review raised a scope decision.' });
   assert.throws(() => record('assign-worktree', { branch: 'other', worktree: '/tmp/recovered' }), /existing PR branch/);
   record('assign-worktree', { branch: 'story', worktree: '/tmp/recovered' });
   assert.equal(store.snapshot()[0].worktree, '/tmp/recovered');
@@ -115,7 +158,7 @@ test('a second connection can recover and acknowledge wakes without deleting evi
   const a = open();
   start(a, 'story');
   const b = open();
-  const event = { story: 'story', key: 'send-plan', revision: 1, type: 'plan', detail: 'Use the approved contract.' };
+  const event = { story: 'story', key: 'send-plan', revision: 2, type: 'plan', detail: 'Use the approved contract.' };
   const first = a.record(event);
   assert.deepEqual(b.record(event), { seq: first.seq, replayed: true });
   assert.throws(() => b.record({ ...event, detail: 'Different plan' }), /different request/);
@@ -147,27 +190,27 @@ test('separate CLI processes resume one story in its pinned harness', t => {
   }
   const record = (type, revision, details) =>
     run('record', [], { story: 'portable', key: 'handover-' + revision, type, revision, ...details });
-  assert.throws(() => record('assign-worker', 1, { host: 'Cursor', session: 'worker-1' }), /harness selected/);
-  record('assign-worker', 1, { session: 'worker-1' });
-  record('question', 2, { question: 'scope', prompt: 'What scope?', options: ['All', 'One page'], recommended: 0 });
+  assert.throws(() => record('assign-worker', 2, { host: 'Cursor', session: 'worker-1' }), /harness selected/);
+  record('assign-worker', 2, { session: 'worker-1' });
+  record('question', 3, { question: 'scope', prompt: 'What scope?', options: ['All', 'One page'], recommended: 0 });
   const packet = run('handover', ['portable']);
   assert.equal(packet.story.harness, 'Claude Code');
   assert.equal(packet.story.worker.role, 'planner');
-  assert.equal(packet.story.revision, 3);
+  assert.equal(packet.story.revision, 4);
   assert.ok(packet.pending.some(event => event.type === 'question'));
   assert.ok(packet.pending.every(event => event.story === 'portable'));
-  assert.throws(() => record('assign-worker', 3, { session: 'worker-1' }), /Release the previous worker/);
-  record('release-worker', 3, { assignment: packet.story.worker.id, detail: 'Claude session stopped after asking the question.' });
-  assert.throws(() => record('select-harness', 4, { harness: 'Cursor' }), /only for an older/);
-  assert.throws(() => record('activity', 4, { assignment: packet.story.worker.id, detail: 'Old update between assignments.' }), /current assignment/);
-  record('assign-worker', 4, { session: 'worker-1' });
-  assert.throws(() => record('activity', 5, { assignment: packet.story.worker.id, detail: 'Old update from same session label.' }), /current assignment/);
-  assert.throws(() => record('release-worker', 5, { assignment: packet.story.worker.id, detail: 'Old release.' }), /assignment does not match/);
-  record('answer', 5, { question: 'scope', answer: 0 });
-  assert.throws(() => record('plan', 6, { detail: 'Export all eligible rows.' }), /Release the assigned worker/);
+  assert.throws(() => record('assign-worker', 4, { session: 'worker-1' }), /Release the previous worker/);
+  record('release-worker', 4, { assignment: packet.story.worker.id, detail: 'Claude session stopped after asking the question.' });
+  assert.throws(() => record('select-harness', 5, { harness: 'Cursor' }), /only for an older/);
+  assert.throws(() => record('activity', 5, { assignment: packet.story.worker.id, detail: 'Old update between assignments.' }), /current assignment/);
+  record('assign-worker', 5, { session: 'worker-1' });
+  assert.throws(() => record('activity', 6, { assignment: packet.story.worker.id, detail: 'Old update from same session label.' }), /current assignment/);
+  assert.throws(() => record('release-worker', 6, { assignment: packet.story.worker.id, detail: 'Old release.' }), /assignment does not match/);
+  record('answer', 6, { question: 'scope', answer: 0 });
+  assert.throws(() => record('plan', 7, { detail: 'Export all eligible rows.' }), /Release the assigned worker/);
   const replacement = run('handover', ['portable']).story.worker;
-  record('release-worker', 6, { assignment: replacement.id, detail: 'Claude finished reviewing the decision.' });
-  record('plan', 7, { detail: 'Export all eligible rows.' });
+  record('release-worker', 7, { assignment: replacement.id, detail: 'Claude finished reviewing the decision.' });
+  record('plan', 8, { detail: 'Export all eligible rows.' });
   const resumed = run('handover', ['portable']);
   assert.equal(resumed.story.phase, 'approval');
   assert.equal(resumed.story.worker, undefined);
@@ -189,7 +232,7 @@ test('the HTTP surface accepts human decisions from the loopback origin only', a
   try {
     const origin = 'http://127.0.0.1:' + server.address().port;
     const endpoint = origin + '/api/decision';
-    const body = { story: 'local', type: 'approve', key: 'yes', revision: 2 };
+    const body = { story: 'local', type: 'approve', key: 'yes', revision: 3 };
     const post = (from, event) => fetch(endpoint, {
       method: 'POST', headers: { Origin: from, 'Content-Type': 'application/json' }, body: JSON.stringify(event),
     });
@@ -231,6 +274,8 @@ test('Hawkeye queues durable CI wakes once per observation, without advancing th
   record('handoff', { detail: 'Tests ready.' });
   record('handoff', { detail: 'Test failed for expected reason.', command: 'npm test' });
   record('handoff', { detail: 'Test passes.', command: 'npm test' });
+  record('handoff', { detail: 'Gates passed.', command: 'npm run lint' });
+  record('handoff', { detail: 'No surviving mutants.', command: 'npx stryker run' });
   record('handoff', { detail: 'Reviewed.' });
   record('comparison-choice', { run: false });
   const url = 'https://github.com/example/repo/pull/12';
@@ -287,6 +332,8 @@ test('the first watch detects a new head even when readiness predates the watche
   record('handoff', { detail: 'Tests ready.' });
   record('handoff', { detail: 'Expected red.', command: 'npm test' });
   record('handoff', { detail: 'Passing checks.', command: 'npm test' });
+  record('handoff', { detail: 'Gates passed.', command: 'npm run lint' });
+  record('handoff', { detail: 'No surviving mutants.', command: 'npx stryker run' });
   record('handoff', { detail: 'Review passed.' });
   record('comparison-choice', { run: false });
   const url = 'https://github.com/example/repo/pull/31';
@@ -341,6 +388,8 @@ test('Rocket diagram work returns to its original PR phase after a verified hand
   record('handoff', { detail: 'Tests ready.' });
   record('handoff', { detail: 'Valid red.', command: 'npm test' });
   record('handoff', { detail: 'Verified green.', command: 'npm test' });
+  record('handoff', { detail: 'Gates passed.', command: 'npm run lint' });
+  record('handoff', { detail: 'No surviving mutants.', command: 'npx stryker run' });
   record('handoff', { detail: 'Review passed.' });
   record('comparison-choice', { run: false });
   record('pr-opened', { url: 'https://github.com/example/repo/pull/5' });
@@ -426,4 +475,94 @@ test('registered evidence is streamed with video ranges, limited to the register
   } finally {
     await new Promise(resolve => server.close(resolve));
   }
+});
+
+
+function toGreen(record) {
+  record('plan', { detail: 'Plan.' });
+  record('approve');
+  record('handoff', { detail: 'Tests ready.' });
+  record('handoff', { detail: 'Valid red.', command: 'npm test' });
+  record('handoff', { detail: 'Verified green.', command: 'npm test' });
+}
+
+test('gates and mutation sit between build and review, and survivors return to testing', t => {
+  const store = fixture(t)();
+  const created = store.record({ story: 'mut', key: 'mut-start', type: 'create', title: 'T', detail: 'Brief.', branch: 'b', worktree: '/w', harness: 'Codex' });
+  assert.equal(store.snapshot()[0].phase, 'scout');
+  const record = writer(store, 'mut');
+  assert.throws(() => record('plan', { detail: 'Too early.' }), /Expected phase planning/);
+  record('handoff', { detail: 'Context pack saved.' });
+  toGreen(record);
+  const phase = () => store.snapshot()[0].phase;
+  assert.equal(phase(), 'gates');
+  assert.throws(() => record('handoff', { detail: 'Gates passed.' }), /verification command/);
+  assert.throws(() => record('return-to-testing', { detail: 'x' }), /Expected phase mutation/);
+  record('return-to-build', { detail: 'Gitleaks found a secret.' });
+  assert.equal(phase(), 'building');
+  assert.equal(store.snapshot()[0].reviewRounds, undefined);
+  record('handoff', { detail: 'Green.', command: 'npm test' });
+  record('handoff', { detail: 'Gates passed.', command: 'npm run lint' });
+  assert.equal(phase(), 'mutation');
+  record('return-to-testing', { detail: '3 mutants survived in export.ts.' });
+  assert.equal(phase(), 'testing');
+  assert.equal(store.pending().at(-1).type, 'return-to-testing');
+  record('handoff', { detail: 'Tests strengthened.' });
+  record('handoff', { detail: 'Red on mutant.', command: 'npm test' });
+  record('handoff', { detail: 'Green.', command: 'npm test' });
+  record('handoff', { detail: 'Gates passed.', command: 'npm run lint' });
+  record('handoff', { detail: 'No survivors.', command: 'npx stryker run' });
+  assert.equal(phase(), 'review');
+  record('return-to-build', { detail: 'Round 1 finding.' });
+  assert.equal(store.snapshot()[0].reviewRounds, 1);
+  assert.ok(created.seq);
+});
+
+test('Rocket can run straight after review and return to publishing', t => {
+  const store = fixture(t)();
+  start(store, 'early');
+  const record = writer(store, 'early');
+  toGreen(record);
+  record('handoff', { detail: 'Gates passed.', command: 'npm run lint' });
+  record('handoff', { detail: 'No survivors.', command: 'npx stryker run' });
+  record('diagram-start', { detail: 'Show the new flow.' });
+  assert.equal(store.snapshot()[0].phase, 'diagram');
+  record('handoff', { detail: 'Diagram done.' });
+  assert.equal(store.snapshot()[0].phase, 'publishing');
+});
+
+test('the retro runs while the PR is open and may be followed by the merge', t => {
+  const store = fixture(t)();
+  start(store, 'retro');
+  const record = writer(store, 'retro');
+  toGreen(record);
+  record('handoff', { detail: 'Gates passed.', command: 'npm run lint' });
+  record('handoff', { detail: 'No survivors.', command: 'npx stryker run' });
+  record('handoff', { detail: 'Review passed.' });
+  record('comparison-choice', { run: false });
+  assert.throws(() => record('retro-start', { detail: 'Too early.' }), /pull request is open/);
+  record('pr-opened', { url: 'https://github.com/example/repo/pull/9' });
+  record('retro-start', { detail: 'Review lessons.' });
+  assert.equal(store.snapshot()[0].phase, 'retro');
+  record('handoff', { detail: 'Logged two lessons.' });
+  assert.equal(store.snapshot()[0].phase, 'ci');
+  record('retro-start', { detail: 'Second pass.' });
+  record('merged', { detail: 'Merged during the retro.' });
+  assert.equal(store.snapshot()[0].phase, 'closed');
+});
+
+test('document evidence accepts markdown, json, and text only', t => {
+  const store = fixture(t)();
+  const directory = mkdtempSync(join(tmpdir(), 'jarvis-doc-'));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const design = join(directory, 'design.md');
+  const exe = join(directory, 'tool.exe');
+  writeFileSync(design, '# Design\n- Approved.');
+  writeFileSync(exe, 'MZ');
+  start(store, 'docs');
+  const record = writer(store, 'docs');
+  record('artifact', { path: design, kind: 'document', detail: 'Approved design.' });
+  assert.throws(() => record('artifact', { path: exe, kind: 'document', detail: 'No.' }), /Markdown, JSON, or text/);
+  assert.throws(() => record('artifact', { path: design, kind: 'before', detail: 'No.' }), /PNG/);
+  assert.equal(store.handover('docs').story.artifacts[0].kind, 'document');
 });

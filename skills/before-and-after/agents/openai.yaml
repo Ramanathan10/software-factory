@@ -1,0 +1,4 @@
+interface:
+  display_name: "Before and After"
+  short_description: "Compare an on-prem product before and after"
+  default_prompt: "Capture a matched before-and-after view of this on-premise product and report what changed. Use computer use only if tests and browser checks cannot show the screen."

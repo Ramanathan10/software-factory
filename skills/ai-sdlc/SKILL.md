@@ -1,0 +1,147 @@
+---
+name: ai-sdlc
+description: Run the AI software development lifecycle from an idea or bug through a pull request. Use when the owner asks for AI SDLC, the AI software development lifecycle, or to take a feature or bug fix from plan through implementation, review, and PR. Checks the saved setup profiles, scouts the repository, settles every decision up front with Grill Me (or a reproduction for bugs) and records the approved spec, has a subagent write failing tests, implements with Ponytail, runs the repository's required gates and mutation testing, reviews adversarially across models, captures before-and-after and an architecture diagram when planned, opens a PR, and ends with a retro that feeds lessons back into the skills.
+---
+
+# AI SDLC
+
+AI software development lifecycle. Run the phases in order on the feature or bug the owner names. Finish each phase before starting the next. Read each named skill and follow it; this skill only sequences them. "The owner" is the person running this session, named in the machine profile.
+
+- [ ] 0. Preflight: valid setup profiles
+- [ ] 1. Plan: scout; Grill Me for a feature, reproduction for a bug; settle every run decision; record the spec
+- [ ] 2. Test-first handoff to a subagent; verify red
+- [ ] 3. Implement with Ponytail; verify green
+- [ ] 4. Required gates and mutation testing
+- [ ] 5. Adversarial cross-model code review
+- [ ] 6. Before and after, when the plan says so
+- [ ] 7. Architecture diagram, when the plan says so
+- [ ] 8. Pull request, required pipelines, and review bot
+- [ ] 9. Retro
+
+The owner's approval of the plan is the last planned stop. After it, run through phase 8 without asking new questions unless a phase uncovers a decision the plan did not settle; then return to phase 1 for that decision.
+
+## 0. Preflight
+
+From the target repository, run the local `ai-sdlc-setup` skill's check:
+
+```
+node <ai-sdlc-setup skill>/scripts/preflight.mjs check <repository>
+```
+
+If it reports problems, read and follow `ai-sdlc-setup` to fix them, then check again. Do not start a story on a failing check.
+
+The check's output is the configuration for this run: the owner's name, whether cross-model sharing is authorized, the machine's shared resources and default verification environment, and for the repository its required gates, the gates the owner declined, required pipelines, review bot, and spec location. When a later phase needs an answer the profiles lack, ask that one question through `ai-sdlc-setup` and continue.
+
+### One worktree per story
+
+Run every story in its own worktree and branch so independent stories can run in parallel. Never share a worktree between stories or work in the owner's primary checkout. Fetch the remote first and base the branch on the current remote default branch, not a possibly stale local copy.
+
+Parallel stories on one machine must not compete for the shared resources in the machine profile. Ask the owner before stopping, replacing, or taking exclusive use of one, and say when it is restored.
+
+## 1. Plan
+
+### Scout
+
+Before asking the owner anything, investigate the repository read-only and write a context pack: the relevant files and entry points, the conventions and rules that apply (agent instruction files, lint configuration, naming), the focused and full test commands, similar earlier changes, and known risks. The context pack opens the draft plan, goes into the spec, and is given to every later subagent. Correct it when a later phase finds it wrong.
+
+### Feature lane
+
+Read and follow the local `grill-me` skill for the interview. Interview until the frontier is empty.
+
+### Bug lane
+
+Use this lane when the owner reports broken existing behavior. Reproduce the bug before asking anything: find the smallest steps, input, or command that shows it, and the root cause in the code. Ask the owner only for decisions the code cannot answer, such as the intended behavior or how far the fix should reach, using Grill Me's frontier format. A bug that cannot be reproduced is reported with what was tried; do not plan a fix for a guess.
+
+### Settle the run decisions
+
+Ask these with the rest of the frontier, each with a recommended answer, so nothing waits on the owner after approval:
+
+- **Before and after:** whether to capture it, the screen to compare, the environment (default: the machine profile's verification environment), and the before reference that `before-and-after` needs. When the before reference is the current running product, capture the before image right after approval, before any implementation changes it.
+- **Architecture diagram:** whether the PR description needs one, and its scope.
+
+Cross-model sharing, required gates, mutation testing, pipelines, and the spec location are already answered by the profiles; do not ask them again.
+
+### Write and approve the spec
+
+Write observable acceptance criteria and choose the lowest useful test level (unit, contract, integration, or UI). Before presenting the plan for approval, run the plan critique below when distinct providers are available and the profiles authorize cross-model sharing. Otherwise note the limitation and continue. Resolve material objections in the plan; model agreement alone does not settle a decision.
+
+Stop and wait for the owner to approve the plan. Do not implement, edit the target repository, or open a pull request before approval.
+
+After approval, create the story worktree and branch. The spec holds the context pack, the problem (or bug reproduction and root cause), acceptance criteria, test level, out-of-scope items, settled decisions, and the run decisions above. When the repository profile gives a spec location, commit the spec there as `<branch-name>.md`, as the branch's first commit. When the spec location is `null`, keep the spec in the story's working notes outside the repository and put it in the pull request description. Later phases read the spec as the source of truth. When a later phase returns to phase 1, update the spec before continuing.
+
+### Plan critique
+
+Adapted from [GitHub Lever's cross-model-review skill](https://github.com/github/lever/blob/f859d0aa2be96981157ee0480655c84877e3cd98/skills/cross-model-review/SKILL.md), reviewed at commit `f859d0a` under the MIT License. Give two or three reviewers from different providers the same neutral packet of requirements, constraints, and draft plan. Do not include the author's preferred solution or another reviewer's findings. Ask for concrete defects only, with a failure mechanism, testable case, and confidence. Exclude style preferences.
+
+Compare findings only after all reviews finish. Group agreement, single-reviewer findings, and contradictions; verify or falsify each against the requirements and code. Agreement is a lead, not proof. Do not call multiple agents on one provider a cross-model panel.
+
+## 2. Test-first handoff
+
+Assign a separate subagent to write only the tests and necessary fixtures for the approved behavior. Give it the spec, relevant production and test code, repository conventions, and a strict boundary: no production implementation, PR, deployment, or unrelated edits. For a bug, the test reproduces the reported failure. Do not start implementation while the test author is editing a shared workspace.
+
+Run the focused tests against the unchanged implementation. Record the command and a failure that demonstrates the missing behavior, not an unrelated environment or baseline failure. If unit tests cannot express the behavior without coupling to implementation, use the lowest useful contract, integration, or UI test. Fix an invalid test before proceeding; do not manufacture red by breaking working behavior. If delegation is unavailable, tell the owner and get their direction before substituting same-agent test authoring.
+
+## 3. Implement
+
+Read and follow `ponytail` at full, in the story worktree. The spec is the task. Stay inside it.
+
+If the ladder's first step says an approved part should not exist, return to phase 1 for that decision before continuing.
+
+Turn the valid red test green without weakening or deleting its assertion. If the test encodes the wrong contract, return to the test author or phase 1 rather than silently changing it. Run the focused tests, then the relevant broader tests.
+
+## 4. Required gates and mutation testing
+
+Run every gate the repository profile requires, with the command the profile gives, before any model reviews the change. These checks give the same answer every time; model review does not replace them.
+
+- `test`, `lint`, `typecheck`, `build`: the repository's own commands.
+- `secrets`, `dependencies`, `staticAnalysis`: the profile's scanners. Run `dependencies` when a manifest or lockfile changed.
+- `mutation`: replace `{files}` with the changed production files and run it on those only.
+
+Fix a failing gate in the implementation. For each mutant that survives on a changed line, hand it to a test-author subagent under the phase 2 boundary to add or strengthen a test that kills it, then rerun. A mutant that cannot change observable behavior may stay alive with a one-line reason in the verification notes.
+
+Record each command and its result. Report a gate the owner declined in the profile as not required, and a gate the environment could not run as not run; neither is reported as passing. Do not add a gate's tool or change a gate's command on your own; that is a profile change through `ai-sdlc-setup`.
+
+## 5. Adversarial code review
+
+Read and follow `adversarial-code-review`. It is the single code review panel and already requires reviewers from distinct model classes. Keep it read-only. Send code to an additional provider only when the profiles authorize cross-model sharing; otherwise say so and review with what is authorized.
+
+Fix findings that clear its bar, rerun the gates affected by the fix, then review the fix the same way. Continue only when the review reports no remaining findings, or the owner explicitly accepts the ones left open.
+
+## 6. Before and after
+
+Run only when the spec says to. Read and follow `before-and-after` with the screen, environment, and before reference recorded in the spec. Check the evidence before advancing. If the check cannot show the feature working, stop and say what is missing. Skip this phase when the spec says no.
+
+## 7. Architecture diagram
+
+Run only when the spec says the PR description needs one. Read and follow the local `diagram-design` skill with the scope recorded in the spec, in a form the pull request description can render. For an ordinary explanation, use `explainer` instead. The diagram is ready before the pull request opens so the first review sees the complete description.
+
+## 8. Pull request
+
+Fetch the remote and bring the story branch up to date with the current remote default branch, then rerun the gates the update affects. Create the pull request for the approved, reviewed change. The description links or contains the spec and includes the gate results from phase 4, the review verdict, the before-and-after comparison when captured, and the architecture diagram when drawn.
+
+When the repository profile lists required pipelines, the pull request is not reported ready until each has succeeded on its current head. Report each run's result and link. For a pipeline that only triggers on the default branch, queue it on the story branch when the CI system allows; otherwise tell the owner it has not run.
+
+When the repository profile names Greptile as the review bot, read and follow the local `greploop` skill on that pull request. If Greptile turns out not to be configured, report that limitation and continue; do not install an app or open another pull request.
+
+On a later turn after that pull request is open, read the tail and the current head. The tail is the new comment, check, or review note. Earlier phases are already finished. A deployment comment, a stale failed check, a duplicate review-bot note, or a green-check notice ends the turn. Continue GrepLoop only when the tail is new Greptile feedback on the current head.
+
+## 9. Retro
+
+Look back over this run for what went wrong or took avoidable effort: a returned phase, an invalid test, a failing gate, a surviving mutant, a review finding, a review-bot cycle, or a correction from the owner. Most runs produce no durable lesson; report that plainly instead of inventing one.
+
+- For a lesson about the target repository, such as a convention, command, or setup gotcha, follow `learnings` and add it to that repository's guidance as its own commit on the PR branch. A gate or command that proved wrong is a repository profile change through `ai-sdlc-setup`.
+- For a lesson about this workflow or one of its skills, follow `self-improvement` and propose the change to the skill that would have prevented the problem. Apply it with the owner's approval, under the rules of the repository that holds the skills.
+
+Report the lessons recorded and where, or that there were none.
+
+## Gates
+
+- A story starts only on a passing preflight check.
+- Each story runs in its own worktree, based on the current remote default branch.
+- Implementation waits for the owner's approval of the plan and the recorded spec.
+- Implementation waits for a valid failing test written by a subagent; a test-authoring or environment blocker is reported, not bypassed silently.
+- Model review waits for every required gate to pass and for killed or explained mutants on changed lines.
+- Private code is not sent to an additional model provider unless the profiles authorize it.
+- Before-and-after and the architecture diagram run only when the spec says so, and both finish before the pull request opens.
+- The pull request is reported ready only after its required pipelines succeed on the current head.
+- The run ends with a retro report.

@@ -46,8 +46,18 @@
             <button type="button" id="confirm-cleanup">Request cleanup and deletion</button>
           </details>
         </header>
+        <nav id="story-tabs" aria-label="Story views" hidden>
+          <button type="button" id="overview-tab" aria-pressed="true">Overview</button>
+          <button type="button" id="plan-tab" aria-pressed="false">Plan</button>
+        </nav>
         <ol id="pipeline" aria-label="AI SDLC phases"></ol>
         <p id="submit-status" role="status"></p>
+        <section class="panel plan-view" id="plan-view" aria-labelledby="plan-view-title" hidden>
+          <h3 id="plan-view-title">Approved plan and design</h3>
+          <p id="plan-source" class="muted"></p>
+          <div id="plan-rendered"></div>
+        </section>
+        <div id="story-main">
         <section class="panel handoff" id="decision-handoff" hidden aria-labelledby="handoff-title">
           <h3 id="handoff-title">Decision saved · waiting for Jarvis</h3>
           <p>Continue in your Jarvis chat if it’s idle.</p>
@@ -97,6 +107,7 @@
           <div id="evidence-gallery"></div>
         </section>
         <p><a id="pull-request" hidden>Open pull request</a></p>
+        </div>
       </article>
     </section>
   </main>

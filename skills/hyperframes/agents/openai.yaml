@@ -1,0 +1,6 @@
+interface:
+  display_name: "HyperFrames"
+  short_description: "Build explainer videos from HTML compositions"
+  default_prompt: "Use $hyperframes to create an explainer video about this topic."
+policy:
+  allow_implicit_invocation: true

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Learnings"
+  short_description: "Codify reusable lessons after coding."
+  default_prompt: "Review this session and repo changes for durable learnings worth documenting."
