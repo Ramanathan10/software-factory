@@ -3,7 +3,7 @@
 //   node preflight.mjs detect [repoDir]   facts for the setup interview
 //   node preflight.mjs check  [repoDir]   validate profiles and gate tools; exit 1 on problems
 import { execFileSync } from 'node:child_process';
-import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, delimiter, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -148,7 +148,8 @@ export function detect(repo = '.', env = process.env) {
   };
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+// Skills are installed as links, and Node reports this module by its real path, so compare real paths.
+if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url))) {
   const [mode, repo = '.'] = process.argv.slice(2);
   if (mode !== 'detect' && mode !== 'check') {
     console.error('Usage: node preflight.mjs detect|check [repoDir]');

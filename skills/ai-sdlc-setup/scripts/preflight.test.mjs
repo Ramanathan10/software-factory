@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, rmdirSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
@@ -91,4 +91,18 @@ test('detect reports repository facts for the interview', t => {
   assert.deepEqual(facts.repo.manifests, ['package.json']);
   assert.equal(facts.tools.git, true);
   assert.equal(facts.profiles.machineProfileExists, false);
+});
+
+test('the CLI runs when the skill folder is reached through a link', t => {
+  const { repo, env } = workspace(t);
+  const link = join(repo, '..', 'linked-skill');
+  symlinkSync(fileURLToPath(new URL('..', import.meta.url)), link, 'junction');
+  let output;
+  try {
+    output = execFileSync(process.execPath, [join(link, 'scripts', 'preflight.mjs'), 'detect', repo], { env, encoding: 'utf8' });
+  } finally {
+    // Remove only the link, before the workspace is deleted, so cleanup never reaches the real skill folder.
+    if (process.platform === 'win32') rmdirSync(link); else unlinkSync(link);
+  }
+  assert.equal(JSON.parse(output).repo.slug, 'acme/widgets');
 });
