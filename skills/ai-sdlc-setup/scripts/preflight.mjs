@@ -169,7 +169,11 @@ export function nextSteps({ problems, warnings }) {
 
 export function check(repo = '.', env = process.env, found = findCommandCenter()) {
   const { root, slug, machinePath, machine, repoProfile, source, problems } = loadProfiles(repo, env);
-  if (!machine && !problems.length) problems.push(`No profile at ${machinePath}. Run the ai-sdlc-setup skill.`);
+  // Every story's worktree is cut from the remote default branch, and the lifecycle ends in a pull request.
+  if (!git(root, 'remote', 'get-url', 'origin')) {
+    problems.push(`${root} has no "origin" remote. Push the repository to its host and add the remote (git remote add origin <url>) before starting a story.`);
+  }
+  if (!machine && !problems.some(problem => problem.includes('not valid JSON'))) problems.push(`No profile at ${machinePath}. Run the ai-sdlc-setup skill.`);
   if (machine) problems.push(...validate(machine, schema('profile.schema.json')));
   const centerPath = typeof machine?.commandCenterPath === 'string' ? machine.commandCenterPath : null;
   const centerProblem = machine ? commandCenterProblem(centerPath, found) : null;
@@ -253,6 +257,8 @@ export function detect(repo = '.', env = process.env) {
     profiles: { home: profileHome(env), machineProfile: machinePath, machineProfileExists: Boolean(machine), repoProfileSource: source },
     repo: {
       root, slug,
+      // null when the repository has not been pushed anywhere; the check refuses to start a story on it.
+      remote: git(root, 'remote', 'get-url', 'origin') || null,
       defaultBranch: git(root, 'symbolic-ref', '--short', 'refs/remotes/origin/HEAD').replace(/^origin\//, '') || null,
       packageScripts: scripts,
       manifests: has(/^(package\.json|pyproject\.toml|requirements.*\.txt|go\.mod|Cargo\.toml|pom\.xml|build\.gradle(\.kts)?|.*\.(sln|csproj))$/),

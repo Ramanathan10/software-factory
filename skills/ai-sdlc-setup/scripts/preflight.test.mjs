@@ -27,6 +27,17 @@ function workspace(t, { machineProfile, repoEntry } = {}) {
   return { repo, env: { ...process.env, AI_SDLC_HOME: home } };
 }
 
+test('a repository with no origin remote is refused, with what to do', t => {
+  const { repo, env } = workspace(t);
+  assert.equal(detect(repo, env).repo.remote, 'https://example.test/acme/widgets.git');
+  assert.doesNotMatch(check(repo, env).problems.join('\n'), /origin/);
+  execFileSync('git', ['-C', repo, 'remote', 'remove', 'origin']);
+  assert.equal(detect(repo, env).repo.remote, null);
+  const result = check(repo, env);
+  assert.equal(result.ok, false);
+  assert.match(result.problems[0], /has no "origin" remote\. Push the repository.*git remote add origin <url>/);
+});
+
 test('the example profile satisfies the schema', () => {
   assert.deepEqual(validate(asset('profile.example.json'), asset('profile.schema.json')), []);
 });

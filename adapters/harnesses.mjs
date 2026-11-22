@@ -4,9 +4,9 @@
 // the owner's decisions to a worker.
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { mkdirSync, openSync, readFileSync } from 'node:fs';
+import { closeSync, existsSync, mkdirSync, openSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { delimiter, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 // One row per harness, keyed by the name stories record.
@@ -86,15 +86,60 @@ export function commandFor(harness, kind, { session }, { permissions, tools } = 
   return { command: entry.command, args: entry.promptArgument ? [...args, entry.promptArgument] : args };
 }
 
+// Why a command-line harness's program cannot be started, or null when it can. Windows starts only an
+// .exe or .com directly; a .cmd or .bat that forwards to a script, as an npm install leaves, is refused
+// here instead of being run through a shell that would reinterpret the arguments.
+export function launchProblem(harness, env = process.env, platform = process.platform) {
+  const { name, command } = row(harness);
+  const has = extensions => (env.PATH || env.Path || '').split(delimiter).filter(Boolean)
+    .some(dir => extensions.some(extension => existsSync(join(dir, command + extension))));
+  if (has(platform === 'win32' ? ['.exe', '.com'] : [''])) return null;
+  return platform === 'win32' && has(['.cmd', '.bat'])
+    ? `${name} is installed as a ${command}.cmd script, which cannot be started directly on Windows. Install ${name}'s native program, which provides ${command}.exe.`
+    : `${name}'s program "${command}" was not found on PATH. Install ${name}, or choose another harness for the story.`;
+}
+
+// A failure to start the program, said in terms the owner can act on.
+const explained = (harness, error, env) => (error.code === 'ENOENT' && launchProblem(harness, env) ? new Error(launchProblem(harness, env)) : error);
+
 // Runs one turn in the worktree with the prompt on stdin. The turn outlives this process; its output goes to `log`.
 function run({ command, args }, { worktree, prompt, log, spawnProcess = spawn }) {
-  const output = log ? openSync(log, 'a') : 'ignore';
+  const output = openSync(log, 'a');
   const child = spawnProcess(command, args, { cwd: worktree, detached: true, windowsHide: true, stdio: ['pipe', output, output] });
+  // The program has its own handle on the log now.
+  closeSync(output);
   child.stdin?.on('error', () => {}).end(prompt);
   return child;
 }
 
+// Where a session's turns are logged, under `workers` in the AI SDLC home.
+function logFor(name, env) {
+  const folder = join(home(env), 'workers');
+  mkdirSync(folder, { recursive: true });
+  return join(folder, name + '.log');
+}
+
 const started = child => new Promise((resolve, reject) => child.once('spawn', resolve).once('error', reject));
+
+// How long a new turn is watched before it is called running. A sign-in, model, or argument problem ends
+// the program with an error within seconds; a real Codex turn refused for its model took a little over five.
+const SETTLE_MS = 10000;
+
+// Resolves once the turn has run for `ms` or ended cleanly. Rejects when it ended with an error in that
+// time, with the last lines it wrote, so a turn that never began is not reported as a running worker.
+function settled(child, { harness, log, ms = SETTLE_MS }) {
+  if (!ms) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(resolve, ms);
+    child.once('close', code => {
+      clearTimeout(timer);
+      if (!code) return resolve();
+      let tail = '';
+      try { tail = readFileSync(log, 'utf8').trim().split(/\r?\n/).slice(-3).join('\n'); } catch { /* nothing was written */ }
+      reject(new Error(`${harness} ended its turn at once with an error (exit code ${code}).${tail ? '\n' + tail : ''}\nSee ${log}.`));
+    });
+  });
+}
 
 // session -> a promise that settles when the turn this process started for it ends.
 const turns = new Map();
@@ -108,13 +153,15 @@ export async function messageWorker({ harness, session, worktree, prompt }, opti
   turns.set(session, new Promise(resolve => { finish = resolve; }));
   await previous;
   try {
-    const child = run(invocation, { worktree, prompt, spawnProcess: options.spawnProcess });
+    const log = logFor(session, options.env);
+    const child = run(invocation, { worktree, prompt, log, spawnProcess: options.spawnProcess });
     child.once('close', finish).once('error', finish);
     await started(child);
+    await settled(child, { harness, log, ms: options.settleMs });
     child.unref?.();
   } catch (error) {
     finish();
-    throw error;
+    throw explained(harness, error, options.launchEnv);
   }
 }
 
@@ -130,11 +177,10 @@ export async function startWorker({ harness, worktree, prompt }, options = {}) {
     return { noWorkers: true, next: `${entry.name} cannot run workers yet. Tell the owner before doing the story's work in the Jarvis chat.` };
   }
   const session = randomUUID();
-  const folder = join(home(options.env), 'workers');
-  mkdirSync(folder, { recursive: true });
-  const log = join(folder, session + '.log');
+  const log = logFor(session, options.env);
   const child = run(commandFor(harness, 'start', { session }, options.settings), { worktree, prompt, log, spawnProcess: options.spawnProcess });
-  await started(child);
+  await started(child).catch(error => { throw explained(harness, error, options.launchEnv); });
+  await settled(child, { harness, log, ms: options.settleMs });
   child.unref?.();
   if (!entry.sessionFrom) return { session, log };
   for (let waited = 0; waited < (options.waitMs ?? 60000); waited += 250) {

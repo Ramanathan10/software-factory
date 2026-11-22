@@ -1,0 +1,6 @@
+interface:
+  display_name: "Jarvis"
+  short_description: "Coordinate AI SDLC stories through the Command Center"
+  default_prompt: "Use $jarvis to be Jarvis: check setup, start the Command Center, and run each story I name in its own worker session."
+policy:
+  allow_implicit_invocation: true

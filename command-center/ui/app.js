@@ -26,6 +26,7 @@ let seenSeqs = null;
 let lastFrameAt = 0;
 const eventTimes = [];
 let filterRole = null;
+let filterRepo = '';
 let view = localStorage.getItem('aisdlc-view') ?? 'lanes';
 
 const el = (tag, attrs = {}, ...children) => {
@@ -167,7 +168,8 @@ const progress = story => {
 };
 const columnIndex = story => columns.findIndex(column => column.phases.includes(story.phase));
 const belongsTo = (story, role) => ownerOf(story) === role || (role === 'approver' && waitingOnYou(story));
-const visible = () => filterRole ? stories.filter(story => belongsTo(story, filterRole)) : stories;
+const repos = () => [...new Set(stories.map(story => story.repo).filter(Boolean))].sort();
+const visible = () => stories.filter(story => (!filterRole || belongsTo(story, filterRole)) && (!filterRepo || story.repo === filterRepo));
 
 function setFilter(role) {
   filterRole = filterRole === role ? null : role;
@@ -262,6 +264,7 @@ function storyCard(story) {
       el('span', { class: 'id' }, story.id),
       el('span', { class: 'phase' }, meta.phases[story.phase]?.[1] ?? story.phase)),
     el('h3', {}, story.title),
+    story.repo && el('p', { class: 'repo' }, story.repo),
     el('div', { class: 'owner' },
       el('span', { class: 'avatar sm' }, idle ? '··' : initials(alias(role))),
       el('span', {}, story.blocked ? 'Blocked' : waiting ? 'Waiting on you' : busy ? alias(role) + ' is working' : story.phase === 'closed' ? 'Done' : 'Idle · ' + idleReason(story)),
@@ -277,6 +280,12 @@ function storyCard(story) {
 
 function renderToolbar() {
   for (const button of document.querySelectorAll('.views button')) button.setAttribute('aria-selected', String(button.dataset.view === view));
+  // The repository picker appears once stories span more than one repository.
+  const names = repos();
+  const picker = $('repo-filter');
+  picker.hidden = names.length < 2;
+  picker.replaceChildren(el('option', { value: '' }, 'All repositories'), ...names.map(name => el('option', { value: name }, name)));
+  picker.value = filterRepo;
   const filter = $('filter');
   filter.hidden = !filterRole;
   if (!filterRole) return filter.replaceChildren();
@@ -288,7 +297,7 @@ function renderToolbar() {
 }
 
 function emptyBoard() {
-  return el('p', { class: 'empty' }, filterRole ? alias(filterRole) + ' has nothing assigned right now.' : 'No stories yet.');
+  return el('p', { class: 'empty' }, filterRole ? alias(filterRole) + ' has nothing assigned right now' + (filterRepo ? ' in ' + filterRepo : '') + '.' : 'No stories yet.');
 }
 
 function renderLanes(items) {
@@ -615,7 +624,7 @@ function openDetail(id) {
     el('dl', {},
       row('Owner', alias(ownerOf(story)) + ' · ' + (meta.roles[ownerOf(story)]?.job ?? '')),
       row('Worker session', story.worker?.session),
-      row('Harness', story.harness), row('Branch', story.branch), row('Worktree', story.worktree),
+      row('Repository', story.repo), row('Harness', story.harness), row('Branch', story.branch), row('Worktree', story.worktree),
       row('Pipeline run', story.pipeline && el('a', { href: story.pipeline, target: '_blank', rel: 'noopener' }, story.pipeline)),
       row('Pull request', story.pr && el('a', { href: story.pr, target: '_blank', rel: 'noopener' }, story.pr)),
       row('Review round', story.reviewRounds ? String(story.reviewRounds + 1) : null),
@@ -651,11 +660,13 @@ function render() {
   // Time-bucket busy state so "is working" fades without a new event.
   const busyKey = stories.map(story => [story.id, isBusy(story)]);
   if (changed('crew', [stories, busyKey, filterRole])) renderCrew();
-  if (changed('toolbar', [view, filterRole, stories.length, visible().length])) renderToolbar();
+  // A repository whose last story is gone cannot stay selected.
+  if (filterRepo && !repos().includes(filterRepo)) filterRepo = '';
+  if (changed('toolbar', [view, filterRole, filterRepo, repos(), stories.length, visible().length])) renderToolbar();
   const decisionKey = [filterRole === 'approver', stories.map(story => [story.id, story.phase, openQuestions(story).map(question => question.id), story.plan, story.draftPlan?.text])];
   if (changed('decisions', decisionKey)) renderDecisions();
-  if (changed('board', [stories, busyKey, view, filterRole])) renderBoard();
-  if (changed('feed', [lastFrameAt > 0, stories.map(story => story.events?.[0]?.seq), filterRole])) renderFeed();
+  if (changed('board', [stories, busyKey, view, filterRole, filterRepo])) renderBoard();
+  if (changed('feed', [lastFrameAt > 0, stories.map(story => story.events?.[0]?.seq), filterRole, filterRepo])) renderFeed();
 }
 
 function tick() {
@@ -685,6 +696,7 @@ meta = await (await fetch('/api/meta')).json();
 if (!['lanes', 'agents', 'track'].includes(view)) view = 'lanes';
 for (const button of document.querySelectorAll('.views button')) button.addEventListener('click', () => setView(button.dataset.view));
 $('stat-waiting-button').addEventListener('click', () => setFilter('approver'));
+$('repo-filter').addEventListener('change', event => { filterRepo = event.target.value; render(); });
 // The browser only allows asking for notification permission from a click, so offer a button until it is answered.
 $('notify').hidden = globalThis.Notification?.permission !== 'default';
 $('notify').addEventListener('click', async () => {

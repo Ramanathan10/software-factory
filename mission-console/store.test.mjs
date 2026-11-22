@@ -8,7 +8,7 @@ import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { seed, serve } from './jarvis.mjs';
 import { openStore } from './store.mjs';
-import { githubPr, summarizePr, waitForWake, watchOnce } from './watcher.mjs';
+import { githubPr, summarizePr, waitForAny, waitForWake, watchOnce } from './watcher.mjs';
 
 function fixture(t) {
   const directory = mkdtempSync(join(tmpdir(), 'jarvis-console-'));
@@ -41,6 +41,26 @@ function writer(store, story) {
     return store.record({ story, type, revision, key: story + '-' + revision, ...input });
   };
 }
+
+test('the wait across every story ends on a worker\'s news, not on old events or the owner\'s own decision', async t => {
+  const open = fixture(t);
+  const store = open();
+  start(store, 'one');
+  start(store, 'two');
+  const ask = { question: 'scope', prompt: 'Which rows?', options: ['All', 'Selected'], recommended: 0 };
+  const question = writer(store, 'one')('question', ask);
+  // Unacknowledged events from before the wait began are not news.
+  assert.deepEqual(await waitForAny(store, { seconds: 0 }), []);
+  // Started from an earlier seq, the wait reports what Jarvis has not read yet.
+  assert.deepEqual((await waitForAny(store, { after: question.seq - 1, seconds: 0 })).map(event => event.seq), [question.seq]);
+
+  const waiting = waitForAny(open(), { seconds: 5, pollMs: 20 });
+  writer(store, 'one')('answer', { question: 'scope', answer: 0 });
+  await new Promise(resolve => setTimeout(resolve, 80));
+  const asked = writer(store, 'two')('question', ask);
+  const news = await waiting;
+  assert.deepEqual(news.map(event => [event.story, event.type, event.seq]), [['two', 'question', asked.seq]]);
+});
 
 test('the demo seed follows the store\'s phase transitions', t => {
   const store = openStore(':memory:');

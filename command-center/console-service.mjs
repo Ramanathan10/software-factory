@@ -76,17 +76,36 @@ export function createConsoleService({ dbPath = DEFAULT_DB_PATH, onDecision, dec
     batch.types.add(type);
     batch.timer = setTimeout(() => {
       batches.delete(story);
-      const record = store.snapshot().find(item => item.id === story);
-      Promise.resolve(onDecision({ story, seqs: batch.seqs, types: [...batch.types], session: record?.worker?.session })).catch(() => {});
+      hand(story, batch.seqs, [...batch.types]).catch(() => {});
     }, decisionDelayMs);
     batches.set(story, batch);
   };
+  // Event seqs a worker has been handed since this process started.
+  const sent = new Set();
+  // Hands decisions to whoever `onDecision` reaches, and resolves to who that was.
+  const hand = async (story, seqs, types) => {
+    const record = store.snapshot().find(item => item.id === story);
+    const told = await onDecision({ story, seqs, types, session: record?.worker?.session });
+    if (told === 'worker') for (const seq of seqs) sent.add(seq);
+    return told;
+  };
+  // A decision a worker was already handed is not sent again: the worker acknowledges it only after acting
+  // on it, so it is still waiting while that turn runs. A worker that was lost is replaced from the handover record.
+  const toDeliver = records => records.filter(record => !sent.has(record.seq));
 
   const service = {
     snapshot: harness => store.snapshot(harness),
     pending: () => store.pending(),
     ack: seq => store.ack(seq),
     handover: story => store.handover(story),
+    // Hands the story's waiting decisions to its worker now: for a decision recorded outside the dashboard,
+    // or one that did not arrive. Resolves to the seqs handed over and who was told.
+    async deliverPending(story) {
+      const records = toDeliver(store.pendingFor(story).filter(record => humanDecisions.has(record.type)));
+      if (!records.length || !onDecision) return { story, seqs: [], told: 'nobody' };
+      const seqs = records.map(record => record.seq);
+      return { story, seqs, told: await hand(story, seqs, [...new Set(records.map(record => record.type))]) };
+    },
     listAttachments(story) {
       const folder = join(attachmentRoot, folderFor(story));
       if (!existsSync(folder)) return [];
@@ -106,11 +125,11 @@ export function createConsoleService({ dbPath = DEFAULT_DB_PATH, onDecision, dec
       writeFileSync(path, bytes);
       return { name, path, url: '/attachments/' + folderFor(story) + '/' + name, size: bytes.length };
     },
-    createStory({ story, title, detail, branch, worktree, harness } = {}) {
+    createStory({ story, title, detail, branch, worktree, harness, repo } = {}) {
       for (const [name, value] of Object.entries({ story, title, harness })) {
         if (typeof value !== 'string' || !value.trim()) throw new InputError(name + ' is required.');
       }
-      return store.record({ story, type: 'create', key: randomUUID(), title, detail, branch, worktree, harness });
+      return store.record({ story, type: 'create', key: randomUUID(), title, detail, branch, worktree, harness, repo });
     },
     recordEvent(event) {
       const next = { ...event, key: event.key ?? randomUUID() };
@@ -156,6 +175,9 @@ export function createConsoleService({ dbPath = DEFAULT_DB_PATH, onDecision, dec
             const recorded = service.recordEvent(event);
             notify(event.story, recorded, event.type);
             send(response, 200, recorded);
+          } else if (request.method === 'POST' && path === '/api/deliver') {
+            if (request.headers.origin !== origin) throw new InputError('Delivery requests must come from this machine.', 403);
+            send(response, 200, await service.deliverPending((await readJson(request))?.story));
           } else if (request.method === 'POST' && path === '/api/attachment') {
             if (request.headers.origin !== origin) throw new InputError('Attachments must come from the console.', 403);
             const story = new URL(request.url, origin).searchParams.get('story') ?? '';

@@ -453,6 +453,8 @@ export function openStore(path) {
             id, title, brief: string(input.detail, 'initial brief', 16000),
             branch: string(input.branch, 'branch', 200), worktree: string(input.worktree, 'worktree', 1000),
             harness: string(input.harness, 'harness', 100),
+            // The repository the story belongs to, as owner/name. Stories recorded before this field have none.
+            ...(input.repo === undefined ? {} : { repo: string(input.repo, 'repository', 200) }),
             phase: 'scout', revision: 0, questions: [], files: [], createdAt: now
           };
           detail = title;

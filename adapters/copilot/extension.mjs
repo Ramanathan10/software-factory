@@ -62,6 +62,7 @@ session = await joinSession({
                             branch: { type: "string" },
                             worktree: { type: "string" },
                             harness: { type: "string", minLength: 1 },
+                            repo: { type: "string", minLength: 1 },
                         },
                         ["story", "title", "harness"],
                     ),

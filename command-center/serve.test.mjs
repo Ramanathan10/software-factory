@@ -3,7 +3,8 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { deliver, loadAdapters, start } from './serve.mjs';
+import { createConsoleService } from './console-service.mjs';
+import { deliver, loadAdapters, requestDelivery, start } from './serve.mjs';
 
 const decision = { story: 'TL-1', seqs: [4, 5], types: ['answer'], session: 'worker-1' };
 
@@ -54,6 +55,34 @@ test('the launcher serves the dashboard, and a second one on the same port is re
     assert.ok(meta.phases.scout);
     await assert.rejects(start({ port: Number(new URL(center.url).port), dbPath }), { code: 'EADDRINUSE' });
   } finally {
+    await center.close();
+  }
+});
+
+test('a decision recorded outside the dashboard reaches the worker when delivery is requested', async t => {
+  const dbPath = join(folder(t), 'stories.sqlite');
+  const sent = [];
+  const center = await start({ port: 0, dbPath, adapters: new Map([['codex', { messageWorker: async message => sent.push(message) }]]) });
+  // Jarvis and workers record through their own connection to the same database.
+  const recorder = createConsoleService({ dbPath });
+  const port = Number(new URL(center.url).port);
+  try {
+    recorder.createStory({ story: 'tl-1', title: 'Add export', detail: 'Export rows.', branch: 'tl-1', harness: 'Codex', worktree: '/work/tl-1' });
+    recorder.recordEvent({ story: 'tl-1', type: 'assign-worker', session: 'worker-1' });
+    recorder.recordEvent({ story: 'tl-1', type: 'question', question: 'scope', prompt: 'Which rows?', options: ['All', 'Selected'], recommended: 0 });
+    assert.deepEqual((await requestDelivery('tl-1', port)).seqs, [], 'a worker question is not a decision to deliver');
+
+    const answer = recorder.recordEvent({ story: 'tl-1', type: 'answer', question: 'scope', answer: 0 });
+    assert.deepEqual(await requestDelivery('tl-1', port), { story: 'tl-1', seqs: [answer.seq], told: 'worker' });
+    assert.deepEqual([sent.length, sent[0].session, sent[0].worktree], [1, 'worker-1', '/work/tl-1']);
+    assert.match(sent[0].prompt, /answer on story tl-1/);
+    assert.deepEqual([(await requestDelivery('tl-1', port)).seqs, sent.length], [[], 1], 'a decision the worker already has is not sent twice');
+
+    recorder.ack(answer.seq);
+    assert.deepEqual((await requestDelivery('tl-1', port)).seqs, [], 'an acknowledged decision is finished');
+    await assert.rejects(requestDelivery('missing', port), /does not exist/);
+  } finally {
+    recorder.close();
     await center.close();
   }
 });

@@ -6,7 +6,7 @@ import { cpSync, existsSync, lstatSync, mkdirSync, readdirSync, realpathSync, re
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { harnesses } from './adapters/harnesses.mjs';
+import { harnesses, launchProblem } from './adapters/harnesses.mjs';
 
 const repo = fileURLToPath(new URL('.', import.meta.url));
 
@@ -112,6 +112,9 @@ function main(args) {
       continue;
     }
     console.log(name + ': ' + ['created', 'linked', 'replaced', 'copied', 'installed', 'missing', 'blocked', 'kept'].filter(count).map(state => count(state) + ' ' + state).join(', '));
+    // The skills still install; the owner is told now that Jarvis could not start a story session here.
+    const problem = harnesses[name].workers === 'command-line' && launchProblem(name);
+    if (problem) console.log('  Story sessions will not start: ' + problem);
     for (const result of mine.filter(result => result.state === 'kept')) {
       console.log('  kept your own ' + result.skill + ' at ' + result.path + '.');
     }

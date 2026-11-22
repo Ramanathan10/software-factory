@@ -1,4 +1,6 @@
 // Runs the Command Center on its own, for harnesses that cannot host it themselves.
+//   node serve.mjs [port]                   start the dashboard
+//   node serve.mjs deliver <story> [port]   hand a story's waiting decisions to its worker
 import { pathToFileURL } from 'node:url';
 import { harnesses, messageWorker } from '../adapters/harnesses.mjs';
 import { harnessKey } from '../mission-console/roles.mjs';
@@ -61,7 +63,29 @@ export async function start({ port = DEFAULT_PORT, dbPath, adapters = new Map() 
   }
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+// Asks the running Command Center to hand a story's waiting decisions to its worker, so every decision
+// reaches a worker through the one process that keeps a session to one turn at a time.
+export async function requestDelivery(story, port = DEFAULT_PORT) {
+  const origin = 'http://127.0.0.1:' + port;
+  const response = await fetch(origin + '/api/deliver', {
+    method: 'POST', headers: { 'Content-Type': 'application/json', Origin: origin }, body: JSON.stringify({ story }),
+  });
+  const body = await response.json();
+  if (!response.ok) throw new Error(body.error);
+  return body;
+}
+
+const direct = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
+
+//   node serve.mjs deliver <story> [port]
+if (direct && process.argv[2] === 'deliver') {
+  try {
+    console.log(JSON.stringify(await requestDelivery(process.argv[3], Number(process.argv[4] ?? DEFAULT_PORT))));
+  } catch (error) {
+    console.error(error.cause?.code === 'ECONNREFUSED' ? 'The Command Center is not running. Start it with: node ' + process.argv[1] : error.message);
+    process.exitCode = 1;
+  }
+} else if (direct) {
   const port = Number(process.argv[2] ?? DEFAULT_PORT);
   try {
     const { url } = await start({ port, dbPath: process.env.AI_SDLC_CONSOLE_DB || undefined, adapters: loadAdapters() });

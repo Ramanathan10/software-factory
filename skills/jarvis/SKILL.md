@@ -7,7 +7,7 @@ description: Coordinate AI SDLC stories through the Command Center. Use when the
 
 Jarvis is the owner's coordinator for the software factory. It delegates each story to its own worker, and it keeps the Command Center showing where every story stands and what is waiting on the owner. The worker runs the `ai-sdlc` skill's phases unchanged; `ai-sdlc` is the source of truth for what a phase does and when it may advance, and nothing here loosens one of its gates.
 
-Run the steps in order. Steps 1 and 2 happen once per session. Steps 3 to 6 repeat for each story, and independent stories run through them at the same time.
+Run the steps in order. Steps 1 and 2 happen once per session, except that the preflight check in step 1 is run again for each repository a story is for. Steps 3 to 6 repeat for each story, and independent stories run through them at the same time.
 
 - [ ] 1. Start the session: target repository, preflight check, Command Center
 - [ ] 2. Catch up: decisions and stories left from earlier sessions
@@ -36,10 +36,11 @@ Read `pending` and the story snapshot. Tell the owner about every decision still
 Jarvis does not scout, plan, write tests, implement, review, or verify. For each story:
 
 1. Read the work item to name the story. Do not scout the repository.
-2. Choose one harness for the story and keep it. A different story may use a different harness against the same database.
-3. Record `create`, with the branch named from the profile's branch pattern.
-4. Start the story's worker in its own worktree with the kickoff prompt, and record `assign-worker` so decisions route to it.
-5. Tell the owner which workers started and which decisions are waiting on them. Then stop.
+2. Name the story's repository. One Jarvis chat takes stories for any repository. When this one differs from the repository last checked, run the preflight check on it before going on, exactly as step 1 does. If it has no section in the profile yet, run the `ai-sdlc-setup` repository interview here in the Jarvis chat: a worker cannot interview the owner. Use that repository's check output for everything below.
+3. Choose one harness for the story and keep it. A different story may use a different harness against the same database.
+4. Record `create`, with `repo` set to the check's `repo.slug` and the branch named from that repository's branch pattern.
+5. Start the story's worker in its own worktree with the kickoff prompt, and record `assign-worker` so decisions route to it.
+6. Tell the owner which workers started and which decisions are waiting on them, make sure the "Report an idle worker" call is in place, and then stop.
 
 The runbook's "Intake" and "Story worker kickoff template" give each of these in full. If the harness cannot run workers, tell the owner before doing the story's work in the Jarvis chat.
 
@@ -49,7 +50,10 @@ The factory is event-driven, never scheduled. The owner decides in the console; 
 
 - Where the Command Center can message the worker itself, it does, and Jarvis forwards nothing.
 - Where it wakes Jarvis instead, forward the decision to that story's worker at once. Jarvis does not act on it.
+- When the owner decides in the Jarvis chat instead, record the decision in the console, then pass it to that story's worker with the harness's "Message a worker" call in the runbook. Jarvis talks to one session per story and does not act on the decision.
 - A decision that could not reach its worker stays pending, and step 2 finds it.
+
+To hear when a worker ends its turn, use the harness's "Report an idle worker" call in the runbook. In a harness driven from the command line that is one background `wait-any` command, restarted after each time it ends.
 
 Do not attach recurring schedules to workers or to the Jarvis chat. Hawkeye's PR watcher, described in the Mission Console reference, observes CI and merge status.
 
@@ -74,7 +78,7 @@ Keep the console honest while this happens:
 
 - Record progress and phase handoffs as work happens, including completion evidence, worker release, and the next assignment.
 - Record a human decision in the console before asking the owner to answer it, and point the owner to the console rather than asking in chat.
-- If the owner answers in chat anyway, persist that explicit answer once in the matching console decision and continue from the refreshed state. Reconcile an already answered decision before asking again.
+- If the owner answers in chat anyway, persist that explicit answer once in the matching console decision, pass it to the story's worker as step 4 describes, and continue from the refreshed state. Reconcile an already answered decision before asking again.
 - The console shows stored events only. A chat question, a native option picker, or a subagent reply does not update it. If the console cannot record a decision, report the failure and restore it before waiting on a console answer.
 - Use `replan` when a phase returns to planning for an unsettled decision, and `blocked` and `resume` around a blocker.
 - When a story enters a phase the profile lists for its work tracker, run the runbook's "Readiness check" and record what it asks.

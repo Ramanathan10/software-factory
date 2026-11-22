@@ -27,6 +27,8 @@ node <this skill>/scripts/preflight.mjs detect <repository>
 
 It reports installed tools, where the Command Center is, whether a profile exists, the repository's name and default branch, package scripts, manifests, lockfiles, scanner and Stryker configuration, and CI files. Read the CI files it lists, and the repository's contribution guide and agent instruction files, for the commands the project already uses. Do not ask the owner for anything these answer.
 
+When `repo.remote` is `null`, the repository has no `origin` remote. Stop and tell the owner before interviewing: every story's worktree is cut from the remote default branch and ends in a pull request, so the check refuses a repository that has not been pushed to its host. Adding the remote is the owner's step; do not create a remote repository or push for them unasked.
+
 Its `components` list is the software the lifecycle runs beyond the agent: `git` and the pull request CLI, Stryker and gitleaks behind the gates, and `ffmpeg` and `hyperframes` for video. Each entry says what it is needed for, whether it was found, and a suggested install command.
 
 The script cannot see what the agent host can do. Check your own tool list for the three abilities the evidence phases use, and note which are present:
@@ -80,7 +82,7 @@ The profile holds names, commands, and settings. Never write a password, token, 
 node <this skill>/scripts/preflight.mjs check <repository>
 ```
 
-It validates the profile against the schema, confirms each gate's tool exists, and reports each component as found or missing. `problems` stop a story; `warnings` do not. A missing tool that a required gate names, or missing `git`, is a problem. A missing pull request CLI or optional component is a warning. Fix every reported problem with the owner, and return to the missing-components question for each warning.
+It validates the profile against the schema, confirms each gate's tool exists, and reports each component as found or missing. `problems` stop a story; `warnings` do not. A repository with no `origin` remote, a missing tool that a required gate names, or missing `git`, is a problem. A missing pull request CLI or optional component is a warning. Fix every reported problem with the owner, and return to the missing-components question for each warning.
 
 ## 5. Hand off
 

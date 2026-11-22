@@ -29,6 +29,14 @@ test('createStory records a story in scout and returns a receipt', t => {
   assert.equal(service.snapshot('Codex').length, 1);
 });
 
+test('a story keeps the repository it was created for, and one created without a repository has none', t => {
+  const service = fixture(t);
+  service.createStory({ ...base, repo: 'acme/orders' });
+  service.createStory({ ...base, story: 'tl-2' });
+  assert.deepEqual([find(service, 'tl-1').repo, find(service, 'tl-2').repo], ['acme/orders', undefined]);
+  assert.throws(() => service.createStory({ ...base, story: 'tl-3', repo: ' ' }), /repository is required/);
+});
+
 test('createStory rejects missing story, title, or harness', t => {
   const service = fixture(t);
   for (const field of ['story', 'title', 'harness']) {

@@ -44,7 +44,7 @@ Parallel stories on one machine must not compete for the shared resources in the
 
 ### Scout
 
-Before asking the owner anything, investigate the repository read-only and write a context pack: the relevant files and entry points, the conventions and rules that apply (agent instruction files, lint configuration, naming, and every entry in the profile's team rules: open each web address, read each file, and take each written instruction as given), the focused and full test commands, similar earlier changes, and known risks. The context pack opens the draft plan, goes into the spec, and is given to every later subagent. Correct it when a later phase finds it wrong.
+Before asking the owner anything, investigate the repository read-only and write a context pack: the relevant files and entry points, the conventions and rules that apply (agent instruction files written for any harness, not only the one running this session, such as `AGENTS.md`, `CLAUDE.md`, `.cursor/rules`, and `.github/copilot-instructions.md`, lint configuration, naming, and every entry in the profile's team rules: open each web address, read each file, and take each written instruction as given), the focused and full test commands, similar earlier changes, and known risks. The context pack opens the draft plan, goes into the spec, and is given to every later subagent. Correct it when a later phase finds it wrong.
 
 ### Feature lane
 

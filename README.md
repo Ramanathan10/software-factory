@@ -8,7 +8,7 @@ Everything needed to run the AI software development lifecycle from one clone: t
 |---|---|
 | `skills/` | The lifecycle skills (below). |
 | [`mission-console/`](mission-console/README.md) | Story store (SQLite), event rules, `jarvis.mjs` CLI, PR watcher, and the original standalone dashboard. Works from any agent harness. |
-| `command-center/` | Local HTTP service and dashboard UI: stories, questions, plan approval with comments, evidence, attachments. Shows the number of stories waiting on the owner in its tab title and, once allowed, as desktop notifications. Harness-neutral; wakes the coordinator through an `onDecision` callback. `serve.mjs` runs it on its own. |
+| `command-center/` | Local HTTP service and dashboard UI: stories, questions, plan approval with comments, evidence, attachments. Shows the number of stories waiting on the owner in its tab title and, once allowed, as desktop notifications. Harness-neutral; wakes the coordinator through an `onDecision` callback. `serve.mjs` runs it on its own, and `serve.mjs deliver <story>` hands a story's waiting decisions to its worker when the owner decided in chat. |
 | `adapters/harnesses.mjs` | The one table of harnesses: how each is installed and how its story workers are started and messaged. The [factory runbook](skills/jarvis/RUNBOOK.md) describes its use. |
 | `adapters/copilot/extension.mjs` | Hosts the Command Center inside the GitHub Copilot app, the one harness that only runs code as an extension. |
 | `readiness-sync/` | Optional read-only check that a story is finished in the team's work tracker. `trackers.mjs` is the one table of trackers (Azure DevOps, GitHub, Linear); it never writes to any of them. |
@@ -59,7 +59,7 @@ It sets up each harness it finds on the machine; name one (`codex`, `claude-code
 | Codex, Claude Code, Cursor | One link per skill, so they read the skills in place. A skill of the same name that is already there is left alone and reported as blocked, and the installer exits with an error, because the harness would use that one and not this repository's. `node install.mjs --replace` moves each blocking skill aside to `<name>.bak-<time>` and installs this one; nothing is deleted. If the harness's skills folder is itself a single link to another repository, the installer says so and leaves it alone. |
 | GitHub Copilot app | Copies, because the app does not follow links: the skills and the Command Center extension go under `~\.copilot`. Anything replaced is moved to a `.bak-<time>` folder beside it, and an existing `diagram-design` is kept. Run the installer again after updating this repository. |
 
-Then restart the harness and say "Be Jarvis. Run AI SDLC." The first run asks the `ai-sdlc-setup` questions once and saves the profile; later runs ask only for an answer the profile lacks.
+Then restart the harness and say "Be Jarvis. Run AI SDLC." in a repository that has an `origin` remote; a story ends in a pull request, so one that has not been pushed anywhere is refused. The first run asks the `ai-sdlc-setup` questions once and saves the profile; later runs ask only for an answer the profile lacks.
 
 ## State and the profile
 
@@ -72,8 +72,10 @@ MIT; see [LICENSE](LICENSE). Imported skills keep their own license file in thei
 
 ## Known gaps
 
-- Workers run in the GitHub Copilot app, Claude Code, and Codex. Cursor is installed but its row in `adapters/harnesses.mjs` has no worker commands yet. The Claude Code and Codex commands are covered by tests with a stand-in program and have not been run against the real programs.
-- In Claude Code and Codex nothing wakes the Jarvis chat: Jarvis learns of a finished worker turn or an undelivered decision when it next reads the console.
+- Workers run in the GitHub Copilot app, Claude Code, and Codex. Cursor is installed but its row in `adapters/harnesses.mjs` has no worker commands yet. A real Claude Code session has been started, has recorded events and committed in its worktree, and has been resumed with a decision, on Windows only. A real Codex session has been started, but its first turn has not completed, so recording and committing from Codex's restricted sandbox are still untested.
+- On Windows, a Claude Code or Codex story session starts only from the native program (`claude.exe`, `codex.exe`). An npm install leaves a `.cmd` script, which the installer and the start call refuse with the fix.
+- A story session that fails within ten seconds of starting or resuming is reported with its error. One that fails later is silent: the story shows a worker and no new events, and only the session's log says why.
+- In Claude Code, Jarvis hears that a worker ended its turn through a background `wait-any` command, because the chat resumes when a background command ends. That has not been checked in Codex; where the chat does not resume, Jarvis learns of a finished turn when it next reads the console. In both, an undelivered decision is found only then.
 - The Copilot extension cannot be executed outside the Copilot app, so `extension.mjs` is covered only by the service tests behind it.
 - The console still has a `comparison-choice` step after review; `ai-sdlc` now settles that during planning, so Jarvis records the planned answer there instead of asking again.
 - `.github/workflows/test.yml` runs the tests on Windows, macOS and Linux, but it has not run yet, so only Windows is known to pass.

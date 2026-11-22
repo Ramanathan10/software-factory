@@ -37,7 +37,7 @@ node $console watch $missionDb
 
 The watcher polls registered `github.com` PRs in CI or merge phases, even if the dashboard and agent chat are closed. It records CI failures, changed heads, passing check reports, and PR closure or merge. It stores actionable changes in the durable queue, with one wake for each observed transition. The default delay is 30 seconds between sweeps. Pass a delay in seconds to `watch`, or use `watch-once` for a single sweep. Stop the watcher with Ctrl+C.
 
-In a harness that runs workers, the owner's decisions reach the worker without anyone waiting: the Command Center messages the worker, or wakes Jarvis to forward it. `wait` is the fallback for a harness that cannot run workers, where Jarvis does the story's work in its own chat and nothing else would bring it the owner's answer:
+In a harness that runs workers, the owner's decisions reach the worker without anyone waiting: the Command Center messages the worker, or wakes Jarvis to forward it. Jarvis hears that a worker ended its turn through `wait-any <db> [after-seq] [seconds]`, run as a background command: it ends, printing the new events, as soon as any story has an event for Jarvis recorded after that seq, and the owner's own decisions do not end it. `wait` is the fallback for a harness that cannot run workers, where Jarvis does the story's work in its own chat and nothing else would bring it the owner's answer:
 
 ```powershell
 node $console wait $missionDb TL-142 30
@@ -124,7 +124,7 @@ The `ack` argument is the exact sequence number reported by `pending`. Use it on
 
 | Event | Additional fields and effect |
 |---|---|
-| `create` | `title`, `detail` (brief), `branch`, `worktree`, and `harness` (for the full story). Starts planning. |
+| `create` | `title`, `detail` (brief), `branch`, `worktree`, and `harness` (for the full story), plus `repo`, the story's repository as `owner/name`, which the Command Center shows and filters by. Starts planning. |
 | `select-harness` | One-time migration for an older open story with no recorded harness and no active assignment. Set `harness` only after verifying the story used that harness. |
 | `question` | `question` (unique within the story), `prompt`, `options`, `recommended` (zero-based option index). |
 | `answer` | `question` and `answer` (option index or custom text). Use the dashboard or record Fury's explicit response. |
