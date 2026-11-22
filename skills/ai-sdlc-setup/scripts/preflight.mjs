@@ -10,7 +10,6 @@ import { fileURLToPath } from 'node:url';
 
 const assets = fileURLToPath(new URL('../assets/', import.meta.url));
 const schema = name => JSON.parse(readFileSync(join(assets, name), 'utf8'));
-export const REPO_PROFILE_FILE = '.ai-sdlc.json';
 
 export const profileHome = (env = process.env) => env.AI_SDLC_HOME || join(homedir(), '.ai-sdlc');
 
@@ -71,12 +70,11 @@ export function loadProfiles(repo, env = process.env) {
   const root = git(repo, 'rev-parse', '--show-toplevel') || resolve(repo);
   const slug = repoSlug(root);
   const machinePath = join(profileHome(env), 'profile.json');
-  const repoPath = join(root, REPO_PROFILE_FILE);
   const machine = readJson(machinePath, problems, 'Machine profile');
-  const repoFile = readJson(repoPath, problems, 'Repository profile');
-  const repoProfile = repoFile ?? machine?.repos?.[slug];
-  const source = repoFile ? repoPath : repoProfile ? `${machinePath} repos["${slug}"]` : null;
-  return { root, slug, machinePath, repoPath, machine, repoProfile, source, problems };
+  // Each person keeps their own checks for a repository, so its profile lives in their machine profile, never in the repository.
+  const repoProfile = machine?.repos?.[slug];
+  const source = repoProfile ? `${machinePath} repos["${slug}"]` : null;
+  return { root, slug, machinePath, machine, repoProfile, source, problems };
 }
 
 function gateProblem(name, command, root, env) {
@@ -88,12 +86,11 @@ function gateProblem(name, command, root, env) {
 }
 
 export function check(repo = '.', env = process.env) {
-  const { root, slug, machinePath, repoPath, machine, repoProfile, source, problems } = loadProfiles(repo, env);
+  const { root, slug, machinePath, machine, repoProfile, source, problems } = loadProfiles(repo, env);
   if (!machine && !problems.length) problems.push(`No machine profile at ${machinePath}. Run the ai-sdlc-setup skill.`);
   if (machine) problems.push(...validate(machine, schema('profile.schema.json'), 'machine profile'));
-  if (!repoProfile) problems.push(`No repository profile for ${slug} (looked in ${repoPath} and the machine profile). Run the ai-sdlc-setup skill.`);
-  // A machine-profile entry was already validated with the machine profile.
-  else if (source === repoPath) problems.push(...validate(repoProfile, schema('repo-profile.schema.json'), 'repository profile'));
+  // A repository profile is validated with the machine profile that holds it.
+  if (!repoProfile) problems.push(`No repository profile for ${slug} in ${machinePath}. Run the ai-sdlc-setup skill.`);
 
   const gates = {};
   const skippedGates = [];
@@ -124,7 +121,7 @@ export function check(repo = '.', env = process.env) {
 const list = dir => (existsSync(dir) ? readdirSync(dir) : []);
 
 export function detect(repo = '.', env = process.env) {
-  const { root, slug, machinePath, repoPath, machine, source } = loadProfiles(repo, env);
+  const { root, slug, machinePath, machine, source } = loadProfiles(repo, env);
   const files = list(root);
   const has = pattern => files.filter(file => pattern.test(file));
   let scripts = {};
@@ -134,7 +131,7 @@ export function detect(repo = '.', env = process.env) {
   return {
     node: process.version,
     tools,
-    profiles: { home: profileHome(env), machineProfile: machinePath, machineProfileExists: Boolean(machine), repoProfileSource: source, repoProfileFile: repoPath },
+    profiles: { home: profileHome(env), machineProfile: machinePath, machineProfileExists: Boolean(machine), repoProfileSource: source },
     repo: {
       root, slug,
       defaultBranch: git(root, 'symbolic-ref', '--short', 'refs/remotes/origin/HEAD').replace(/^origin\//, '') || null,

@@ -10,9 +10,9 @@ Detect what the machine and repository already answer, interview the owner only 
 | Profile | Holds | Lives at |
 |---|---|---|
 | Machine | Who the owner is and what this machine may do | `profile.json` in the AI SDLC home: `AI_SDLC_HOME`, default `~/.ai-sdlc`. Never committed. |
-| Repository | The checks every change to this repository must pass | `.ai-sdlc.json` in the repository root, or `repos["owner/name"]` in the machine profile when the repository cannot hold the file |
+| Repository | The checks the owner runs on every change to this repository | `repos["owner/name"]` in the machine profile. Never written into the repository. |
 
-The schemas and filled-in examples are in [assets](assets/): [profile.schema.json](assets/profile.schema.json), [repo-profile.schema.json](assets/repo-profile.schema.json), [profile.example.json](assets/profile.example.json), and [repo-profile.example.json](assets/repo-profile.example.json). The profiles work the same from any agent harness. To keep work and personal setups apart on one machine, point `AI_SDLC_HOME` at a different folder for each.
+The schemas and filled-in examples are in [assets](assets/): [profile.schema.json](assets/profile.schema.json), [repo-profile.schema.json](assets/repo-profile.schema.json), [profile.example.json](assets/profile.example.json), and [repo-profile.example.json](assets/repo-profile.example.json). Both profiles are the owner's own: people working in the same repository may each keep different checks. The profiles work the same from any agent harness. To keep work and personal setups apart on one machine, point `AI_SDLC_HOME` at a different folder for each.
 
 ## 1. Detect
 
@@ -46,11 +46,10 @@ Ask in rounds, each question with a recommended answer worded so "yes" accepts i
 5. **Review bot.** Whether Greptile reviews pull requests in this repository (`reviewBot`: `greptile` or `none`).
 6. **Spec location.** Where the approved spec is committed (`specDir`, default `docs/specs`), or `null` to keep specs out of the repository and in the pull request description.
 7. **Sharing limit.** Whether this repository forbids cross-model sharing even when the machine allows it (`crossModelReviewAuthorized: false`). Omit the field otherwise.
-8. **Where the profile lives.** Committed as `.ai-sdlc.json` so everyone working in the repository shares it, or kept in the machine profile when the repository should not hold it.
 
 ## 3. Save
 
-Write the machine profile to the AI SDLC home, creating the folder if needed. Write the repository profile where the owner chose. When that is `.ai-sdlc.json`, leave the file uncommitted and tell the owner; it reaches the default branch through the repository's normal review, not as part of an unrelated story.
+Write the machine profile to the AI SDLC home, creating the folder if needed, with the repository profile under `repos["owner/name"]`. Write nothing into the repository: no profile file, and no part of the AI SDLC home.
 
 Profiles hold names, commands, and settings. Never write a password, token, key, or connection string into one; name the resource and let the tool's own sign-in supply the credential.
 

@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "AI SDLC repository profile",
-  "description": "Facts about one repository that every person and agent working in it shares. Lives at .ai-sdlc.json in the repository root, or under repos[\"owner/name\"] in the machine profile when the repository cannot hold the file. Holds names and commands only, never credentials.",
+  "description": "The checks one person runs on one repository. Lives under repos[\"owner/name\"] in that person's machine profile and is never written into the repository. Holds names and commands only, never credentials.",
   "type": "object",
   "required": ["schemaVersion", "gates"],
   "additionalProperties": false,

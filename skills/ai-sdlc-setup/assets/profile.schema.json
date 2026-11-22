@@ -12,7 +12,7 @@
     "sharedResources": { "description": "Local services, databases, ports, or hosts that parallel stories must not fight over.", "type": "array", "items": { "type": "string" } },
     "defaultVerificationEnvironment": { "description": "Where before-and-after and live tests run by default.", "type": "string" },
     "repos": {
-      "description": "Repository profiles for repositories that cannot hold .ai-sdlc.json, keyed by owner/name.",
+      "description": "The owner's profile for each repository, keyed by owner/name.",
       "type": "object",
       "additionalProperties": { "$ref": "repo-profile.schema.json" }
     }

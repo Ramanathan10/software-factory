@@ -174,7 +174,10 @@ export function createConsoleService({ dbPath = DEFAULT_DB_PATH, onDecision, dec
       });
 
       return new Promise((resolve, reject) => {
-        server.once('error', reject);
+        server.once('error', error => {
+          clearInterval(tick);
+          reject(error);
+        });
         server.listen(port, host, () => resolve({
           url: 'http://' + host + ':' + server.address().port + '/',
           close: () => new Promise(done => {

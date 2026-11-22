@@ -11,7 +11,7 @@ const asset = name => JSON.parse(readFileSync(fileURLToPath(new URL(`../assets/$
 const machine = { schemaVersion: 1, ownerName: 'Sam', crossModelReviewAuthorized: true };
 const repoProfile = gates => ({ schemaVersion: 1, gates });
 
-function workspace(t, { machineProfile, repoFile } = {}) {
+function workspace(t, { machineProfile, repoEntry } = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'ai-sdlc-preflight-'));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const repo = join(dir, 'repo');
@@ -20,8 +20,8 @@ function workspace(t, { machineProfile, repoFile } = {}) {
   mkdirSync(home);
   execFileSync('git', ['init', '-q', repo]);
   execFileSync('git', ['-C', repo, 'remote', 'add', 'origin', 'https://example.test/acme/widgets.git']);
-  if (machineProfile) writeFileSync(join(home, 'profile.json'), JSON.stringify(machineProfile));
-  if (repoFile) writeFileSync(join(repo, '.ai-sdlc.json'), JSON.stringify(repoFile));
+  const repos = repoEntry ? { repos: { 'acme/widgets': repoEntry } } : {};
+  if (machineProfile) writeFileSync(join(home, 'profile.json'), JSON.stringify({ ...machineProfile, ...repos }));
   return { repo, env: { ...process.env, AI_SDLC_HOME: home } };
 }
 
@@ -47,8 +47,8 @@ test('check sends a machine without profiles to setup', t => {
   assert.match(result.problems.join('\n'), /No repository profile for acme\/widgets/);
 });
 
-test('check passes with a repository file and reports skipped gates', t => {
-  const { repo, env } = workspace(t, { machineProfile: machine, repoFile: repoProfile({ test: 'git --version', mutation: null }) });
+test('check passes with a repository profile in the machine profile and reports skipped gates', t => {
+  const { repo, env } = workspace(t, { machineProfile: machine, repoEntry: repoProfile({ test: 'git --version', mutation: null }) });
   const result = check(repo, env);
   assert.deepEqual(result.problems, []);
   assert.equal(result.owner, 'Sam');
@@ -56,29 +56,32 @@ test('check passes with a repository file and reports skipped gates', t => {
   assert.deepEqual(result.repo.skippedGates, ['mutation']);
 });
 
-test('the repository file wins over the machine profile entry, which is the fallback', t => {
-  const withEntry = { ...machine, repos: { 'acme/widgets': repoProfile({ test: 'git status' }) } };
-  const both = workspace(t, { machineProfile: withEntry, repoFile: repoProfile({ test: 'git --version' }) });
-  assert.equal(check(both.repo, both.env).repo.gates.test, 'git --version');
-  const fallback = workspace(t, { machineProfile: withEntry });
-  const result = check(fallback.repo, fallback.env);
-  assert.equal(result.ok, true);
-  assert.equal(result.repo.gates.test, 'git status');
+test('a profile file inside the repository is not read', t => {
+  const { repo, env } = workspace(t, { machineProfile: machine });
+  writeFileSync(join(repo, '.ai-sdlc.json'), JSON.stringify(repoProfile({ test: 'git --version' })));
+  const result = check(repo, env);
+  assert.deepEqual(result.repo.gates, {});
+  assert.match(result.problems.join('\n'), /No repository profile for acme\/widgets/);
+});
+
+test('check reports an invalid repository profile', t => {
+  const { repo, env } = workspace(t, { machineProfile: machine, repoEntry: { schemaVersion: 1 } });
+  assert.match(check(repo, env).problems.join('\n'), /repos\.acme\/widgets\.gates is missing/);
 });
 
 test('check reports a gate whose tool is not installed', t => {
-  const { repo, env } = workspace(t, { machineProfile: machine, repoFile: repoProfile({ secrets: 'no-such-scanner-xyz detect' }) });
+  const { repo, env } = workspace(t, { machineProfile: machine, repoEntry: repoProfile({ secrets: 'no-such-scanner-xyz detect' }) });
   const result = check(repo, env);
   assert.equal(result.ok, false);
   assert.match(result.problems[0], /gate secrets needs "no-such-scanner-xyz"/);
 });
 
 test('cross-model sharing needs the machine to allow it and the repository not to forbid it', t => {
-  const allowed = workspace(t, { machineProfile: machine, repoFile: repoProfile({}) });
+  const allowed = workspace(t, { machineProfile: machine, repoEntry: repoProfile({}) });
   assert.equal(check(allowed.repo, allowed.env).crossModelReviewAuthorized, true);
-  const forbidden = workspace(t, { machineProfile: machine, repoFile: { ...repoProfile({}), crossModelReviewAuthorized: false } });
+  const forbidden = workspace(t, { machineProfile: machine, repoEntry: { ...repoProfile({}), crossModelReviewAuthorized: false } });
   assert.equal(check(forbidden.repo, forbidden.env).crossModelReviewAuthorized, false);
-  const machineNo = workspace(t, { machineProfile: { ...machine, crossModelReviewAuthorized: false }, repoFile: repoProfile({}) });
+  const machineNo = workspace(t, { machineProfile: { ...machine, crossModelReviewAuthorized: false }, repoEntry: repoProfile({}) });
   assert.equal(check(machineNo.repo, machineNo.env).crossModelReviewAuthorized, false);
 });
 

@@ -7,7 +7,7 @@ description: Coordinate AI SDLC stories through the Command Center. Use when the
 
 Jarvis is the owner's coordinator for the software factory. It runs the `ai-sdlc` skill's phases unchanged and adds two things: it delegates each story to its own worker, and it keeps the Command Center showing where every story stands and what is waiting on the owner. `ai-sdlc` is the source of truth for what a phase does and when it may advance; nothing here loosens one of its gates.
 
-The Command Center is the application in this repository: the story store and CLI in [mission-console](../../mission-console/README.md) and the dashboard in `command-center`. How Jarvis starts and messages workers depends on the harness; follow the adapter runbook for the one in use, such as the [GitHub Copilot app runbook](../../adapters/copilot/RUNBOOK.md).
+The Command Center is the application in this repository: the story store and CLI in [mission-console](../../mission-console/README.md) and the dashboard in `command-center`. The [factory runbook](RUNBOOK.md) gives the steps for intake, the worker kickoff, the event chain, and decision handling in any harness. How Jarvis starts and messages workers depends on the harness; the adapter runbook for the one in use names those calls, such as the [GitHub Copilot app runbook](../../adapters/copilot/RUNBOOK.md).
 
 ## Roles
 
@@ -36,7 +36,7 @@ Choose one harness at intake and keep it for that story. A different story may u
 
 ## Hawkeye keeps the factory moving
 
-The factory is event-driven, never scheduled. When the owner records a decision in the console, the console wakes Jarvis, and Jarvis immediately forwards it to that story's worker, which acts, acknowledges the event, and continues. When a worker reaches a question or gate it ends its turn, and its idle notification wakes Jarvis to report to the owner. Record each worker with `assign-worker` so decisions route to it. Do not attach recurring schedules to workers or to the Jarvis chat. Hawkeye's PR watcher, described in the Mission Console reference, observes CI and merge status.
+The factory is event-driven, never scheduled. When the owner records a decision in the console, the console wakes Jarvis, and Jarvis immediately forwards it to that story's worker, which acts, acknowledges the event, and continues. When a worker reaches a question or gate it ends its turn, and its idle notification wakes Jarvis to report to the owner. Record each worker with `assign-worker` so decisions route to it. A decision that cannot reach its worker stays pending; Jarvis reads `pending` at the start of each turn and tells the owner what to do next, as the runbook's "Undelivered decisions" describes. Do not attach recurring schedules to workers or to the Jarvis chat. Hawkeye's PR watcher, described in the Mission Console reference, observes CI and merge status.
 
 ## Keep the console current
 
