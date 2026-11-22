@@ -29,7 +29,7 @@ Run every writer with the same database path. Keep the database and its SQLite s
 
 ## Hawkeye background wakeups
 
-Hawkeye observes GitHub pull requests after Jarvis registers them with `pr-opened`. Start the watcher in a separate terminal with an authenticated GitHub CLI and the same database:
+Hawkeye observes GitHub pull requests after Jarvis registers them with `pr-opened`. The Command Center does this itself every 30 seconds while it runs, with an authenticated GitHub CLI. Without the Command Center, start the watcher in a separate terminal with the same database:
 
 ```powershell
 node $console watch $missionDb
@@ -134,6 +134,7 @@ The `ack` argument is the exact sequence number reported by `pending`. Use it on
 | `plan` | `detail` contains Cap’s proposed plan. All questions must be answered. |
 | `approve` | Record Fury’s explicit plan approval. Starts test authoring. |
 | `assign-worker`, `release-worker` | Assignment takes `session` (non-secret reference in the selected harness). Release takes `assignment` (the current `worker.id`) and `detail` confirming the worker is idle or stopped. Release before changing phases or assigning a replacement. |
+| `turn-started`, `turn-ended` | Recorded by the Command Center for a worker whose program it started. Start takes the current `assignment`, the program's `pid`, and its `log` file. End takes `outcome` (`ended`, `failed`, or `lost`), the exit `code` when known, `detail`, and `wake`: true makes it a pending event for Jarvis. The story shows the running turn as `worker.turn` and the last one as `worker.lastTurn`. |
 | `activity` | `detail` reports an observation. Include the matching `assignment` when a worker is assigned. With no worker assignment, Jarvis can record an untagged observation. Optional `file`, `change`, and `diff` add a changed-file entry. |
 | `handoff` | `detail` provides evidence for the current phase. Provide `command` for verified red, build, gate, or mutation checks. |
 | `return-to-build`, `return-to-testing`, `replan` | `detail` identifies a verified review or gate finding (`return-to-build`, from review or gates; each review return counts a round, shown as Review round N; the limit is the profile's `reviewRoundLimit`), surviving mutants (`return-to-testing`, from mutation), or a reopened scope decision. |

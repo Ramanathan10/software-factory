@@ -1,10 +1,17 @@
-// Runs the Command Center on its own, for harnesses that cannot host it themselves.
-//   node serve.mjs [port]                   start the dashboard
+// The factory daemon: the Command Center dashboard, the supervisor of every story worker's turns, and the
+// PR watcher, in one process.
+//   node serve.mjs [port]                   start the daemon
+//   node serve.mjs start <story> [port]     start a story's worker; kickoff prompt on stdin
 //   node serve.mjs deliver <story> [port]   hand a story's waiting decisions to its worker
+import { randomUUID } from 'node:crypto';
+import { existsSync, readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
-import { harnesses, messageWorker } from '../adapters/harnesses.mjs';
+import { harnesses, messageWorker, row, startWorker } from '../adapters/harnesses.mjs';
 import { harnessKey } from '../mission-console/roles.mjs';
+import { InputError, workerPhases } from '../mission-console/store.mjs';
+import { watchOnce } from '../mission-console/watcher.mjs';
 import { createConsoleService } from './console-service.mjs';
+import { createSupervisor } from './supervisor.mjs';
 
 export const DEFAULT_PORT = 4174;
 
@@ -14,19 +21,20 @@ export const DEFAULT_PORT = 4174;
 // Jarvis chat. A harness that messages workers from inside its own app delivers decisions there instead.
 export function loadAdapters(table = harnesses, send = messageWorker) {
   return new Map(Object.keys(table).filter(harness => table[harness].workers === 'command-line')
-    .map(harness => [harnessKey(harness), { messageWorker: message => send({ harness, ...message }) }]));
+    .map(harness => [harnessKey(harness), { messageWorker: (message, options) => send({ harness, ...message }, options) }]));
 }
 
 // Hands one batch of the owner's decisions to the story's worker, as the factory runbook's event chain
 // describes. `adapter` is undefined when the story's harness has none. A decision that cannot reach its
 // worker stays pending in the store and goes to Jarvis, who tells the owner what to do next.
 // Resolves to who was told: 'worker', 'coordinator', or 'nobody' (the reason is logged instead).
-export async function deliver({ story, seqs, types, session, worktree }, adapter, log = console.log) {
+// `onTurn` is told the turn the message started, so the daemon can watch it.
+export async function deliver({ story, seqs, types, session, worktree, onTurn }, adapter, log = console.log) {
   const event = '[Mission Console event] The owner recorded ' + types.join(', ') + ' on story ' + story + ' (event seq ' + seqs.join(', ') + '). ';
   let reason = !adapter ? 'its harness has no adapter' : !session ? 'no worker is assigned' : '';
   if (!reason) {
     try {
-      await adapter.messageWorker({ session, worktree, prompt: event + 'Read the console, act on these events, acknowledge them, and continue.' });
+      await adapter.messageWorker({ session, worktree, prompt: event + 'Read the console, act on these events, acknowledge them, and continue.' }, { onTurn });
       return 'worker';
     } catch (error) {
       reason = 'the worker could not be messaged (' + error.message + ')';
@@ -46,41 +54,93 @@ export async function deliver({ story, seqs, types, session, worktree }, adapter
   return 'nobody';
 }
 
-export async function start({ port = DEFAULT_PORT, dbPath, adapters = new Map() } = {}) {
+// Starts the worker of one story and records it, so the daemon is the parent of the worker's program and
+// hears the turn end. Resolves to what the harness table's start call resolves to: the session and log of
+// a running worker, or what Jarvis does instead for a harness whose workers are not started from here.
+export async function startStoryWorker({ story: id, prompt }, { service, supervisor, launch = startWorker }) {
+  const story = service.snapshot().find(story => story.id === id);
+  if (!story) throw new InputError('Story does not exist.', 404);
+  if (typeof prompt !== 'string' || !prompt.trim()) throw new InputError('Send the kickoff prompt.');
+  if (row(story.harness).workers !== 'command-line') return launch({ harness: story.harness, worktree: story.worktree, prompt });
+  if (story.worker) throw new InputError('Story ' + id + ' already has a worker. Message it with deliver, or record release-worker first.', 409);
+  if (!workerPhases.has(story.phase)) throw new InputError('The ' + story.phase + ' phase has no worker to start.', 409);
+  if (!existsSync(story.worktree)) throw new InputError('The worktree ' + story.worktree + ' does not exist. Create it, then record it on the story.', 409);
+  let turn;
+  let started;
+  try {
+    started = await launch({ harness: story.harness, worktree: story.worktree, prompt }, { onTurn: running => { turn = running; } });
+  } catch (error) {
+    // Why the program could not be started is for the owner to read, not an internal fault.
+    throw Object.assign(error, { status: 502, expose: true });
+  }
+  service.recordEvent({ story: id, type: 'assign-worker', key: randomUUID(), session: started.session });
+  if (turn) supervisor.track({ story: id, ...turn });
+  return started;
+}
+
+// `watchSeconds` is how often registered pull requests are observed; left out, the daemon does not watch.
+export async function start({ port = DEFAULT_PORT, dbPath, adapters = new Map(), watchSeconds, turnPollMs, launch } = {}) {
+  let supervisor;
   const service = createConsoleService({
     dbPath,
     onDecision: async decision => {
       const story = service.snapshot().find(story => story.id === decision.story);
-      return deliver({ ...decision, worktree: story?.worktree }, adapters.get(harnessKey(story?.harness)));
+      const onTurn = turn => supervisor.track({ story: decision.story, ...turn });
+      return deliver({ ...decision, worktree: story?.worktree, onTurn }, adapters.get(harnessKey(story?.harness)));
     },
+    onStartWorker: input => startStoryWorker(input, { service, supervisor, launch }),
   });
+  supervisor = createSupervisor({ service });
   try {
     const server = await service.startServer(port);
-    return { url: server.url, close: async () => { await server.close(); service.close(); } };
+    const stopSupervisor = supervisor.start(turnPollMs);
+    const watching = new AbortController();
+    if (watchSeconds) {
+      const timer = setInterval(() => watchOnce(service.store, { signal: watching.signal }).catch(() => {}), watchSeconds * 1000);
+      timer.unref();
+      watching.signal.addEventListener('abort', () => clearInterval(timer));
+    }
+    return {
+      url: server.url,
+      close: async () => {
+        stopSupervisor();
+        watching.abort();
+        await server.close();
+        service.close();
+      },
+    };
   } catch (error) {
     service.close();
     throw error;
   }
 }
 
+async function post(path, body, port) {
+  const origin = 'http://127.0.0.1:' + port;
+  const response = await fetch(origin + path, {
+    method: 'POST', headers: { 'Content-Type': 'application/json', Origin: origin }, body: JSON.stringify(body),
+  });
+  const result = await response.json();
+  if (!response.ok) throw new Error(result.error);
+  return result;
+}
+
+// Asks the running daemon to start a story's worker, so the daemon is the one that watches it.
+export const requestStart = (story, prompt, port = DEFAULT_PORT) => post('/api/worker/start', { story, prompt }, port);
+
 // Asks the running Command Center to hand a story's waiting decisions to its worker, so every decision
 // reaches a worker through the one process that keeps a session to one turn at a time.
-export async function requestDelivery(story, port = DEFAULT_PORT) {
-  const origin = 'http://127.0.0.1:' + port;
-  const response = await fetch(origin + '/api/deliver', {
-    method: 'POST', headers: { 'Content-Type': 'application/json', Origin: origin }, body: JSON.stringify({ story }),
-  });
-  const body = await response.json();
-  if (!response.ok) throw new Error(body.error);
-  return body;
-}
+export const requestDelivery = (story, port = DEFAULT_PORT) => post('/api/deliver', { story }, port);
 
 const direct = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
 
-//   node serve.mjs deliver <story> [port]
-if (direct && process.argv[2] === 'deliver') {
+//   node serve.mjs deliver <story> [port]   |   node serve.mjs start <story> [port] < kickoff
+if (direct && ['deliver', 'start'].includes(process.argv[2])) {
+  const port = Number(process.argv[4] ?? DEFAULT_PORT);
   try {
-    console.log(JSON.stringify(await requestDelivery(process.argv[3], Number(process.argv[4] ?? DEFAULT_PORT))));
+    console.log(JSON.stringify(process.argv[2] === 'start'
+      ? await requestStart(process.argv[3], readFileSync(0, 'utf8').replace(/^\uFEFF/, ''), port)
+      : await requestDelivery(process.argv[3], port)));
   } catch (error) {
     console.error(error.cause?.code === 'ECONNREFUSED' ? 'The Command Center is not running. Start it with: node ' + process.argv[1] : error.message);
     process.exitCode = 1;
@@ -88,7 +148,7 @@ if (direct && process.argv[2] === 'deliver') {
 } else if (direct) {
   const port = Number(process.argv[2] ?? DEFAULT_PORT);
   try {
-    const { url } = await start({ port, dbPath: process.env.AI_SDLC_CONSOLE_DB || undefined, adapters: loadAdapters() });
+    const { url } = await start({ port, dbPath: process.env.AI_SDLC_CONSOLE_DB || undefined, adapters: loadAdapters(), watchSeconds: 30 });
     console.log('Command Center: ' + url);
   } catch (error) {
     if (error.code !== 'EADDRINUSE') throw error;

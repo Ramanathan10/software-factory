@@ -4,11 +4,11 @@ Everything needed to run the AI software development lifecycle from one clone: t
 
 ## Architecture
 
-Start at the owner. The owner talks to Jarvis in the harness chat and makes every decision in the Command Center dashboard. A decision travels from the dashboard through the harness table to the story's worker, which runs the lifecycle skills in its own worktree and records each step in the story store. Jarvis does no phase work: it starts workers and hears about their progress from the store.
+Start at the owner. The owner talks to Jarvis in the harness chat and makes every decision in the Command Center dashboard. The dashboard, the supervisor, the story store and the PR watcher run as one local process, the factory daemon. Jarvis asks the supervisor to start a story's worker; the supervisor starts it through the harness table, hands it the owner's decisions, and records when each of its turns starts and ends. The worker runs the lifecycle skills in its own worktree and records each step in the story store. Jarvis does no phase work: it asks for workers and hears about their progress from the store.
 
-![Runtime components: the owner, Jarvis, story workers, the harness table, the Command Center and GitHub](docs/architecture.png)
+![Runtime components: the owner, Jarvis, story workers, the factory daemon with its supervisor, dashboard, story store and PR watcher, and GitHub](docs/architecture.png)
 
-Not drawn: the AI SDLC profiles in the AI SDLC home, which every worker's preflight reads, and the optional `readiness-sync/` check. Jarvis also writes to the story store directly, to create a story and record decisions given in chat.
+Not drawn: the AI SDLC profiles in the AI SDLC home, which every worker's preflight reads, and the optional `readiness-sync/` check. In the GitHub Copilot app the daemon's place is taken by the extension, and Jarvis starts and messages workers with the app's own tools. Jarvis also writes to the story store directly, to create a story and record decisions given in chat.
 
 ### Story lifecycle
 
@@ -24,7 +24,7 @@ The diagrams are drawn in `docs/architecture.html` and `docs/lifecycle.html`. Ed
 |---|---|
 | `skills/` | The lifecycle skills (below). |
 | [`mission-console/`](mission-console/README.md) | Story store (SQLite), event rules, `jarvis.mjs` CLI, PR watcher, and the original standalone dashboard. Works from any agent harness. |
-| `command-center/` | Local HTTP service and dashboard UI: stories, questions, plan approval with comments, evidence, attachments. Shows the number of stories waiting on the owner in its tab title and, once allowed, as desktop notifications. Harness-neutral; wakes the coordinator through an `onDecision` callback. `serve.mjs` runs it on its own, and `serve.mjs deliver <story>` hands a story's waiting decisions to its worker when the owner decided in chat. |
+| `command-center/` | The factory daemon: one local process that serves the dashboard, starts each story's worker and watches its turns (`supervisor.mjs`), and observes registered pull requests. The dashboard UI: stories, questions, plan approval with comments, evidence, attachments. Shows the number of stories waiting on the owner in its tab title and, once allowed, as desktop notifications. Harness-neutral; wakes the coordinator through an `onDecision` callback. `serve.mjs` runs it on its own, `serve.mjs start <story>` starts a story's worker, and `serve.mjs deliver <story>` hands a story's waiting decisions to its worker when the owner decided in chat. |
 | `adapters/harnesses.mjs` | The one table of harnesses: how each is installed and how its story workers are started and messaged. The [factory runbook](skills/jarvis/RUNBOOK.md) describes its use. |
 | `adapters/copilot/extension.mjs` | Hosts the Command Center inside the GitHub Copilot app, the one harness that only runs code as an extension. |
 | `readiness-sync/` | Optional read-only check that a story is finished in the team's work tracker. `trackers.mjs` is the one table of trackers (Azure DevOps, GitHub, Linear); it never writes to any of them. |

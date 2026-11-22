@@ -61,7 +61,9 @@ const images = {
 const folderFor = story => String(story).replace(/[^\w-]/g, '_');
 const imageOf = bytes => Object.entries(images).find(([, { magic }]) => magic.every((byte, index) => bytes[index] === byte))?.[0];
 
-export function createConsoleService({ dbPath = DEFAULT_DB_PATH, onDecision, decisionDelayMs = 1500 } = {}) {
+// `onDecision` hands the owner's decisions on, and `onStartWorker` starts a story's worker; a host that
+// cannot do one leaves it out.
+export function createConsoleService({ dbPath = DEFAULT_DB_PATH, onDecision, onStartWorker, decisionDelayMs = 1500 } = {}) {
   mkdirSync(dirname(dbPath), { recursive: true });
   const store = openStore(dbPath);
   const currentRevision = story => store.snapshot().find(item => item.id === story)?.revision;
@@ -94,6 +96,8 @@ export function createConsoleService({ dbPath = DEFAULT_DB_PATH, onDecision, dec
   const toDeliver = records => records.filter(record => !sent.has(record.seq));
 
   const service = {
+    // For the PR watcher, which reads and records through the store itself.
+    store,
     snapshot: harness => store.snapshot(harness),
     pending: () => store.pending(),
     ack: seq => store.ack(seq),
@@ -178,6 +182,13 @@ export function createConsoleService({ dbPath = DEFAULT_DB_PATH, onDecision, dec
           } else if (request.method === 'POST' && path === '/api/deliver') {
             if (request.headers.origin !== origin) throw new InputError('Delivery requests must come from this machine.', 403);
             send(response, 200, await service.deliverPending((await readJson(request))?.story));
+          } else if (request.method === 'POST' && path === '/api/worker/start') {
+            if (request.headers.origin !== origin) throw new InputError('Start requests must come from this machine.', 403);
+            if (!onStartWorker) throw new InputError('This Command Center cannot start workers.', 404);
+            const body = await readBody(request, 1024 * 1024, 'Kickoff prompt exceeds 1 MiB.');
+            let input;
+            try { input = JSON.parse(body.toString('utf8')); } catch { throw new InputError('Expected valid JSON.'); }
+            send(response, 200, await onStartWorker(input ?? {}));
           } else if (request.method === 'POST' && path === '/api/attachment') {
             if (request.headers.origin !== origin) throw new InputError('Attachments must come from the console.', 403);
             const story = new URL(request.url, origin).searchParams.get('story') ?? '';
@@ -192,7 +203,7 @@ export function createConsoleService({ dbPath = DEFAULT_DB_PATH, onDecision, dec
             send(response, 404, { error: 'Route not found.' });
           }
         } catch (error) {
-          send(response, error.status ?? 500, { error: error instanceof InputError ? error.message : 'The store could not complete the request.' });
+          send(response, error.status ?? 500, { error: error instanceof InputError || error.expose ? error.message : 'The store could not complete the request.' });
         }
       });
 

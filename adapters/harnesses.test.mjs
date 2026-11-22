@@ -171,6 +171,28 @@ test('a turn that ends at once with an error is reported with what it wrote, not
   assert.ok((await startWorker({ harness: 'Claude Code', worktree: '.', prompt: 'kickoff' }, { env, spawnProcess: working.spawnProcess, settings: restricted, settleMs: 30 })).session);
 });
 
+test('the caller is told each running turn, with its process and the code it ends with', async t => {
+  const env = home(t);
+  const turns = [];
+  const onTurn = turn => turns.push(turn);
+  const codex = fakeProgram('{"type":"thread.started","thread_id":"0199-abc"}\n');
+  const result = await startWorker({ harness: 'Codex', worktree: '.', prompt: 'kickoff' }, { env, spawnProcess: codex.spawnProcess, settings: restricted, settleMs: 0, onTurn });
+  assert.deepEqual(Object.keys(result), ['session', 'log'], 'the printed result stays plain');
+  assert.deepEqual([turns[0].session, turns[0].log], ['0199-abc', result.log]);
+  codex.calls[0].child.emit('close', 3);
+  assert.equal(await turns[0].ended, 3);
+
+  const resumed = fakeProgram();
+  await messageWorker({ harness: 'Codex', session: '0199-abc', worktree: '.', prompt: 'next' }, { env, spawnProcess: resumed.spawnProcess, settings: restricted, settleMs: 0, onTurn });
+  assert.equal(turns[1].session, '0199-abc');
+  resumed.calls[0].child.emit('error', new Error('lost'));
+  assert.equal(await turns[1].ended, null, 'an exit code that is not known is null');
+
+  const refused = fakeProgram('', 1);
+  await assert.rejects(startWorker({ harness: 'Claude Code', worktree: '.', prompt: 'kickoff' }, { env, spawnProcess: refused.spawnProcess, settings: restricted, settleMs: 2000, onTurn }));
+  assert.equal(turns.length, 2, 'a turn that never began is reported as a failure to start, not as a turn');
+});
+
 test('starting a worker returns the id it chose, or the id the program reports', async t => {
   const env = home(t);
   const claude = fakeProgram();

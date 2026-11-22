@@ -159,7 +159,8 @@ const idleReasons = {
 const idleReason = story => idleReasons[story.phase] ?? 'no active worker';
 function isBusy(story) {
   if (story.phase === 'closed' || story.blocked || waitingOnYou(story)) return false;
-  if (story.worker) return true;
+  // Where the daemon watches the worker's turns, a worker between turns is not busy.
+  if (story.worker) return Boolean(story.worker.turn) || !story.worker.lastTurn;
   return Boolean(story.activity?.at) && Date.now() - Date.parse(story.activity.at) < ACTIVE_MS;
 }
 const progress = story => {
@@ -613,6 +614,14 @@ function evidenceItem(story, artifact) {
   return el('li', {}, el('p', {}, caption), el('a', { href: url, target: '_blank', rel: 'noopener' }, el('img', { src: url, alt: artifact.caption, loading: 'lazy', style: 'max-width:100%' })));
 }
 
+const turnOutcomes = { ended: 'Ended', failed: 'Failed', lost: 'Stopped, cause unknown' };
+// The state of the worker's program, where the daemon watches it.
+function turnOf(worker) {
+  if (worker?.turn) return 'Running, started ' + ago(worker.turn.at) + ' (process ' + worker.turn.pid + ')';
+  if (worker?.lastTurn) return turnOutcomes[worker.lastTurn.outcome] + ' ' + ago(worker.lastTurn.at);
+  return null;
+}
+
 function openDetail(id) {
   const story = stories.find(item => item.id === id);
   if (!story) return;
@@ -624,6 +633,7 @@ function openDetail(id) {
     el('dl', {},
       row('Owner', alias(ownerOf(story)) + ' · ' + (meta.roles[ownerOf(story)]?.job ?? '')),
       row('Worker session', story.worker?.session),
+      row('Worker turn', turnOf(story.worker)),
       row('Repository', story.repo), row('Harness', story.harness), row('Branch', story.branch), row('Worktree', story.worktree),
       row('Pipeline run', story.pipeline && el('a', { href: story.pipeline, target: '_blank', rel: 'noopener' }, story.pipeline)),
       row('Pull request', story.pr && el('a', { href: story.pr, target: '_blank', rel: 'noopener' }, story.pr)),

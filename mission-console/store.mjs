@@ -5,7 +5,7 @@ import { extname, isAbsolute } from 'node:path';
 import { documentTypes, mediaTypes } from './media.mjs';
 import { harnessKey, phases, roles } from './roles.mjs';
 
-const workerPhases = new Set(['scout', 'planning', 'testing', 'red', 'building', 'gates', 'mutation', 'review', 'comparison', 'diagram', 'ci', 'retro']);
+export const workerPhases = new Set(['scout', 'planning', 'testing', 'red', 'building', 'gates', 'mutation', 'review', 'comparison', 'diagram', 'ci', 'retro']);
 const transitions = {
   scout: 'planning',
   testing: 'red',
@@ -107,7 +107,7 @@ function observePr(story, input, now) {
 
 function apply(story, input, now) {
   requireThat(story.harness || ['select-harness', 'release-worker'].includes(input.type), 'Select the story harness first.', 409);
-  requireThat(!story.blocked || ['resume', 'answer', 'replan', 'assign-worktree', 'release-worker', 'select-harness', 'merged'].includes(input.type),
+  requireThat(!story.blocked || ['resume', 'answer', 'replan', 'assign-worktree', 'release-worker', 'select-harness', 'merged', 'turn-started', 'turn-ended'].includes(input.type),
     'Resume or replan the blocked story first.', 409);
   switch (input.type) {
     case 'select-harness':
@@ -214,6 +214,21 @@ function apply(story, input, now) {
       delete story.worker;
       delete story.activity;
       return string(input.detail, 'release evidence');
+    // The factory daemon records each turn of a worker's program, so a turn that stops is seen even when
+    // the worker recorded nothing. `pid` and `log` let a restarted daemon find a turn it did not start.
+    case 'turn-started':
+      requireThat(story.worker && story.worker.id === input.assignment, 'Current assignment does not match.', 409);
+      requireThat(Number.isSafeInteger(input.pid) && input.pid > 0, 'Supply the process ID of the turn.');
+      story.worker.turn = { pid: input.pid, log: string(input.log, 'turn log', 1000), at: now };
+      return 'Worker turn started.';
+    case 'turn-ended':
+      requireThat(story.worker && story.worker.id === input.assignment, 'Current assignment does not match.', 409);
+      requireThat(story.worker.turn, 'No turn is running.', 409);
+      requireThat(['ended', 'failed', 'lost'].includes(input.outcome), 'Supply how the turn ended.');
+      requireThat(input.code === undefined || input.code === null || Number.isSafeInteger(input.code), 'Invalid exit code.');
+      delete story.worker.turn;
+      story.worker.lastTurn = { outcome: input.outcome, at: now, ...(Number.isSafeInteger(input.code) ? { code: input.code } : {}) };
+      return string(input.detail, 'turn outcome');
     case 'handoff':
       if (story.phase === 'diagram') {
         requireThat(['publishing', 'ci', 'merge'].includes(story.diagram?.returnPhase), 'Diagram return phase is unavailable.', 409);
@@ -467,7 +482,7 @@ export function openStore(path) {
             'Use the harness selected for this story.', 409);
           const from = story.phase;
           worker = story.worker;
-          requireThat(!story.cleanup || ['release-worker', 'cleanup-blocked', 'complete-cleanup'].includes(input.type),
+          requireThat(!story.cleanup || ['release-worker', 'cleanup-blocked', 'complete-cleanup', 'turn-started', 'turn-ended'].includes(input.type),
             'Story is awaiting cleanup.', 409);
           if (input.type === 'request-cleanup') {
             story.cleanup = { requestedAt: now };
@@ -499,6 +514,8 @@ export function openStore(path) {
               delete story.worker;
             } else {
               detail = apply(story, input, now);
+              // Whether a finished turn is news for Jarvis is the daemon's call, not a property of the event type.
+              if (input.type === 'turn-ended') wake = input.wake === true;
             }
           }
           if (from !== story.phase) {

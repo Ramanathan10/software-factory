@@ -119,6 +119,9 @@ function logFor(name, env) {
   return join(folder, name + '.log');
 }
 
+// Resolves to the program's exit code once the turn ends, or null when it is not known.
+const exit = child => new Promise(resolve => child.once('close', code => resolve(code ?? null)).once('error', () => resolve(null)));
+
 const started = child => new Promise((resolve, reject) => child.once('spawn', resolve).once('error', reject));
 
 // How long a new turn is watched before it is called running. A sign-in, model, or argument problem ends
@@ -146,6 +149,7 @@ const turns = new Map();
 
 // Sends a prompt to an existing worker session. Waits for a turn this process already started for that
 // session, so one session never runs two turns at once, and resolves once the new turn is running.
+// `options.onTurn` is told the running turn's `pid`, `log`, and `ended`, a promise of its exit code.
 export async function messageWorker({ harness, session, worktree, prompt }, options = {}) {
   const invocation = commandFor(harness, 'message', { session }, options.settings);
   const previous = turns.get(session) ?? Promise.resolve();
@@ -156,9 +160,11 @@ export async function messageWorker({ harness, session, worktree, prompt }, opti
     const log = logFor(session, options.env);
     const child = run(invocation, { worktree, prompt, log, spawnProcess: options.spawnProcess });
     child.once('close', finish).once('error', finish);
+    const ended = exit(child);
     await started(child);
     await settled(child, { harness, log, ms: options.settleMs });
     child.unref?.();
+    options.onTurn?.({ session, pid: child.pid, log, ended });
   } catch (error) {
     finish();
     throw explained(harness, error, options.launchEnv);
@@ -179,13 +185,16 @@ export async function startWorker({ harness, worktree, prompt }, options = {}) {
   const session = randomUUID();
   const log = logFor(session, options.env);
   const child = run(commandFor(harness, 'start', { session }, options.settings), { worktree, prompt, log, spawnProcess: options.spawnProcess });
+  const ended = exit(child);
+  // Told once the session id is known; kept off the result, which the command line prints as JSON.
+  const running = found => { options.onTurn?.({ session: found, pid: child.pid, log, ended }); return { session: found, log }; };
   await started(child).catch(error => { throw explained(harness, error, options.launchEnv); });
   await settled(child, { harness, log, ms: options.settleMs });
   child.unref?.();
-  if (!entry.sessionFrom) return { session, log };
+  if (!entry.sessionFrom) return running(session);
   for (let waited = 0; waited < (options.waitMs ?? 60000); waited += 250) {
     const found = entry.sessionFrom(readFileSync(log, 'utf8'));
-    if (found) return { session: found, log };
+    if (found) return running(found);
     await new Promise(resolve => setTimeout(resolve, 250));
   }
   throw new Error(`${harness} did not report a session id. See ${log}.`);
