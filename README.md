@@ -2,6 +2,22 @@
 
 Everything needed to run the AI software development lifecycle from one clone: the skills that define the lifecycle and the Command Center application that coordinates and observes it.
 
+## Architecture
+
+Start at the owner. The owner talks to Jarvis in the harness chat and makes every decision in the Command Center dashboard. A decision travels from the dashboard through the harness table to the story's worker, which runs the lifecycle skills in its own worktree and records each step in the story store. Jarvis does no phase work: it starts workers and hears about their progress from the store.
+
+![Runtime components: the owner, Jarvis, story workers, the harness table, the Command Center and GitHub](docs/architecture.png)
+
+Not drawn: the AI SDLC profiles in the AI SDLC home, which every worker's preflight reads, and the optional `readiness-sync/` check. Jarvis also writes to the story store directly, to create a story and record decisions given in chat.
+
+### Story lifecycle
+
+Each story moves through the `ai-sdlc` phases in order. The ten phases are grouped into five here; the phase numbers on each box match the `ai-sdlc` skill.
+
+![Story lifecycle: plan, test-first, implement, verify and pull request, with rework loops and the owner's decisions](docs/lifecycle.png)
+
+The diagrams are drawn in `docs/architecture.html` and `docs/lifecycle.html`. Edit those, then export the PNGs again with the `diagram-design` skill.
+
 ## Contents
 
 | Path | What it is |
