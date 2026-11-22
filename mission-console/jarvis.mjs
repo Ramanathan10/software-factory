@@ -71,16 +71,17 @@ export function serve(store, port) {
   return server;
 }
 
-function seed(store) {
+export function seed(store) {
   const add = (story, type, input) => store.record({ story, type, key: story + '-' + type, ...input });
   add('TL-142', 'create', {
     title: 'Stabilize orders pagination', detail: 'Keep cursor results stable when timestamps tie.',
     branch: 'tl-142-stable-pagination', worktree: '(sample) tmp/tl-142', harness: 'Codex',
   });
-  add('TL-142', 'plan', { revision: 1, detail: 'Keep the API shape and verify that orders with tied timestamps appear exactly once across pages.' });
-  add('TL-142', 'approve', { revision: 2 });
+  add('TL-142', 'handoff', { revision: 1, detail: 'Scout mapped the orders query and its cursor tests.' });
+  add('TL-142', 'plan', { revision: 2, detail: 'Keep the API shape and verify that orders with tied timestamps appear exactly once across pages.' });
+  add('TL-142', 'approve', { revision: 3 });
   add('TL-142', 'activity', {
-    revision: 3, detail: 'Test author saved a test for a cursor boundary with tied timestamps.',
+    revision: 4, detail: 'Test author saved a test for a cursor boundary with tied timestamps.',
     file: 'tests/orders-pagination.test.ts', change: 'Added test',
     diff: '+ expect(pageTwo.ids).toEqual([secondOrder.id]);',
   });
@@ -88,8 +89,9 @@ function seed(store) {
     title: 'Add CSV export to activity history', detail: 'Export activity data with existing access rules.',
     branch: 'tl-147-activity-export', worktree: '(sample) tmp/tl-147', harness: 'Cursor',
   });
+  add('TL-147', 'handoff', { revision: 1, detail: 'Scout found the activity history view and its access rules.' });
   add('TL-147', 'question', {
-    revision: 1, question: 'scope', prompt: 'Which rows should the CSV include?',
+    revision: 2, question: 'scope', prompt: 'Which rows should the CSV include?',
     options: ['All rows matching the current filters', 'Only rows on the current page', 'Only rows the user selects'], recommended: 0,
   });
 }

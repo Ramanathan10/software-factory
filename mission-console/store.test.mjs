@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { serve } from './jarvis.mjs';
+import { seed, serve } from './jarvis.mjs';
 import { openStore } from './store.mjs';
 import { githubPr, summarizePr, waitForWake, watchOnce } from './watcher.mjs';
 
@@ -41,6 +41,15 @@ function writer(store, story) {
     return store.record({ story, type, revision, key: story + '-' + revision, ...input });
   };
 }
+
+test('the demo seed follows the store\'s phase transitions', t => {
+  const store = openStore(':memory:');
+  t.after(() => store.close());
+  seed(store);
+  const [approved, asking] = store.snapshot();
+  assert.deepEqual([approved.id, approved.phase, approved.files.length], ['TL-142', 'testing', 1]);
+  assert.deepEqual([asking.id, asking.phase, asking.questions.length], ['TL-147', 'planning', 1]);
+});
 
 test('plan feedback returns the plan to planning with the owner\'s comments until a revised plan arrives', t => {
   const store = fixture(t)();
