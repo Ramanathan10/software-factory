@@ -7,8 +7,8 @@ import { randomUUID } from 'node:crypto';
 import { closeSync, existsSync, fstatSync, mkdirSync, openSync, readFileSync, readSync, readdirSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { delimiter, join } from 'node:path';
-import { pathToFileURL } from 'node:url';
 import { phaseTiers } from '../mission-console/roles.mjs';
+import { isMain } from '../mission-console/is-main.mjs';
 
 // One row per harness, keyed by the name stories record.
 // Installing: `id` is the name install.mjs takes, `marker` the folder in the home directory whose presence
@@ -290,7 +290,7 @@ export async function startWorker({ harness, worktree, prompt, phase }, options 
   throw new Error(`${harness} did not report a session id. See ${log}.`);
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (isMain(import.meta.url)) {
   const [mode, harness, worktree] = process.argv.slice(2);
   if (mode !== 'start' || !harness || !worktree) {
     console.error('Usage: node harnesses.mjs start <harness> <worktree>   (kickoff prompt on stdin)\nHarnesses: ' + Object.keys(harnesses).join(', '));
