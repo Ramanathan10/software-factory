@@ -101,6 +101,8 @@ Run every gate the profile requires for the repository, with the command the pro
 
 Fix a failing gate in the implementation. For each mutant that survives on a changed line, hand it to a test-author subagent under the phase 2 boundary to add or strengthen a test that kills it, then rerun. A mutant that cannot change observable behavior may stay alive with a one-line reason in the verification notes.
 
+When the mutation tool cannot run or activate a mutant on a changed line, make the mutation by hand instead. This happens, for example, with code that runs only in a browser test fixture, or with syntax the tool does not mutate. Change one operator, condition, literal, or call on that line, run the focused test, restore the file, and record the mutation and the failing-test count in the verification notes. A hand mutation that no test catches counts as a surviving mutant.
+
 Record each command and its result. Report a gate the owner declined in the profile as not required, and a gate the environment could not run as not run; neither is reported as passing. Do not add a gate's tool or change a gate's command on your own; that is a profile change through `ai-sdlc-setup`.
 
 ## 5. Adversarial code review
