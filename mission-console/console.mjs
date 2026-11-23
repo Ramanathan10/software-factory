@@ -2,7 +2,6 @@ import { harnessKey, lanes, phases, roles } from './roles.mjs';
 
 const ui = id => document.getElementById(id);
 const workflow = lanes(phases, 3).map(lane => [lane.name, lane.phases]);
-// From plan approval on, the story has a plan to show.
 const planPhases = new Set(Object.keys(phases).slice(Object.keys(phases).indexOf('approval')));
 let stories = [];
 let selected;

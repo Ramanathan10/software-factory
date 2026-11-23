@@ -29,9 +29,8 @@ test('each thing that starts waiting on the owner is announced once, and never o
   const second = newlyWaiting(first.seen, [a, b]);
   assert.deepEqual(second.fresh, [b]);
   assert.deepEqual(newlyWaiting(second.seen, [a, b]).fresh, []);
-  // A second question on a story that was already waiting is a new thing to announce.
-  const again = { key: 'TL-1|planning|q1|q2' };
-  assert.deepEqual(newlyWaiting(second.seen, [again, b]).fresh, [again]);
+  const secondQuestionOnWaitingStory = { key: 'TL-1|planning|q1|q2' };
+  assert.deepEqual(newlyWaiting(second.seen, [secondQuestionOnWaitingStory, b]).fresh, [secondQuestionOnWaitingStory]);
 });
 
 test('the tab title carries the number of stories waiting on the owner', () => {

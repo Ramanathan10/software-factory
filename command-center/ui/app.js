@@ -3,7 +3,6 @@ import { badgeSvg } from './badge.js';
 import { renderMarkdown } from './markdown.js';
 
 const $ = id => document.getElementById(id);
-// The board's columns, from /api/meta.
 let columns = [];
 const crewOrder = ['coordinator', 'planner', 'scout', 'tester', 'implementer', 'reviewer', 'verifier', 'watcher', 'diagrammer', 'approver'];
 const ACTIVE_MS = 10 * 60 * 1000;
@@ -119,7 +118,6 @@ function openPlan(story) {
 
 const initials = alias => (alias || '?').split(/\s+/).map(word => word[0]).join('').slice(0, 2).toUpperCase();
 const alias = role => role === 'approver' ? 'You' : meta.roles[role]?.alias ?? role;
-// A role's badge; `moving` plays its glyph's working motion, which only full-size badges do.
 const avatar = (role, { small = false, moving = false } = {}) => {
   const badge = meta.roles[role]?.badge;
   return el('span', { class: ['avatar', small && 'sm', moving && 'moving', !badge && 'initials'].filter(Boolean).join(' ') },
@@ -159,7 +157,6 @@ const idleReasons = {
 const idleReason = story => idleReasons[story.phase] ?? 'no active worker';
 function isBusy(story) {
   if (story.phase === 'closed' || story.blocked || waitingOnYou(story)) return false;
-  // Where the daemon watches the worker's turns, a worker between turns is not busy.
   if (story.worker) return Boolean(story.worker.turn) || !story.worker.lastTurn;
   return Boolean(story.activity?.at) && Date.now() - Date.parse(story.activity.at) < ACTIVE_MS;
 }
@@ -202,8 +199,6 @@ function renderStats() {
   announce(waiting);
 }
 
-// Tells the owner, once, about each thing that starts waiting on them, even when this tab is in the
-// background. A new question on a story that was already waiting counts as a new thing.
 let announced = null;
 function announce(waiting) {
   const { seen, fresh } = newlyWaiting(announced, waiting.map(story => {
@@ -614,15 +609,12 @@ function evidenceItem(story, artifact) {
 }
 
 const turnOutcomes = { ended: 'Ended', failed: 'Failed', lost: 'Stopped, cause unknown' };
-// The state of the worker's program, where the daemon watches it.
 function turnOf(worker) {
   if (worker?.turn) return 'Running, started ' + ago(worker.turn.at) + ' (process ' + worker.turn.pid + ')';
   if (worker?.lastTurn) return turnOutcomes[worker.lastTurn.outcome] + ' ' + ago(worker.lastTurn.at);
   return null;
 }
 
-// The model and effort the story's worker session last ran on, as its harness recorded them. Before the
-// worker has run: the model the profile names for the story's harness and phase, or that the harness chooses.
 function modelOf(story) {
   const ran = story.worker?.ran;
   if (ran) return ran.model + (ran.effort ? ' · ' + ran.effort + ' effort' : '');
@@ -636,7 +628,6 @@ function openDetail(id) {
   const story = stories.find(item => item.id === id);
   if (!story) return;
   const row = (label, value) => value ? el('div', { class: 'row' }, el('dt', {}, label), el('dd', {}, value)) : null;
-  // A section the story has nothing for is left out; replaceChildren would print its false or 0 as text.
   $('detail-body').replaceChildren(...[
     el('small', {}, story.id + ' · ' + (meta.phases[story.phase]?.[1] ?? story.phase)),
     el('h2', {}, story.title),
@@ -679,7 +670,6 @@ const seenCards = new Set();
 
 function render() {
   renderStats();
-  // Time-bucket busy state so "is working" fades without a new event.
   const busyKey = stories.map(story => [story.id, isBusy(story)]);
   if (changed('crew', [stories, busyKey, filterRole])) renderCrew();
   if (filterRepo && !repos().includes(filterRepo)) filterRepo = '';
@@ -719,7 +709,6 @@ if (!['lanes', 'agents', 'track'].includes(view)) view = 'lanes';
 for (const button of document.querySelectorAll('.views button')) button.addEventListener('click', () => setView(button.dataset.view));
 $('stat-waiting-button').addEventListener('click', () => setFilter('approver'));
 $('repo-filter').addEventListener('change', event => { filterRepo = event.target.value; render(); });
-// The browser only allows asking for notification permission from a click, so offer a button until it is answered.
 $('notify').hidden = globalThis.Notification?.permission !== 'default';
 $('notify').addEventListener('click', async () => {
   await Notification.requestPermission();

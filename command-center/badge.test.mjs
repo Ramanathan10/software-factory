@@ -5,7 +5,6 @@ import { roles } from '../mission-console/roles.mjs';
 
 const read = file => readFileSync(new URL(file, import.meta.url), 'utf8');
 
-// A ring style or motion with no rule draws a plain ring or a still glyph, and nothing fails.
 test('every ring style and motion a badge names has a rule in app.css', () => {
   const css = read('./ui/app.css');
   for (const [id, { badge }] of Object.entries(roles)) {
@@ -39,8 +38,6 @@ const contrast = (a, b) => {
   return (hi + 0.05) / (lo + 0.05);
 };
 
-// The watcher's yellow sat 3.9 apart from the amber that means "waiting on you", so a busy watcher glowed like
-// a decision. A difference of 8 in OKLab (×100) is plainly visible on a border.
 test('each role color is readable, and looks like neither a state color nor another persona', () => {
   const css = read('./ui/app.css');
   const token = name => css.match(new RegExp('--' + name + ':\\s*(#[0-9a-f]{6})', 'i'))?.[1];
@@ -51,7 +48,6 @@ test('each role color is readable, and looks like neither a state color nor anot
     return [id, value.startsWith('var(') ? token(value.slice(6, -1)) : value];
   }));
   for (const [id, color] of Object.entries(colors)) {
-    // Tracks sit on --panel and story cards on the lighter --panel-2; both draw story ids in the role color.
     for (const ground of ['panel', 'panel-2']) {
       assert.ok(contrast(color, token(ground)) >= 4.5, id + ' is ' + contrast(color, token(ground)).toFixed(2) + ':1 on --' + ground + '; story ids in it need 4.5:1');
     }

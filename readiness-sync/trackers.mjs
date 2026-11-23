@@ -1,4 +1,3 @@
-// The one table of work trackers: how each one's story is read into the snapshot engine.mjs evaluates.
 import { execFileSync } from 'node:child_process';
 
 const words = args => {
@@ -11,7 +10,6 @@ const readCommands = {
   az: args => ['show', 'list'].includes(words(args).at(-1)),
 };
 
-// Wraps `run` so a tracker reader can run only commands that read. A readiness check never changes a story.
 export function readOnly(run) {
   return (command, args) => {
     if (!readCommands[command]?.(args)) throw new Error(`Refused "${command} ${args.join(' ')}": a readiness check only reads its tracker.`);
@@ -19,17 +17,11 @@ export function readOnly(run) {
   };
 }
 
-// On Windows `az` is a script, which needs a shell, and a shell needs each argument quoted.
 function runJson(command, args) {
   const shell = process.platform === 'win32' && command === 'az';
   return JSON.parse(execFileSync(command, shell ? args.map(arg => `"${arg}"`) : args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], shell }));
 }
 
-// One row per tracker, keyed by the name the profile's `readiness.tracker` holds.
-// `reads` is 'command-line' when `command` can read a story, in which case `read(id, settings, run)`
-// returns the snapshot; `run(command, args)` returns the program's parsed JSON output and is passed in so
-// tests can stand in for the program. `reads` is 'in-app' when only the agent's own tools for that tracker
-// can read a story: the agent builds the snapshot from what `supply` describes and passes it in.
 export const trackers = {
   'azure-devops': {
     reads: 'command-line',
@@ -39,7 +31,6 @@ export const trackers = {
       run = readOnly(run);
       const org = `https://dev.azure.com/${settings.organization}`;
       const az = (...args) => run('az', [...args, '--org', org, '-o', 'json']);
-      // People are compared by uniqueName, which is stable; a display name is the fallback.
       const who = identity => identity ? identity.uniqueName ?? identity.displayName : undefined;
       const user = run('az', ['account', 'show', '--query', 'user.name', '-o', 'json']);
       const story = az('boards', 'work-item', 'show', '--id', String(id), '--expand', 'relations');
@@ -62,8 +53,6 @@ export const trackers = {
     reads: 'command-line',
     command: 'gh',
     needs: [],
-    // The story is an issue in `settings.repository` (owner/name), its tasks are its sub-issues, and its
-    // pull requests are the ones that close it. GitHub issues carry no effort, so `effortSet` never passes.
     read(id, settings, run = runJson) {
       run = readOnly(run);
       const repo = ['--repo', settings.repository];
@@ -76,7 +65,6 @@ export const trackers = {
         const status = { MERGED: 'completed', OPEN: 'active', CLOSED: 'abandoned' }[pr.state] ?? 'active';
         return { id: pr.number, status, target: pr.baseRefName, linked: true };
       });
-      // Assigned to the signed-in person counts even when others are assigned too.
       const assignee = assignees.find(login => login.toLowerCase() === String(user).toLowerCase()) ?? assignees[0];
       return { user, story: { id, assignee, effort: null }, tasks, prs };
     },

@@ -1,6 +1,3 @@
-// A role's badge on the Command Center: `fill`, `accent` and `ink` are the persona's palette, `ring` names the
-// accent ring's style, `glyph` is the 24×24 stroke drawing of the job, and `move` is the part of it that plays
-// `motion` while the agent works. The badge's outer ring is left to the dashboard, which shows state with it.
 const circle9 = 'M12 12m-9 0a9 9 0 1 0 18 0a9 9 0 1 0 -18 0';
 const reactor = circle9 + 'M12 12m-3 0a3 3 0 1 0 6 0a3 3 0 1 0 -6 0';
 
@@ -34,7 +31,6 @@ export const roles = {
   diagrammer: { job: 'Architecture diagram designer', alias: 'Rocket', skills: ['Diagram Design'], badge: {
     fill: '#3d434c', accent: '#f08a4b', ink: '#f08a4b', ring: 'thin', motion: 'flow',
     glyph: 'M3 4h6v5H3zM15 4h6v5h-6zM9 15h6v5H9z', move: 'M6 9v3h12V9M12 12v3' } },
-  // The owner is never busy; their ring pulses amber while a decision waits, so the badge has no motion.
   approver: { job: 'Human approver', alias: 'Fury', skills: [], badge: {
     fill: '#121316', accent: '#8a93a6', ink: '#f5b544', ring: 'thin', motion: '', glyph: circle9 + 'M8.5 12.2l2.4 2.4l4.6-4.8',
     move: '' } },
@@ -44,8 +40,6 @@ export function harnessKey(harness) {
   return harness?.trim().toLowerCase() ?? '';
 }
 
-// Each phase: the role that owns it, its label, its column on the Command Center board, and its step on the
-// Mission Console track. Both dashboards build their lanes from these, so a new phase always has a lane.
 export const phases = {
   scout: ['scout', 'Scouting', 'Plan', 'Scout'],
   planning: ['planner', 'Planning', 'Plan', 'Plan'],
@@ -66,7 +60,6 @@ export const phases = {
   closed: ['coordinator', 'Merged', 'Done', 'PR'],
 };
 
-// The lanes of a dashboard, in phase order: `at` is 2 for the board's columns and 3 for the track's steps.
 export function lanes(table, at) {
   const out = [];
   for (const [phase, entry] of Object.entries(table)) {
@@ -76,10 +69,6 @@ export function lanes(table, at) {
   return out;
 }
 
-// How capable a model a phase's work needs, named without naming a model: the owner's profile says which
-// model each harness uses for a tier. A worker turn runs at the tier of the phase it starts in, and a
-// subagent a worker hands a phase to runs at that phase's tier. `scout` is deep because the turn it starts
-// runs on into planning. A phase left out is the owner's or the daemon's, and needs no model.
 export const tiers = ['deep', 'standard', 'fast'];
 export const phaseTiers = {
   scout: 'deep',

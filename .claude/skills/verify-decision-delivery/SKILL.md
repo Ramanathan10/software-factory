@@ -25,7 +25,23 @@ node --test command-center/delivery-model.test.mjs
 
 ## The code each step stands for
 
-The table at the top of `delivery-model.mjs` maps each step to the code it models. `current` in that file names five behaviors, and each one is pinned in the real code by a test, so the model cannot claim a fix the code lacks:
+Each step in `delivery-model.mjs` stands for this code:
+
+| Step | Code |
+|---|---|
+| `Record` | `console-service.mjs`: `/api/decision` calls `recordEvent`, and `notify` queues the decision in `batches` |
+| `BatchFire` | `console-service.mjs`: `notify`'s timer calls `hand` with the batch |
+| `JarvisDeliver` | `console-service.mjs`: `deliverPending` (`serve.mjs deliver`) filters the pending decisions and calls `hand` |
+| `Hand` | `console-service.mjs`: `hand` up to `await onDecision`; `harnesses.mjs`: `messageWorker` up to `await previous` |
+| `Spawn` | `harnesses.mjs`: `messageWorker` spawns the turn, which is handed the decisions in its prompt; with `recordsAtSpawn`, `onTurn` records it in the store in the same step |
+| `Settled` | `console-service.mjs`: `onDecision` resolves to `'worker'` once the turn has settled and `hand` marks `sent`; without `recordsAtSpawn` the turn is recorded only now |
+| `Ack` | the worker records `ack` on the store for a decision it acted on |
+| `TurnEnd` | the harness program exits, and its entry in `harnesses.mjs` `turns` resolves |
+| `Restart` | the daemon stops and starts again: `sent`, `batches` and `turns` are gone, turns keep running, and the new daemon adopts those recorded in the store |
+
+The model's state mirrors the code: `procs` are calls of `hand` that have not resolved, each with the `turns` entry its `messageWorker` awaits; `tail` is the session's entry in `turns`; `turns` are the session's running turns. Turn 0 is the kickoff turn `startWorker` began, and it starts recorded, because the story has no worker to hand decisions to until the worker is recorded.
+
+`current` in `delivery-model.mjs` names five behaviors that differ between versions of the code, so `check` can replay a past version, and each one is pinned in the real code by a test, so the model cannot claim a fix the code lacks:
 
 | Flag | What the code does | Test that holds the code to it |
 |---|---|---|

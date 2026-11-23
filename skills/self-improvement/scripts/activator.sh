@@ -1,11 +1,7 @@
 #!/bin/bash
-# Self-Improvement Activator Hook
-# Optional UserPromptSubmit reminder for a host that supports this hook
-# Keep output minimal (~50-100 tokens) to minimize overhead
 
 set -e
 
-# Output reminder as system context
 cat << 'EOF'
 <self-improvement-reminder>
 After completing this task, evaluate if extractable knowledge emerged:

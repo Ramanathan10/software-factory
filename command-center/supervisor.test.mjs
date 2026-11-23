@@ -8,7 +8,6 @@ import { createConsoleService } from './console-service.mjs';
 import { requestStart, start } from './serve.mjs';
 import { createSupervisor, isAlive, turnVerdict } from './supervisor.mjs';
 
-// The tests choose the verdict themselves, so they hold whatever policy `turnVerdict` settles on.
 const byCode = ({ code }) => (code === 0 ? { outcome: 'ended', wake: false } : { outcome: code === null ? 'lost' : 'failed', wake: true });
 
 test('a finished turn wakes Jarvis only when it failed or the worker said nothing', () => {
@@ -36,7 +35,6 @@ function fixture(t, options = {}) {
   return { service, supervisor, story, logged, directory };
 }
 
-// A turn whose end the test decides.
 function turn(pid = 4242) {
   let end;
   const ended = new Promise(resolve => { end = resolve; });
@@ -76,10 +74,9 @@ test('the verdict is told how much the worker recorded during the turn', async t
   supervisor.track(running);
   service.recordEvent({ story: 'tl-1', type: 'activity', assignment: story().worker.id, detail: 'Mapped the export query.' });
   service.recordEvent({ story: 'tl-1', type: 'question', question: 'scope', prompt: 'Which rows?', options: ['All', 'Selected'], recommended: 0 });
-  // The owner's answer is not the worker's doing.
   service.recordEvent({ story: 'tl-1', type: 'answer', question: 'scope', answer: 0 });
   await running.end(0);
-  assert.deepEqual(seen, [{ code: 0, recorded: 2, adopted: false }]);
+  assert.deepEqual(seen, [{ code: 0, recorded: 2, adopted: false }], 'the owner\'s answer is not counted as something the worker recorded');
 });
 
 test('a turn left by an earlier daemon is checked by its process: running is left alone, gone is recorded', t => {
@@ -103,7 +100,6 @@ test('a turn left by an earlier daemon is checked by its process: running is lef
   assert.equal(seen.length, 1, 'a turn is finished once');
 });
 
-// delivery-model.mjs: after a restart, a message started a second turn beside the one the earlier daemon left.
 test('a message waits until the turn left by an earlier daemon has ended', async t => {
   const living = new Set([7003]);
   const { service, supervisor, story } = fixture(t, { alive: pid => living.has(pid), bootedAt: 0 });
@@ -167,7 +163,6 @@ test('this process is alive, and a process that has exited is not', async () => 
   assert.equal(isAlive(child.pid), false);
 });
 
-// Stands in for the harness table's start call with a real program, so a real exit code comes back.
 const launchReal = script => async ({ worktree }, { onTurn }) => {
   const child = spawn(process.execPath, ['-e', script], { cwd: worktree, stdio: 'ignore' });
   const ended = new Promise(resolve => child.once('close', code => resolve(code)));
