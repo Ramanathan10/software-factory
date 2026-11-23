@@ -4,7 +4,7 @@ import { test } from 'node:test';
 
 // Plans, answers, and timeline details are written by agents and shown to the owner; the dashboards build
 // every node themselves, so none of that text is ever parsed as HTML.
-const files = ['command-center/ui/app.js', 'command-center/ui/markdown.js', 'command-center/ui/attention.js', 'mission-console/console.mjs'];
+const files = ['command-center/ui/app.js', 'command-center/ui/markdown.js', 'command-center/ui/attention.js', 'command-center/ui/badge.js', 'mission-console/console.mjs'];
 
 test('the dashboards never parse text as HTML', () => {
   const found = [];

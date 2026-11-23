@@ -18,3 +18,28 @@ test('each dashboard lane is one run of consecutive phases', () => {
   }
   assert.deepEqual(lanes(phases, 2).flatMap(lane => lane.phases), Object.keys(phases));
 });
+
+const luminance = hex => {
+  const [r, g, b] = [1, 3, 5].map(at => parseInt(hex.slice(at, at + 2), 16) / 255)
+    .map(c => c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+};
+const contrast = (a, b) => {
+  const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+  return (hi + 0.05) / (lo + 0.05);
+};
+
+test('every role has a badge the Command Center can draw and tell apart', () => {
+  const drawings = new Map();
+  for (const [id, { badge }] of Object.entries(roles)) {
+    assert.ok(badge, id + ' needs a badge in mission-console/roles.mjs');
+    for (const color of ['fill', 'accent', 'ink']) assert.match(badge[color] ?? '', /^#[0-9a-f]{6}$/i, id + ' badge ' + color);
+    assert.ok(contrast(badge.ink, badge.fill) >= 3, id + ' glyph is ' + contrast(badge.ink, badge.fill).toFixed(2) + ':1 on its fill; graphics need 3:1');
+    for (const path of [badge.glyph, badge.move]) assert.match(path, /^[MmLlHhVvCcSsQqTtAaZz0-9 .,-]*$/, id + ' badge path');
+    assert.ok(badge.glyph || badge.move, id + ' badge draws nothing');
+    assert.equal(Boolean(badge.move), Boolean(badge.motion), id + ' needs both a moving part and a motion, or neither');
+    const drawing = badge.glyph + '|' + badge.move;
+    assert.ok(!drawings.has(drawing), id + ' draws the same glyph as ' + drawings.get(drawing));
+    drawings.set(drawing, id);
+  }
+});
