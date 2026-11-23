@@ -143,7 +143,7 @@ h1 span { color: var(--muted); letter-spacing: .02em; font-weight: 500; margin-l
 .lane.hot { border-color: #2c3a55; background: linear-gradient(180deg, #152036, var(--panel) 40%); }
 .lane h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .14em; color: var(--muted); display: flex; justify-content: space-between; margin-bottom: 10px; }
 .lane h2 span { font-family: var(--mono); }
-.cards { display: grid; gap: 8px; }
+.cards { display: grid; gap: 8px; grid-auto-rows: max-content; }
 .empty { color: var(--muted); text-align: center; padding: 40px; }
 
 .card {
@@ -204,7 +204,7 @@ h1 span { color: var(--muted); letter-spacing: .02em; font-weight: 500; margin-l
 .swim-head:hover b { color: var(--role); }
 .swim-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; }
 
-.board.view-track { display: grid; gap: 8px; align-content: start; }
+.board.view-track { display: grid; gap: 8px; align-content: start; grid-auto-rows: max-content; }
 .track-head, .track { display: grid; grid-template-columns: minmax(200px, 30%) 1fr; gap: 16px; align-items: center; }
 .track-head { position: sticky; top: 0; z-index: 1; padding: 0 12px 4px; background: var(--bg); font-size: 11px; text-transform: uppercase; letter-spacing: .14em; color: var(--muted); }
 .track { position: relative; overflow: hidden; padding: 12px; border-radius: 12px; background: var(--panel); border: 1px solid var(--line); cursor: pointer; transition: border-color .3s, transform .15s; }
