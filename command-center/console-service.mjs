@@ -4,7 +4,7 @@ import { createServer } from 'node:http';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { sendMedia } from '../mission-console/media.mjs';
-import { phases, roles } from '../mission-console/roles.mjs';
+import { lanes, phases, roles } from '../mission-console/roles.mjs';
 import { InputError, openStore } from '../mission-console/store.mjs';
 
 const legacyDb = join(homedir(), '.copilot', 'ai-sdlc-console', 'jarvis-missions.sqlite');
@@ -85,18 +85,25 @@ export function createConsoleService({ dbPath = DEFAULT_DB_PATH, onDecision, onS
     }, decisionDelayMs);
     batches.set(story, batch);
   };
-  // Event seqs a worker has been handed since this process started.
+  // Event seqs a worker has been handed, or is being handed, since this process started.
   const sent = new Set();
-  // Hands decisions to whoever `onDecision` reaches, and resolves to who that was.
+  // Hands the decisions not already on their way to whoever `onDecision` reaches. Resolves to the seqs it
+  // carried and who was told. A decision a worker was handed is not sent again: the worker acknowledges it
+  // only after acting on it, so it is still pending while that turn runs. The seqs are claimed before the
+  // first await, so a delivery that overlaps this one cannot carry them too (delivery-model.mjs).
   const hand = async (story, seqs, types) => {
-    const record = store.snapshot().find(item => item.id === story);
-    const told = await onDecision({ story, seqs, types, session: record?.worker?.session });
-    if (told === 'worker') for (const seq of seqs) sent.add(seq);
-    return told;
+    const carried = seqs.filter(seq => !sent.has(seq));
+    if (!carried.length) return { seqs: [], told: 'nobody' };
+    for (const seq of carried) sent.add(seq);
+    let told;
+    try {
+      const record = store.snapshot().find(item => item.id === story);
+      told = await onDecision({ story, seqs: carried, types, session: record?.worker?.session });
+    } finally {
+      if (told !== 'worker') for (const seq of carried) sent.delete(seq);
+    }
+    return { seqs: carried, told };
   };
-  // A decision a worker was already handed is not sent again: the worker acknowledges it only after acting
-  // on it, so it is still waiting while that turn runs. A worker that was lost is replaced from the handover record.
-  const toDeliver = records => records.filter(record => !sent.has(record.seq));
 
   const service = {
     // For the PR watcher, which reads and records through the store itself.
@@ -108,10 +115,9 @@ export function createConsoleService({ dbPath = DEFAULT_DB_PATH, onDecision, onS
     // Hands the story's waiting decisions to its worker now: for a decision recorded outside the dashboard,
     // or one that did not arrive. Resolves to the seqs handed over and who was told.
     async deliverPending(story) {
-      const records = toDeliver(store.pendingFor(story).filter(record => humanDecisions.has(record.type)));
+      const records = store.pendingFor(story).filter(record => humanDecisions.has(record.type) && !sent.has(record.seq));
       if (!records.length || !onDecision) return { story, seqs: [], told: 'nobody' };
-      const seqs = records.map(record => record.seq);
-      return { story, seqs, told: await hand(story, seqs, [...new Set(records.map(record => record.type))]) };
+      return { story, ...await hand(story, records.map(record => record.seq), [...new Set(records.map(record => record.type))]) };
     },
     listAttachments(story) {
       const folder = join(attachmentRoot, folderFor(story));
@@ -173,7 +179,7 @@ export function createConsoleService({ dbPath = DEFAULT_DB_PATH, onDecision, onS
             const query = new URL(request.url, origin).searchParams;
             await sendMedia(request, response, store.artifact(query.get('story'), query.get('id')));
           } else if (request.method === 'GET' && path === '/api/meta') {
-            send(response, 200, { roles, phases, ...modelPlan?.() });
+            send(response, 200, { roles, phases, columns: lanes(phases, 2), ...modelPlan?.() });
           } else if (request.method === 'GET' && path === '/events') {
             response.writeHead(200, { 'Content-Type': 'text/event-stream', ...security, Connection: 'keep-alive' });
             response.write('retry: 2000\nevent: stories\ndata: ' + frame() + '\n\n');
