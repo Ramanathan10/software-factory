@@ -5,13 +5,13 @@
 //   node serve.mjs deliver <story> [port]   hand a story's waiting decisions to its worker
 import { randomUUID } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
-import { pathToFileURL } from 'node:url';
 import { harnesses, messageWorker, modelPlan, row, sessionRan, startWorker } from '../adapters/harnesses.mjs';
 import { harnessKey } from '../mission-console/roles.mjs';
 import { InputError, workerPhases } from '../mission-console/store.mjs';
 import { watchOnce } from '../mission-console/watcher.mjs';
 import { createConsoleService } from './console-service.mjs';
 import { createSupervisor } from './supervisor.mjs';
+import { isMain } from '../mission-console/is-main.mjs';
 
 export const DEFAULT_PORT = 4174;
 
@@ -148,7 +148,7 @@ export const requestStart = (story, prompt, port = DEFAULT_PORT) => post('/api/w
 // reaches a worker through the one process that keeps a session to one turn at a time.
 export const requestDelivery = (story, port = DEFAULT_PORT) => post('/api/deliver', { story }, port);
 
-const direct = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
+const direct = isMain(import.meta.url);
 
 //   node serve.mjs deliver <story> [port]   |   node serve.mjs start <story> [port] < kickoff
 if (direct && ['deliver', 'start'].includes(process.argv[2])) {
@@ -161,6 +161,9 @@ if (direct && ['deliver', 'start'].includes(process.argv[2])) {
     console.error(error.cause?.code === 'ECONNREFUSED' ? 'The Command Center is not running. Start it with: node ' + process.argv[1] : error.message);
     process.exitCode = 1;
   }
+} else if (direct && !Number.isInteger(Number(process.argv[2] ?? DEFAULT_PORT))) {
+  console.error('Usage: node serve.mjs [port] | start <story> [port] | deliver <story> [port]');
+  process.exitCode = 2;
 } else if (direct) {
   const port = Number(process.argv[2] ?? DEFAULT_PORT);
   try {
