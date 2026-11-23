@@ -14,8 +14,6 @@ Start at the owner. The owner talks to Jarvis in the harness chat and makes ever
 
 ![Runtime components: the owner, Jarvis, story workers, the factory daemon with its supervisor, dashboard, story store and PR watcher, and GitHub](docs/architecture.png)
 
-Not drawn: the AI SDLC profiles in the AI SDLC home, which every worker's preflight reads, and the optional `readiness-sync/` check. In the GitHub Copilot app the daemon's place is taken by the extension, and Jarvis starts and messages workers with the app's own tools. Jarvis also writes to the story store directly, to create a story and record decisions given in chat.
-
 ### Story lifecycle
 
 Each story moves through the `ai-sdlc` phases in order. The ten phases are grouped into five here; the phase numbers on each box match the `ai-sdlc` skill.
