@@ -1,5 +1,7 @@
 # Software Factory
 
+[![Tests](https://github.com/Ramanathan10/software-factory/actions/workflows/test.yml/badge.svg)](https://github.com/Ramanathan10/software-factory/actions/workflows/test.yml) [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 Everything needed to run the AI software development lifecycle from one clone: the skills that define the lifecycle and the Command Center application that coordinates and observes it.
 
 ## See it work
@@ -95,6 +97,10 @@ Then restart the harness and say "Be Jarvis. Run AI SDLC." in a repository that 
 
 - Stories, shared by every project: `AI_SDLC_CONSOLE_DB` when set; otherwise an existing `~\.copilot\ai-sdlc-console\jarvis-missions.sqlite`; otherwise `console\jarvis-missions.sqlite` in the AI SDLC home (`AI_SDLC_HOME`, default `~\.ai-sdlc`).
 - Everything about how a person works: one file, `profile.json` in the AI SDLC home, written by the `ai-sdlc-setup` skill. It holds the owner, sharing rules, implementation level, review round limit, before-and-after and diagram settings, worker permissions, each repository's gates, branch pattern, worktree folder, team rules and work tracker, where the Command Center is, and a section for any adapter that needs its own answers. It is each person's own; nothing is written into the repository a story runs in.
+
+## Contributing
+
+Issues and pull requests are welcome; see [CONTRIBUTING.md](CONTRIBUTING.md) and the [code of conduct](CODE_OF_CONDUCT.md). Report security problems privately as [SECURITY.md](SECURITY.md) describes.
 
 ## License
 
