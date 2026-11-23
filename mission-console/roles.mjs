@@ -15,25 +15,37 @@ export function harnessKey(harness) {
   return harness?.trim().toLowerCase() ?? '';
 }
 
+// Each phase: the role that owns it, its label, its column on the Command Center board, and its step on the
+// Mission Console track. Both dashboards build their lanes from these, so a new phase always has a lane.
 export const phases = {
-  scout: ['scout', 'Scouting'],
-  planning: ['planner', 'Planning'],
-  approval: ['approver', 'Plan approval'],
-  testing: ['tester', 'Writing tests'],
-  red: ['coordinator', 'Verify red'],
-  building: ['implementer', 'Implementation'],
-  gates: ['implementer', 'Deterministic gates'],
-  mutation: ['tester', 'Mutation check'],
-  review: ['reviewer', 'Review'],
-  'comparison-choice': ['approver', 'Before-and-after decision'],
-  comparison: ['verifier', 'Capture before and after'],
-  diagram: ['diagrammer', 'Design architecture diagram'],
-  publishing: ['coordinator', 'Open pull request'],
-  ci: ['watcher', 'Watching checks'],
-  merge: ['watcher', 'PR ready to merge'],
-  retro: ['coordinator', 'Retro'],
-  closed: ['coordinator', 'Merged'],
+  scout: ['scout', 'Scouting', 'Plan', 'Scout'],
+  planning: ['planner', 'Planning', 'Plan', 'Plan'],
+  approval: ['approver', 'Plan approval', 'Plan', 'Plan'],
+  testing: ['tester', 'Writing tests', 'Tests', 'Test'],
+  red: ['coordinator', 'Verify red', 'Tests', 'Test'],
+  building: ['implementer', 'Implementation', 'Build', 'Build'],
+  gates: ['implementer', 'Deterministic gates', 'Build', 'Gates'],
+  mutation: ['tester', 'Mutation check', 'Build', 'Mutation'],
+  review: ['reviewer', 'Review', 'Review', 'Review'],
+  'comparison-choice': ['approver', 'Before-and-after decision', 'Verify', 'Before & after'],
+  comparison: ['verifier', 'Capture before and after', 'Verify', 'Before & after'],
+  diagram: ['diagrammer', 'Design architecture diagram', 'Verify', 'Architecture'],
+  publishing: ['coordinator', 'Open pull request', 'Ship', 'PR'],
+  ci: ['watcher', 'Watching checks', 'Ship', 'PR'],
+  merge: ['watcher', 'PR ready to merge', 'Ship', 'PR'],
+  retro: ['coordinator', 'Retro', 'Ship', 'PR'],
+  closed: ['coordinator', 'Merged', 'Done', 'PR'],
 };
+
+// The lanes of a dashboard, in phase order: `at` is 2 for the board's columns and 3 for the track's steps.
+export function lanes(table, at) {
+  const out = [];
+  for (const [phase, entry] of Object.entries(table)) {
+    if (out.at(-1)?.name === entry[at]) out.at(-1).phases.push(phase);
+    else out.push({ name: entry[at], phases: [phase] });
+  }
+  return out;
+}
 
 // How capable a model a phase's work needs, named without naming a model: the owner's profile says which
 // model each harness uses for a tier. A worker turn runs at the tier of the phase it starts in, and a

@@ -4,7 +4,7 @@ import { createServer } from 'node:http';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { sendMedia } from '../mission-console/media.mjs';
-import { phases, roles } from '../mission-console/roles.mjs';
+import { lanes, phases, roles } from '../mission-console/roles.mjs';
 import { InputError, openStore } from '../mission-console/store.mjs';
 
 const legacyDb = join(homedir(), '.copilot', 'ai-sdlc-console', 'jarvis-missions.sqlite');
@@ -173,7 +173,7 @@ export function createConsoleService({ dbPath = DEFAULT_DB_PATH, onDecision, onS
             const query = new URL(request.url, origin).searchParams;
             await sendMedia(request, response, store.artifact(query.get('story'), query.get('id')));
           } else if (request.method === 'GET' && path === '/api/meta') {
-            send(response, 200, { roles, phases, ...modelPlan?.() });
+            send(response, 200, { roles, phases, columns: lanes(phases, 2), ...modelPlan?.() });
           } else if (request.method === 'GET' && path === '/events') {
             response.writeHead(200, { 'Content-Type': 'text/event-stream', ...security, Connection: 'keep-alive' });
             response.write('retry: 2000\nevent: stories\ndata: ' + frame() + '\n\n');

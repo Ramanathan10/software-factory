@@ -21,6 +21,6 @@ Follow this when the person asks to install, set up, or try the factory, or says
 - Skills say "the owner" for the person running the session; never name a person in a skill.
 - Run `node --test` before committing. Keep the application free of package dependencies unless a story adds them deliberately.
 - Keep the story store and Command Center harness-neutral. Anything specific to one agent harness belongs under `adapters/`. Every harness is one row in `adapters/harnesses.mjs`, installed by `install.mjs` and described once in the factory runbook; only code a harness must load itself goes in `adapters/<harness>/`.
-- When the `ai-sdlc` phases change, update the console's phases, the store's transitions, and the Jarvis phase table in the same change.
+- When the `ai-sdlc` phases change, update the store's transitions and the Jarvis phase table in the same change. A phase's dashboard lanes are part of its entry in `mission-console/roles.mjs`.
 - Keep imported third-party skills self-contained. Vet an exact upstream revision before importing or updating one, and preserve its source and license.
 - Profiles and story databases hold names and settings only. Never commit a profile or a database.
