@@ -39,9 +39,11 @@ for (const file of clis) {
       cwd: scratch, input: '', encoding: 'utf8', timeout: 20000,
       env: { ...process.env, HOME: scratch, USERPROFILE: scratch, AI_SDLC_HOME: scratch },
     });
-    assert.notEqual(run.status, 0,
-      relative(repo, file) + ' exited 0 on an argument it should reject, so its entry-point check did not match through the link. ' +
+    assert.equal(run.error, undefined, 'the CLI could not be run: ' + run.error?.message);
+    assert.equal(run.signal, null, 'the CLI was stopped by ' + run.signal);
+    assert.ok(run.status !== 0 && /Usage: node /.test(run.stderr),
+      relative(repo, file) + ' did not print its usage and fail on an argument it should reject, so its entry-point check did not match through the link. ' +
       'Use isMain(import.meta.url) from mission-console/is-main.mjs; a skill script, which is copied on its own, compares realpathSync of both sides.\n' +
-      run.stdout + run.stderr);
+      'exit ' + run.status + '\n' + run.stdout + run.stderr);
   });
 }
