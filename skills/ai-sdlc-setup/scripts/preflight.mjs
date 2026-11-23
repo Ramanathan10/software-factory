@@ -1,7 +1,4 @@
 #!/usr/bin/env node
-// AI SDLC preflight: detect machine and repository facts, and check the saved profile.
-//   node preflight.mjs detect [repoDir]   facts for the setup interview
-//   node preflight.mjs check  [repoDir]   validate the profile and gate tools; exit 1 on problems
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync, readdirSync, realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
@@ -11,7 +8,6 @@ import { fileURLToPath } from 'node:url';
 const assets = fileURLToPath(new URL('../assets/', import.meta.url));
 const schema = name => JSON.parse(readFileSync(join(assets, name), 'utf8'));
 
-// Each console phase's tier of model, as mission-console/roles.mjs has it; a test keeps the two the same.
 export const phaseTiers = {
   scout: 'deep', planning: 'deep', testing: 'standard', red: 'standard', building: 'standard', gates: 'standard',
   mutation: 'standard', review: 'deep', comparison: 'standard', diagram: 'standard', publishing: 'standard',
@@ -22,7 +18,6 @@ export const profileHome = (env = process.env) => env.AI_SDLC_HOME || join(homed
 
 const typeOf = value => (value === null ? 'null' : Array.isArray(value) ? 'array' : typeof value);
 
-// Validates the JSON Schema subset the profile schema uses.
 export function validate(value, rules, at = 'profile') {
   if (rules.enum) return rules.enum.includes(value) ? [] : [`${at} must be one of ${JSON.stringify(rules.enum)}`];
   const types = [rules.type ?? []].flat();
@@ -77,7 +72,6 @@ export function loadProfiles(repo, env = process.env) {
   const slug = repoSlug(root);
   const machinePath = join(profileHome(env), 'profile.json');
   const machine = readJson(machinePath, problems, 'Machine profile');
-  // Each person keeps their own checks for a repository, so its section lives in their own profile, never in the repository.
   const repoProfile = machine?.repos?.[slug];
   const source = repoProfile ? `${machinePath} repos["${slug}"]` : null;
   return { root, slug, machinePath, machine, repoProfile, source, problems };
@@ -91,7 +85,6 @@ function gateProblem(name, command, root, env) {
   return found ? null : `gate ${name} needs "${tool}", which was not found${local ? ' in the repository' : ' on PATH'}`;
 }
 
-// The files Jarvis runs, by where each sits inside the folder that holds the Command Center.
 const commandCenterFiles = {
   console: 'mission-console/jarvis.mjs',
   harnesses: 'adapters/harnesses.mjs',
@@ -101,14 +94,11 @@ const commandCenterFiles = {
 };
 const holdsCommandCenter = folder => Object.values(commandCenterFiles).every(file => existsSync(join(folder, file)));
 
-// Where the Command Center is, worked out from this script's real location: the checkout when the skills
-// are linked from it, or the extension folder beside the skills when a harness was given copies.
 export function findCommandCenter(script = realpathSync(fileURLToPath(import.meta.url))) {
   const skills = resolve(script, '../../..');
   return [resolve(skills, '..'), resolve(skills, '../extensions/ai-sdlc-console')].find(holdsCommandCenter) ?? null;
 }
 
-// Returns what is wrong with the saved Command Center folder, or null when Jarvis can run its files from it.
 function commandCenterProblem(saved, found) {
   if (saved && holdsCommandCenter(saved)) return null;
   const fix = found
@@ -119,27 +109,23 @@ function commandCenterProblem(saved, found) {
 
 export const DEFAULT_BRANCH_PATTERN = 'story/{id}-{slug}';
 
-// Returns what is wrong with a branch pattern, or null when a story branch can be named from it.
 export function branchPatternProblem(pattern) {
   for (const placeholder of ['{id}', '{slug}']) if (!pattern.includes(placeholder)) return `must contain ${placeholder}`;
   const fixed = pattern.replaceAll('{id}', '').replaceAll('{slug}', '');
   if (/[{}]/.test(fixed)) return 'may use only the {id} and {slug} placeholders';
-  // What git refuses in a branch name: https://git-scm.com/docs/git-check-ref-format
   if (/[\s~^:?*[\\]|\.\.|\/\/|^[/-]|[/.]$/.test(pattern)) return 'is not a valid git branch name';
   return null;
 }
 
 const list = dir => (existsSync(dir) ? readdirSync(dir) : []);
 
-// Software the lifecycle runs beyond the agent itself. kind: core (every story), gate (a required gate's tool),
-// optional (a capability the owner may decline). install is a suggestion to show the owner, never run unasked.
 export function components(root, env = process.env, platform = process.platform) {
   const files = list(root);
   const dotnet = files.some(file => /\.(sln|csproj)$/.test(file));
   const azure = /dev\.azure\.com|visualstudio\.com/.test(git(root, 'remote', 'get-url', 'origin'));
   const local = name => onPath(name, env) || existsSync(join(root, 'node_modules', '.bin', name));
   let dotnetTools = '';
-  try { dotnetTools = readFileSync(join(root, '.config', 'dotnet-tools.json'), 'utf8'); } catch { /* no local tool manifest */ }
+  try { dotnetTools = readFileSync(join(root, '.config', 'dotnet-tools.json'), 'utf8'); } catch {}
   const manager = (win, mac) => ({ win32: `winget install ${win}`, darwin: `brew install ${mac}` })[platform] ?? `install ${mac} with the system package manager`;
   return [
     { name: 'git', kind: 'core', neededFor: 'story worktrees and branches', found: onPath('git', env), install: manager('Git.Git', 'git') },
@@ -155,13 +141,9 @@ export function components(root, env = process.env, platform = process.platform)
   ];
 }
 
-// Decides what a missing component means for a story: 'problem' stops the story, 'warning' is reported, null is silent.
-// part: { name, kind, usedBy: required gates whose command names it, declined: the owner said not to ask again }.
 export function componentSeverity(part) {
-  // A gate's tool matters only when a required gate names it; then the profile promises a check the machine cannot run.
   if (part.kind === 'gate') return part.usedBy.length ? 'problem' : null;
   if (part.kind === 'optional' && part.declined) return null;
-  // No story can make a worktree without git. A pull request can be opened another way, so its CLI only warns.
   return part.name === 'git' ? 'problem' : 'warning';
 }
 
@@ -176,7 +158,6 @@ export function nextSteps({ problems, warnings }) {
 
 export function check(repo = '.', env = process.env, found = findCommandCenter()) {
   const { root, slug, machinePath, machine, repoProfile, source, problems } = loadProfiles(repo, env);
-  // Every story's worktree is cut from the remote default branch, and the lifecycle ends in a pull request.
   if (!git(root, 'remote', 'get-url', 'origin')) {
     problems.push(`${root} has no "origin" remote. Push the repository to its host and add the remote (git remote add origin <url>) before starting a story.`);
   }
@@ -185,7 +166,6 @@ export function check(repo = '.', env = process.env, found = findCommandCenter()
   const centerPath = typeof machine?.commandCenterPath === 'string' ? machine.commandCenterPath : null;
   const centerProblem = machine ? commandCenterProblem(centerPath, found) : null;
   if (centerProblem) problems.push(centerProblem);
-  // A repository's section is validated with the profile that holds it.
   if (!repoProfile) problems.push(`No repository section for ${slug} in ${machinePath}. Run the ai-sdlc-setup skill.`);
   const branchPattern = repoProfile?.branchPattern ?? DEFAULT_BRANCH_PATTERN;
   const patternProblem = typeof branchPattern === 'string' && branchPatternProblem(branchPattern);
@@ -228,23 +208,19 @@ export function check(repo = '.', env = process.env, found = findCommandCenter()
     beforeAndAfter: machine?.beforeAndAfter ?? 'ask',
     architectureDiagram: machine?.architectureDiagram ?? 'ask',
     workerPermissions: machine?.workerPermissions ?? 'restricted',
-    // The model each harness runs for each tier, and each phase's tier with the owner's changes applied.
     models: machine?.models ?? {},
     phaseTiers: { ...phaseTiers, ...machine?.phaseTiers },
-    // The full path of each file Jarvis runs, or null until the saved folder holds them.
     commandCenter: machine && !centerProblem
       ? { path: centerPath, ...Object.fromEntries(Object.entries(commandCenterFiles).map(([name, file]) => [name, join(centerPath, file)])) }
       : null,
     adapters: machine?.adapters ?? {},
     repo: {
       root, slug, profileSource: source, gates, skippedGates, branchPattern,
-      // Each story's worktree goes in <worktreeRoot>/<branch>; by default a folder beside the repository.
       worktreeRoot: repoProfile?.worktreeRoot ?? resolve(root, '..', basename(root) + '-worktrees'),
       teamRules: repoProfile?.teamRules ?? [],
       readiness: repoProfile?.readiness ?? { tracker: 'none' },
       requiredPipelines: repoProfile?.requiredPipelines ?? [],
       reviewBot: repoProfile?.reviewBot ?? 'none',
-      // Absent means the default location; an explicit null keeps specs out of the repository.
       specDir: repoProfile?.specDir === undefined ? 'docs/specs' : repoProfile.specDir,
     },
   };
@@ -255,19 +231,17 @@ export function detect(repo = '.', env = process.env) {
   const files = list(root);
   const has = pattern => files.filter(file => pattern.test(file));
   let scripts = {};
-  try { scripts = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).scripts ?? {}; } catch { /* not a Node project */ }
+  try { scripts = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).scripts ?? {}; } catch {}
   const tools = Object.fromEntries(
     ['git', 'gh', 'az', 'npm', 'npx', 'dotnet', 'python', 'gitleaks'].map(tool => [tool, onPath(tool, env)]));
   return {
     node: process.version,
     tools,
     components: components(root, env),
-    // Saved as the profile's commandCenterPath without asking; null when the files are not installed.
     commandCenterPath: findCommandCenter(),
     profiles: { home: profileHome(env), machineProfile: machinePath, machineProfileExists: Boolean(machine), repoProfileSource: source },
     repo: {
       root, slug,
-      // null when the repository has not been pushed anywhere; the check refuses to start a story on it.
       remote: git(root, 'remote', 'get-url', 'origin') || null,
       defaultBranch: git(root, 'symbolic-ref', '--short', 'refs/remotes/origin/HEAD').replace(/^origin\//, '') || null,
       packageScripts: scripts,
@@ -280,7 +254,6 @@ export function detect(repo = '.', env = process.env) {
   };
 }
 
-// Skills are installed as links, and Node reports this module by its real path, so compare real paths.
 if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url))) {
   const [mode, repo = '.'] = process.argv.slice(2);
   if (mode !== 'detect' && mode !== 'check') {

@@ -1,18 +1,13 @@
 #!/bin/bash
-# Skill Extraction Helper
-# Creates a new skill from a learning entry
-# Usage: ./extract-skill.sh <skill-name> [--dry-run]
 
 set -e
 
-# Configuration
 SKILLS_DIR="./skills"
 
-# Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
-NC='\033[0m' # No Color
+NC='\033[0m'
 
 usage() {
     cat << EOF
@@ -49,7 +44,6 @@ log_error() {
     echo -e "${RED}[ERROR]${NC} $1" >&2
 }
 
-# Parse arguments
 SKILL_NAME=""
 DRY_RUN=false
 
@@ -90,21 +84,18 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# Validate skill name
 if [ -z "$SKILL_NAME" ]; then
     log_error "Skill name is required"
     usage
     exit 1
 fi
 
-# Validate skill name format (lowercase, hyphens, no spaces)
 if ! [[ "$SKILL_NAME" =~ ^[a-z0-9]+(-[a-z0-9]+)*$ ]]; then
     log_error "Invalid skill name format. Use lowercase letters, numbers, and hyphens only."
     log_error "Examples: 'docker-fixes', 'api-patterns', 'pnpm-setup'"
     exit 1
 fi
 
-# Validate output path to avoid writes outside current workspace.
 if [[ "$SKILLS_DIR" = /* ]]; then
     log_error "Output directory must be a relative path under the current directory."
     exit 1
@@ -120,14 +111,12 @@ SKILLS_DIR="./$SKILLS_DIR"
 
 SKILL_PATH="$SKILLS_DIR/$SKILL_NAME"
 
-# Check if skill already exists
 if [ -d "$SKILL_PATH" ] && [ "$DRY_RUN" = false ]; then
     log_error "Skill already exists: $SKILL_PATH"
     log_error "Use a different name or remove the existing skill first."
     exit 1
 fi
 
-# Dry run output
 if [ "$DRY_RUN" = true ]; then
     log_info "Dry run - would create:"
     echo "  $SKILL_PATH/"
@@ -168,12 +157,10 @@ TEMPLATE
     exit 0
 fi
 
-# Create skill directory structure
 log_info "Creating skill: $SKILL_NAME"
 
 mkdir -p "$SKILL_PATH"
 
-# Create SKILL.md from template
 cat > "$SKILL_PATH/SKILL.md" << TEMPLATE
 ---
 name: $SKILL_NAME
@@ -207,7 +194,6 @@ TEMPLATE
 
 log_info "Created: $SKILL_PATH/SKILL.md"
 
-# Suggest next steps
 echo ""
 log_info "Skill scaffold created successfully!"
 echo ""

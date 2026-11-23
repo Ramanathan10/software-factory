@@ -1,12 +1,10 @@
 import { CanvasError, createCanvas, joinSession } from "@github/copilot-sdk/extension";
 import { existsSync } from "node:fs";
 
-// Installed, the command center sits beside this file; in the repository it is two folders up.
 const installed = new URL("./command-center/console-service.mjs", import.meta.url);
 const { createConsoleService } = await import(existsSync(installed) ? installed.href : "../../command-center/console-service.mjs");
 
 const service = createConsoleService({    dbPath: process.env.AI_SDLC_CONSOLE_DB || undefined,
-    // Event-driven: a decision the owner records in the console wakes the Jarvis chat immediately.
     onDecision: ({ story, seqs, types, session: worker }) => session?.send({
         prompt: `[Mission Console event] the owner recorded ${types.join(", ")} on story ${story} (event seq ${seqs.join(", ")}). ` +
             (worker

@@ -27,3 +27,4 @@ Follow this when the person asks to install, set up, or try the factory, or says
 - Keep imported third-party skills self-contained. Vet an exact upstream revision before importing or updating one, and preserve its source and license.
 - Profiles and story databases hold names and settings only. Never commit a profile or a database.
 - `private-details.test.mjs` checks both of the sharing rules above: no owner's name, nickname or `PRIVATE_WORDS` entry in a tracked file, and no profile or database.
+- Source files carry no comments: `comment-ratchet.mjs` holds each file to its count in `comment-ratchet.json`, and `node --test` fails if one goes up. Put a reason the code cannot show in an ADR under `docs/adr/`, and sweep the remaining comments with `/delete-comment`.

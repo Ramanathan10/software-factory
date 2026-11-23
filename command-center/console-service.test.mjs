@@ -148,7 +148,6 @@ test('console decisions wake the coordinator once per burst with the worker sess
   assert.equal(calls[0].session, 'worker-1');
 });
 
-// delivery-model.mjs: `serve.mjs deliver` overlapping the dashboard's own hand-off handed one answer twice.
 test('overlapping deliveries hand each decision to the worker once', async t => {
   const handed = [];
   const directory = mkdtempSync(join(tmpdir(), 'console-deliver-'));

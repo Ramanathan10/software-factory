@@ -17,15 +17,12 @@ function sources(folder) {
   });
 }
 
-// Every module that runs as a CLI, found by its entry-point check so a new one is covered without listing it.
 const clis = sources(repo).filter(file => !file.endsWith('is-main.mjs') && /process\.argv\[1\]|isMain\(import\.meta\.url\)/.test(readFileSync(file, 'utf8')));
 
 test('the CLIs are found', () => {
   assert.ok(clis.length >= 6, 'found ' + clis.map(file => relative(repo, file)).join(', '));
 });
 
-// 95db86b: preflight.mjs compared process.argv[1] with import.meta.url, so through the installed link it
-// printed nothing and exited 0. Each CLI is run through a linked checkout with an argument it rejects.
 for (const file of clis) {
   test(relative(repo, file) + ' runs when reached through a link', t => {
     const scratch = mkdtempSync(join(tmpdir(), 'cli-entry-'));

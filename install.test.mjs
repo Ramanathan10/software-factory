@@ -7,7 +7,6 @@ import { test } from 'node:test';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { install } from './install.mjs';
 
-// A home with Claude Code installed, and a repository with one skill and one folder that is not a skill.
 function fixture(t) {
   const root = mkdtempSync(join(tmpdir(), 'factory-install-'));
   t.after(() => rmSync(root, { recursive: true, force: true }));
@@ -51,7 +50,6 @@ test('a skill that is already there is left alone and reported as blocked, sayin
   assert.deepEqual([result.state, result.existing], ['blocked', 'a folder of its own']);
   assert.equal(readFileSync(join(existing, 'SKILL.md'), 'utf8'), '# Mine');
 
-  // A link to some other repository's skill of the same name says where it points.
   const other = join(root, 'other-repo', 'jarvis');
   mkdirSync(other, { recursive: true });
   mkdirSync(join(home, '.agents', 'skills'), { recursive: true });
@@ -78,7 +76,6 @@ test('the command fails when a skill is blocked, and succeeds once it is replace
   const existing = join(home, '.claude', 'skills', 'jarvis');
   mkdirSync(existing, { recursive: true });
   writeFileSync(join(existing, 'SKILL.md'), '# Mine');
-  // The command reads the real home folder, so point it at the fixture.
   const run = (...args) => {
     try {
       return { status: 0, output: execFileSync(process.execPath, [fileURLToPath(new URL('./install.mjs', import.meta.url)), ...args, 'claude-code'], { encoding: 'utf8', env: { ...process.env, USERPROFILE: home, HOME: home } }) };
@@ -113,7 +110,6 @@ test('a harness that needs copies gets the skills and a Command Center extension
   for (const file of ['extension.mjs', 'command-center/console-service.mjs', 'mission-console/jarvis.mjs', 'readiness-sync/check-story.mjs']) {
     assert.ok(existsSync(join(extension, file)), file);
   }
-  // The copied launcher loads from the extension folder alone, without this checkout.
   const { loadAdapters } = await import(pathToFileURL(join(extension, 'command-center', 'serve.mjs')).href);
   assert.ok(loadAdapters().has('claude code'));
 });
@@ -144,7 +140,6 @@ test('a copied skill the owner customizes is kept, and checking changes nothing'
 
 test('skills copied for a harness find the Command Center in the extension folder beside them', t => {
   const { home } = fixture(t);
-  // The real skills, so the copied preflight script is the one that runs.
   install({ home, only: ['copilot'] });
   const copied = join(home, '.copilot', 'skills', 'ai-sdlc-setup', 'scripts', 'preflight.mjs');
   const facts = JSON.parse(execFileSync(process.execPath, [copied, 'detect', home], { encoding: 'utf8' }));

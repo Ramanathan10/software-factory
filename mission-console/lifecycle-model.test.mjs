@@ -29,7 +29,6 @@ test('a story that is not being cleaned up can always still merge', () => {
   assert.deepEqual(stuck.map(([, node]) => story(node)), [], 'these stories can never reach closed');
 });
 
-// 3c60828: a story blocked on a review that never came could not record the merge GitHub had already reported.
 test('the merge of a registered pull request closes the story from any open PR phase', () => {
   const refused = live.filter(([, { state }]) => state.pr && ['ci', 'merge', 'retro'].includes(state.phase) && !state.cleanup)
     .filter(([id, { state }]) => follow(states, id, [...(state.worker ? ['release-worker'] : []), 'merged'])?.phase !== 'closed');
@@ -55,11 +54,9 @@ test('a story awaiting cleanup never changes phase', () => {
   }
 });
 
-// d989158: the ai-sdlc skill had the owner send a comparison back to build, which the store refused.
 test('the store accepts every event the Jarvis phase table records, in or into its phases', () => {
   const table = jarvisTable(readFileSync(new URL('../skills/jarvis/SKILL.md', import.meta.url), 'utf8'));
   assert.ok(table.length >= 9, 'the Jarvis phase table was not found');
-  // Evidence kinds and fields the table names in backticks beside the events.
   const notEvents = new Set(['before', 'after', 'diagram', 'recording', 'document', 'pipeline']);
   const missing = [];
   for (const { row, phases: rowPhases, events } of table) {

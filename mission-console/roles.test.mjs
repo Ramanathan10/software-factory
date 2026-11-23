@@ -2,7 +2,6 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { lanes, phases, roles } from './roles.mjs';
 
-// 70e432b: the Mission Console's lane list had no step for `diagram`, so a story in it fell off the track.
 test('every phase names its role, label, board column, and track step', () => {
   for (const [phase, entry] of Object.entries(phases)) {
     assert.equal(entry.length, 4, phase + ' needs [role, label, board column, track step] in mission-console/roles.mjs');

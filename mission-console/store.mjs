@@ -214,8 +214,6 @@ function apply(story, input, now) {
       delete story.worker;
       delete story.activity;
       return string(input.detail, 'release evidence');
-    // The factory daemon records each turn of a worker's program, so a turn that stops is seen even when
-    // the worker recorded nothing. `pid` and `log` let a restarted daemon find a turn it did not start.
     case 'turn-started':
       requireThat(story.worker && story.worker.id === input.assignment, 'Current assignment does not match.', 409);
       requireThat(Number.isSafeInteger(input.pid) && input.pid > 0, 'Supply the process ID of the turn.');
@@ -468,7 +466,6 @@ export function openStore(path) {
             id, title, brief: string(input.detail, 'initial brief', 16000),
             branch: string(input.branch, 'branch', 200), worktree: string(input.worktree, 'worktree', 1000),
             harness: string(input.harness, 'harness', 100),
-            // The repository the story belongs to, as owner/name. Stories recorded before this field have none.
             ...(input.repo === undefined ? {} : { repo: string(input.repo, 'repository', 200) }),
             phase: 'scout', revision: 0, questions: [], files: [], createdAt: now
           };
@@ -514,7 +511,6 @@ export function openStore(path) {
               delete story.worker;
             } else {
               detail = apply(story, input, now);
-              // Whether a finished turn is news for Jarvis is the daemon's call, not a property of the event type.
               if (input.type === 'turn-ended') wake = input.wake === true;
             }
           }

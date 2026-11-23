@@ -52,7 +52,6 @@ test('the launcher serves the dashboard, and a second one on the same port is re
   const asked = [];
   const ran = (harness, session) => { asked.push(harness + ' ' + session); return session === 'worker-1' ? { model: 'big-1', effort: 'high' } : undefined; };
   const center = await start({ port: 0, dbPath, models: () => plan, ran });
-  // Close before the folder is removed: the store holds the database file open.
   try {
     const meta = await fetch(center.url + 'api/meta').then(response => response.json());
     assert.ok(meta.phases.scout);
@@ -78,26 +77,25 @@ test('a decision recorded outside the dashboard reaches the worker when delivery
   const dbPath = join(folder(t), 'stories.sqlite');
   const sent = [];
   const center = await start({ port: 0, dbPath, adapters: new Map([['codex', { messageWorker: async message => sent.push(message) }]]) });
-  // Jarvis and workers record through their own connection to the same database.
-  const recorder = createConsoleService({ dbPath });
+  const jarvisConnection = createConsoleService({ dbPath });
   const port = Number(new URL(center.url).port);
   try {
-    recorder.createStory({ story: 'tl-1', title: 'Add export', detail: 'Export rows.', branch: 'tl-1', harness: 'Codex', worktree: '/work/tl-1' });
-    recorder.recordEvent({ story: 'tl-1', type: 'assign-worker', session: 'worker-1' });
-    recorder.recordEvent({ story: 'tl-1', type: 'question', question: 'scope', prompt: 'Which rows?', options: ['All', 'Selected'], recommended: 0 });
+    jarvisConnection.createStory({ story: 'tl-1', title: 'Add export', detail: 'Export rows.', branch: 'tl-1', harness: 'Codex', worktree: '/work/tl-1' });
+    jarvisConnection.recordEvent({ story: 'tl-1', type: 'assign-worker', session: 'worker-1' });
+    jarvisConnection.recordEvent({ story: 'tl-1', type: 'question', question: 'scope', prompt: 'Which rows?', options: ['All', 'Selected'], recommended: 0 });
     assert.deepEqual((await requestDelivery('tl-1', port)).seqs, [], 'a worker question is not a decision to deliver');
 
-    const answer = recorder.recordEvent({ story: 'tl-1', type: 'answer', question: 'scope', answer: 0 });
+    const answer = jarvisConnection.recordEvent({ story: 'tl-1', type: 'answer', question: 'scope', answer: 0 });
     assert.deepEqual(await requestDelivery('tl-1', port), { story: 'tl-1', seqs: [answer.seq], told: 'worker' });
     assert.deepEqual([sent.length, sent[0].session, sent[0].worktree, sent[0].phase], [1, 'worker-1', '/work/tl-1', 'scout']);
     assert.match(sent[0].prompt, /answer on story tl-1/);
     assert.deepEqual([(await requestDelivery('tl-1', port)).seqs, sent.length], [[], 1], 'a decision the worker already has is not sent twice');
 
-    recorder.ack(answer.seq);
+    jarvisConnection.ack(answer.seq);
     assert.deepEqual((await requestDelivery('tl-1', port)).seqs, [], 'an acknowledged decision is finished');
     await assert.rejects(requestDelivery('missing', port), /does not exist/);
   } finally {
-    recorder.close();
+    jarvisConnection.close();
     await center.close();
   }
 });

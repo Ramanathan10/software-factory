@@ -49,9 +49,7 @@ test('the wait across every story ends on a worker\'s news, not on old events or
   start(store, 'two');
   const ask = { question: 'scope', prompt: 'Which rows?', options: ['All', 'Selected'], recommended: 0 };
   const question = writer(store, 'one')('question', ask);
-  // Unacknowledged events from before the wait began are not news.
   assert.deepEqual(await waitForAny(store, { seconds: 0 }), []);
-  // Started from an earlier seq, the wait reports what Jarvis has not read yet.
   assert.deepEqual((await waitForAny(store, { after: question.seq - 1, seconds: 0 })).map(event => event.seq), [question.seq]);
 
   const waiting = waitForAny(open(), { seconds: 5, pollMs: 20 });

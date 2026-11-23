@@ -1,0 +1,12 @@
+{
+  "exclude": [
+    "skills/adversarial-code-review/",
+    "skills/diagram-design/",
+    "skills/greploop/",
+    "skills/grill-me/",
+    "skills/ponytail/"
+  ],
+  "baseline": {
+    "skills/ai-sdlc-setup/scripts/preflight.test.mjs": 1
+  }
+}

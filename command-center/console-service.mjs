@@ -8,7 +8,6 @@ import { lanes, phases, roles } from '../mission-console/roles.mjs';
 import { InputError, openStore } from '../mission-console/store.mjs';
 
 const legacyDb = join(homedir(), '.copilot', 'ai-sdlc-console', 'jarvis-missions.sqlite');
-// Stories recorded while the console lived in the Copilot folder stay where they are.
 export const DEFAULT_DB_PATH = existsSync(legacyDb)
   ? legacyDb
   : join(process.env.AI_SDLC_HOME || join(homedir(), '.ai-sdlc'), 'console', 'jarvis-missions.sqlite');
@@ -62,17 +61,11 @@ const images = {
 const folderFor = story => String(story).replace(/[^\w-]/g, '_');
 const imageOf = bytes => Object.entries(images).find(([, { magic }]) => magic.every((byte, index) => bytes[index] === byte))?.[0];
 
-// `onDecision` hands the owner's decisions on, and `onStartWorker` starts a story's worker; a host that
-// cannot do one leaves it out. `modelPlan` returns each phase's tier and each harness's model for a tier,
-// for the dashboard to show; it is read on each request, so a saved profile change shows on reload.
-// `workerRan` returns the `{ model, effort }` a story's worker session last ran on, when that is known; the
-// dashboard is sent it as `worker.ran`. It is not stored: the harness's own record of the session holds it.
 export function createConsoleService({ dbPath = DEFAULT_DB_PATH, onDecision, onStartWorker, modelPlan, workerRan, decisionDelayMs = 1500 } = {}) {
   mkdirSync(dirname(dbPath), { recursive: true });
   const store = openStore(dbPath);
   const currentRevision = story => store.snapshot().find(item => item.id === story)?.revision;
   const attachmentRoot = join(dirname(dbPath), 'attachments');
-  // Batch a burst of decisions (e.g. "Send answers" posts one per question) into one wake-up per story.
   const batches = new Map();
   const notify = (story, recorded, type) => {
     if (!onDecision) return;
@@ -86,12 +79,7 @@ export function createConsoleService({ dbPath = DEFAULT_DB_PATH, onDecision, onS
     }, decisionDelayMs);
     batches.set(story, batch);
   };
-  // Event seqs a worker has been handed, or is being handed, since this process started.
   const sent = new Set();
-  // Hands the decisions not already on their way to whoever `onDecision` reaches. Resolves to the seqs it
-  // carried and who was told. A decision a worker was handed is not sent again: the worker acknowledges it
-  // only after acting on it, so it is still pending while that turn runs. The seqs are claimed before the
-  // first await, so a delivery that overlaps this one cannot carry them too (delivery-model.mjs).
   const hand = async (story, seqs, types) => {
     const carried = seqs.filter(seq => !sent.has(seq));
     if (!carried.length) return { seqs: [], told: 'nobody' };
@@ -107,14 +95,11 @@ export function createConsoleService({ dbPath = DEFAULT_DB_PATH, onDecision, onS
   };
 
   const service = {
-    // For the PR watcher, which reads and records through the store itself.
     store,
     snapshot: harness => store.snapshot(harness),
     pending: () => store.pending(),
     ack: seq => store.ack(seq),
     handover: story => store.handover(story),
-    // Hands the story's waiting decisions to its worker now: for a decision recorded outside the dashboard,
-    // or one that did not arrive. Resolves to the seqs handed over and who was told.
     async deliverPending(story) {
       const records = store.pendingFor(story).filter(record => humanDecisions.has(record.type) && !sent.has(record.seq));
       if (!records.length || !onDecision) return { story, seqs: [], told: 'nobody' };
@@ -158,7 +143,6 @@ export function createConsoleService({ dbPath = DEFAULT_DB_PATH, onDecision, onS
         return ran ? { ...story, worker: { ...story.worker, ran } } : story;
       });
       const frame = () => JSON.stringify({ at: new Date().toISOString(), stories: shown() });
-      // Poll the store so events recorded by the CLI or other processes stream too.
       const tick = setInterval(() => {
         if (!clients.size) return;
         const next = frame();

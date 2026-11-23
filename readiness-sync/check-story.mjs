@@ -1,8 +1,3 @@
-// Read-only readiness check for one story.
-//   node check-story.mjs <story id> --repo <owner/name> [--tests-pass] [--snapshot]
-// The repository's `readiness` section of the AI SDLC profile says which tracker to read and which checks
-// apply. With --snapshot the story is not read here: a snapshot is taken from stdin, which is how a tracker
-// that only the agent's own tools can read is checked. The story id may carry a prefix, such as ABC-123.
 import { readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
@@ -10,7 +5,6 @@ import { evaluate, withDefaults } from './engine.mjs';
 import { trackers } from './trackers.mjs';
 import { isMain } from '../mission-console/is-main.mjs';
 
-// Resolves to what was found, or to what the caller must do next; `problem` is set when nothing can be checked.
 export function checkStory({ id, repo, snapshot, testsPass }, { profile, table = trackers, run } = {}) {
   const settings = withDefaults({ repository: repo, ...profile?.repos?.[repo]?.readiness });
   if (settings.tracker === 'none') return { skipped: `No tracker is set for ${repo}, so there is no readiness check.` };
@@ -36,7 +30,7 @@ if (isMain(import.meta.url)) {
     process.exit(2);
   }
   let profile = {};
-  try { profile = JSON.parse(readFileSync(join(process.env.AI_SDLC_HOME || join(homedir(), '.ai-sdlc'), 'profile.json'), 'utf8')); } catch { /* no profile: no tracker */ }
+  try { profile = JSON.parse(readFileSync(join(process.env.AI_SDLC_HOME || join(homedir(), '.ai-sdlc'), 'profile.json'), 'utf8')); } catch {}
   try {
     const snapshot = args.includes('--snapshot') ? JSON.parse(readFileSync(0, 'utf8')) : undefined;
     const result = checkStory({ id, repo, snapshot, testsPass: args.includes('--tests-pass') }, { profile });
