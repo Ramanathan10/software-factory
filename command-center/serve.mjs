@@ -150,7 +150,6 @@ export const requestDelivery = (story, port = DEFAULT_PORT) => post('/api/delive
 
 const direct = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
 
-//   node serve.mjs deliver <story> [port]   |   node serve.mjs start <story> [port] < kickoff
 if (direct && ['deliver', 'start'].includes(process.argv[2])) {
   const port = Number(process.argv[4] ?? DEFAULT_PORT);
   try {

@@ -1,8 +1,24 @@
 // The one table of work trackers: how each one's story is read into the snapshot engine.mjs evaluates.
-// Readers only read; nothing here writes to a tracker.
 import { execFileSync } from 'node:child_process';
 
-// Runs a tracker's command-line program and parses the JSON it prints.
+const words = args => {
+  const flag = args.findIndex(arg => arg.startsWith('-'));
+  return flag < 0 ? args : args.slice(0, flag);
+};
+const writesThroughApi = args => args.some(arg => /^(-X|--method|-f|-F|--field|--raw-field|--input)(=|$)/.test(arg));
+const readCommands = {
+  gh: args => (args[0] === 'api' && !writesThroughApi(args)) || (['issue', 'pr'].includes(args[0]) && ['view', 'list'].includes(args[1])),
+  az: args => ['show', 'list'].includes(words(args).at(-1)),
+};
+
+// Wraps `run` so a tracker reader can run only commands that read. A readiness check never changes a story.
+export function readOnly(run) {
+  return (command, args) => {
+    if (!readCommands[command]?.(args)) throw new Error(`Refused "${command} ${args.join(' ')}": a readiness check only reads its tracker.`);
+    return run(command, args);
+  };
+}
+
 // On Windows `az` is a script, which needs a shell, and a shell needs each argument quoted.
 function runJson(command, args) {
   const shell = process.platform === 'win32' && command === 'az';
@@ -20,6 +36,7 @@ export const trackers = {
     command: 'az',
     needs: ['organization', 'project'],
     read(id, settings, run = runJson) {
+      run = readOnly(run);
       const org = `https://dev.azure.com/${settings.organization}`;
       const az = (...args) => run('az', [...args, '--org', org, '-o', 'json']);
       // People are compared by uniqueName, which is stable; a display name is the fallback.
@@ -48,6 +65,7 @@ export const trackers = {
     // The story is an issue in `settings.repository` (owner/name), its tasks are its sub-issues, and its
     // pull requests are the ones that close it. GitHub issues carry no effort, so `effortSet` never passes.
     read(id, settings, run = runJson) {
+      run = readOnly(run);
       const repo = ['--repo', settings.repository];
       const user = run('gh', ['api', 'user']).login;
       const issue = run('gh', ['issue', 'view', String(id), ...repo, '--json', 'number,assignees,subIssues,closedByPullRequestsReferences']);

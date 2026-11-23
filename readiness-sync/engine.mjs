@@ -1,5 +1,5 @@
 // Pure readiness rule engine: (snapshot, settings) -> { checklist, questions }.
-// It reads nothing and writes nothing: a tracker reader in trackers.mjs builds the snapshot, and the caller
+// A tracker reader in trackers.mjs builds the snapshot, and the caller
 // raises each question with the owner. `settings` is the repository's `readiness` section of the AI SDLC
 // profile, with defaults filled in by `withDefaults`.
 //
