@@ -30,6 +30,8 @@ export const DIRECTIVE = new RegExp(
   ].join("|"),
 );
 
+export const POWERSHELL_HELP = /^\s*\.(SYNOPSIS|DESCRIPTION|PARAMETER|EXAMPLE|INPUTS|OUTPUTS|NOTES|LINK|COMPONENT|ROLE|FUNCTIONALITY|FORWARDHELPTARGETNAME|FORWARDHELPCATEGORY|REMOTEHELPRUNSPACE|EXTERNALHELP)\b/i;
+
 const LANG = {
   ".js": "js", ".mjs": "js", ".cjs": "js", ".ts": "js", ".mts": "js", ".cts": "js",
   ".tsx": "tsx", ".jsx": "tsx",
@@ -377,7 +379,8 @@ export function stripComments(file, input) {
 
 export function findComments(file, input) {
   const src = input.replace(/\r\n/g, "\n");
-  const raw = rawComments(file, src).filter((c) => !DIRECTIVE.test(c.text.replace(/^[*\s]+/, "")));
+  const helpBlock = (c) => c.kind === "block" && languageOf(file) === "ps1" && POWERSHELL_HELP.test(c.text);
+  const raw = rawComments(file, src).filter((c) => !DIRECTIVE.test(c.text.replace(/^[*\s]+/, "")) && !helpBlock(c));
   const comments = [];
   for (const c of raw) {
     const line = lineAt(src, c.start);

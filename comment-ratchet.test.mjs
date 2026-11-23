@@ -73,6 +73,23 @@ test("powershell: block comments, strings and here-strings", () => {
   assert.deepEqual(texts("a.ps1", src), ["block", "trailing"]);
 });
 
+test("powershell: comment-based help drives Get-Help and is not counted", () => {
+  const src = [
+    "<#",
+    ".SYNOPSIS",
+    "  Does a thing.",
+    ".PARAMETER Name",
+    "  The name.",
+    "#>",
+    "param([string]$Name)",
+    "<# .synopsis lower-case keywords work too #>",
+    "<# plain block #>",
+    "# .SYNOPSIS in a line comment is still a comment",
+  ].join("\n");
+  assert.deepEqual(texts("a.ps1", src), ["plain block", ".SYNOPSIS in a line comment is still a comment"]);
+  assert.deepEqual(texts("a.js", "/* .SYNOPSIS only means help in PowerShell */"), [".SYNOPSIS only means help in PowerShell"]);
+});
+
 test("html: markup comments plus script and style comments, json skipped", () => {
   const src = [
     "<!-- top -->",
