@@ -448,6 +448,10 @@ export function compare(found, baseline) {
   return problems;
 }
 
+export function hasBaseline(config) {
+  return Object.hasOwn(config, "baseline");
+}
+
 export function loadRepo() {
   const root = execFileSync("git", ["rev-parse", "--show-toplevel"], { encoding: "utf8" }).trim();
   const configPath = join(root, "comment-ratchet.json");
@@ -492,7 +496,7 @@ function main(argv) {
     return 0;
   }
   if (mode === "--init") {
-    if (Object.keys(config.baseline ?? {}).length) {
+    if (hasBaseline(config)) {
       console.error("The baseline already exists. Use --update, which can only lower it.");
       return 1;
     }

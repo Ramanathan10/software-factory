@@ -107,7 +107,34 @@ test("CRLF checkouts find the same comments", () => {
   assert.deepEqual(texts("a.sh", src.replace(/\n/g, "\r\n")), texts("a.sh", src));
 });
 
-import { loadRepo, scanRepo } from "./comment-ratchet.mjs";
+import { hasBaseline, loadRepo, scanRepo } from "./comment-ratchet.mjs";
+import { execFileSync, spawnSync } from "node:child_process";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+
+test("an empty baseline is still a baseline: --init refuses it and --update keeps it", (t) => {
+  assert.equal(hasBaseline({ exclude: [] }), false);
+  assert.equal(hasBaseline({ baseline: {} }), true);
+  const dir = mkdtempSync(join(tmpdir(), "comment-ratchet-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const git = (...args) => execFileSync("git", args, { cwd: dir, encoding: "utf8" });
+  git("init", "-q");
+  writeFileSync(join(dir, "a.mjs"), "export const a = 1;\n");
+  writeFileSync(join(dir, "comment-ratchet.json"), JSON.stringify({ baseline: { "a.mjs": 1 } }));
+  git("add", ".");
+  const script = fileURLToPath(new URL("./comment-ratchet.mjs", import.meta.url));
+  const run = (...args) => spawnSync(process.execPath, [script, ...args], { cwd: dir, encoding: "utf8" });
+  assert.equal(run("--update").status, 0);
+  assert.deepEqual(JSON.parse(readFileSync(join(dir, "comment-ratchet.json"), "utf8")), { baseline: {} });
+  writeFileSync(join(dir, "a.mjs"), "// new\nexport const a = 1;\n");
+  const init = run("--init");
+  assert.equal(init.status, 1);
+  assert.match(init.stderr, /baseline already exists/);
+  assert.deepEqual(JSON.parse(readFileSync(join(dir, "comment-ratchet.json"), "utf8")), { baseline: {} });
+  assert.equal(run("--check").status, 1);
+});
 test("the repository has no comments beyond the baseline", () => {
   const { root, config } = loadRepo();
   assert.deepEqual(compare(scanRepo(root, config), config.baseline ?? {}), []);
