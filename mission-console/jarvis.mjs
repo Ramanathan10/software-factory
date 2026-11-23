@@ -1,9 +1,9 @@
 import { createServer } from 'node:http';
 import { readFileSync } from 'node:fs';
-import { pathToFileURL } from 'node:url';
 import { InputError, openStore } from './store.mjs';
 import { waitForAny, waitForWake, watch, watchOnce } from './watcher.mjs';
 import { sendMedia } from './media.mjs';
+import { isMain } from './is-main.mjs';
 
 const host = '127.0.0.1';
 const browserEvents = new Set(['answer', 'approve', 'comparison-choice', 'request-cleanup']);
@@ -157,7 +157,7 @@ async function main() {
   }
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (isMain(import.meta.url)) {
   try {
     await main();
   } catch (error) {

@@ -5,8 +5,9 @@ import { spawnSync } from 'node:child_process';
 import { cpSync, existsSync, lstatSync, mkdirSync, readdirSync, realpathSync, renameSync, symlinkSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
 import { harnesses, launchProblem } from './adapters/harnesses.mjs';
+import { isMain } from './mission-console/is-main.mjs';
 
 const repo = fileURLToPath(new URL('.', import.meta.url));
 
@@ -136,4 +137,4 @@ function main(args) {
   return 0;
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) process.exitCode = main(process.argv.slice(2));
+if (isMain(import.meta.url)) process.exitCode = main(process.argv.slice(2));
