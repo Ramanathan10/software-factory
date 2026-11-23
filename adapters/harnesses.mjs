@@ -231,11 +231,12 @@ function settled(child, { harness, log, ms = SETTLE_MS }) {
 const turns = new Map();
 
 // Sends a prompt to an existing worker session. Waits for a turn this process already started for that
-// session, so one session never runs two turns at once, and resolves once the new turn is running.
-// `options.onTurn` is told the running turn's `pid`, `log`, and `ended`, a promise of its exit code.
+// session, and for `options.after`, so one session never runs two turns at once, and resolves once the new
+// turn is running. `options.onTurn` is told the running turn's `pid`, `log`, and `ended`, a promise of its
+// exit code.
 export async function messageWorker({ harness, session, worktree, prompt, phase }, options = {}) {
   const invocation = commandFor(harness, 'message', { session, phase }, options.settings);
-  const previous = turns.get(session) ?? Promise.resolve();
+  const previous = Promise.all([turns.get(session), options.after]);
   let finish;
   turns.set(session, new Promise(resolve => { finish = resolve; }));
   await previous;
@@ -269,8 +270,13 @@ export async function startWorker({ harness, worktree, prompt, phase }, options 
   const log = logFor(session, options.env);
   const child = run(commandFor(harness, 'start', { session, phase }, options.settings), { worktree, prompt, log, spawnProcess: options.spawnProcess });
   const ended = exit(child);
-  // Told once the session id is known; kept off the result, which the command line prints as JSON.
-  const running = found => { options.onTurn?.({ session: found, pid: child.pid, log, ended }); return { session: found, log }; };
+  // Told once the session id is known; kept off the result, which the command line prints as JSON. A message
+  // to the session waits for this first turn as it does for any other (delivery-model.mjs).
+  const running = found => {
+    turns.set(found, ended.then(() => {}));
+    options.onTurn?.({ session: found, pid: child.pid, log, ended });
+    return { session: found, log };
+  };
   await started(child).catch(error => { throw explained(harness, error, options.launchEnv); });
   await settled(child, { harness, log, ms: options.settleMs });
   child.unref?.();

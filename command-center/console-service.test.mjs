@@ -155,6 +155,40 @@ test('console decisions wake the coordinator once per burst with the worker sess
   assert.equal(calls[0].session, 'worker-1');
 });
 
+// delivery-model.mjs: `serve.mjs deliver` overlapping the dashboard's own hand-off handed one answer twice.
+test('overlapping deliveries hand each decision to the worker once', async t => {
+  const handed = [];
+  const directory = mkdtempSync(join(tmpdir(), 'console-deliver-'));
+  const service = createConsoleService({
+    dbPath: join(directory, 'stories.db'), decisionDelayMs: 5,
+    onDecision: async decision => { handed.push(...decision.seqs); await new Promise(resolve => setTimeout(resolve, 50)); return 'worker'; },
+  });
+  t.after(() => { service.close(); rmSync(directory, { recursive: true, force: true }); });
+  service.createStory({ story: 'tl-1', title: 'T', detail: 'B', branch: 'b', worktree: '/w', harness: 'Codex' });
+  service.recordEvent({ story: 'tl-1', type: 'question', question: 'q', prompt: 'Which?', options: ['a', 'b'], recommended: 0 });
+  service.recordEvent({ story: 'tl-1', type: 'assign-worker', session: 'worker-1' });
+  const answer = service.recordEvent({ story: 'tl-1', type: 'answer', question: 'q', answer: 0 });
+  const [first, second] = await Promise.all([service.deliverPending('tl-1'), service.deliverPending('tl-1')]);
+  assert.deepEqual(handed, [answer.seq]);
+  assert.deepEqual([first.seqs, second.seqs], [[answer.seq], []]);
+});
+
+test('a decision that did not reach the worker is handed again on the next delivery', async t => {
+  let told = 'coordinator';
+  const handed = [];
+  const directory = mkdtempSync(join(tmpdir(), 'console-deliver-'));
+  const service = createConsoleService({ dbPath: join(directory, 'stories.db'), onDecision: async decision => { handed.push(...decision.seqs); return told; } });
+  t.after(() => { service.close(); rmSync(directory, { recursive: true, force: true }); });
+  service.createStory({ story: 'tl-1', title: 'T', detail: 'B', branch: 'b', worktree: '/w', harness: 'Codex' });
+  service.recordEvent({ story: 'tl-1', type: 'question', question: 'q', prompt: 'Which?', options: ['a', 'b'], recommended: 0 });
+  const answer = service.recordEvent({ story: 'tl-1', type: 'answer', question: 'q', answer: 0 });
+  await service.deliverPending('tl-1');
+  told = 'worker';
+  await service.deliverPending('tl-1');
+  await service.deliverPending('tl-1');
+  assert.deepEqual(handed, [answer.seq, answer.seq]);
+});
+
 test('/api/attachment stores a same-origin screenshot per story, serves it, and rejects non-images or other origins', async t => {
   const service = fixture(t);
   service.createStory(base);

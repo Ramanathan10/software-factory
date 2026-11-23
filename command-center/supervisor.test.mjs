@@ -103,6 +103,26 @@ test('a turn left by an earlier daemon is checked by its process: running is lef
   assert.equal(seen.length, 1, 'a turn is finished once');
 });
 
+// delivery-model.mjs: after a restart, a message started a second turn beside the one the earlier daemon left.
+test('a message waits until the turn left by an earlier daemon has ended', async t => {
+  const living = new Set([7003]);
+  const { service, supervisor, story } = fixture(t, { alive: pid => living.has(pid), bootedAt: 0 });
+  service.recordEvent({ story: 'tl-1', type: 'turn-started', assignment: story().worker.id, pid: 7003, log: '/logs/old.log' });
+  let idle = false;
+  const waiting = supervisor.idle('tl-1', 5).then(() => { idle = true; });
+  await new Promise(resolve => setTimeout(resolve, 30));
+  assert.equal(idle, false);
+  living.clear();
+  await waiting;
+  assert.equal(idle, true);
+});
+
+test('a story with no turn left by an earlier daemon is idle at once', async t => {
+  const { supervisor } = fixture(t, { alive: () => true, bootedAt: 0 });
+  await supervisor.idle('tl-1');
+  await supervisor.idle('no-such-story');
+});
+
 test('a turn recorded before the machine last started is gone, whatever process has its ID now', t => {
   const { service, supervisor, story } = fixture(t, { alive: () => true, bootedAt: Date.now() + 60000 });
   service.recordEvent({ story: 'tl-1', type: 'turn-started', assignment: story().worker.id, pid: 7002, log: '/logs/old.log' });

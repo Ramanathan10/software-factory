@@ -89,6 +89,10 @@ export function createSupervisor({ service, verdict = turnVerdict, alive = isAli
     }
   }
 
+  // A turn left by an earlier daemon that may still be running: this daemon did not start it, its process
+  // exists, and it began after the machine did.
+  const adopted = (id, turn) => turn && !owned.has(id + ':' + turn.pid) && Date.parse(turn.at) >= bootedAt && alive(turn.pid);
+
   const supervisor = {
     // Called with each turn this daemon starts: `ended` resolves to the program's exit code.
     track({ story, pid, log: file, ended }) {
@@ -113,8 +117,16 @@ export function createSupervisor({ service, verdict = turnVerdict, alive = isAli
       for (const story of service.snapshot()) {
         const turn = story.worker?.turn;
         if (!turn || owned.has(story.id + ':' + turn.pid)) continue;
-        if (Date.parse(turn.at) < bootedAt || !alive(turn.pid)) finish(story.id, turn.pid, null, true);
+        if (!adopted(story.id, turn)) finish(story.id, turn.pid, null, true);
       }
+    },
+    // Resolves once the story has no turn left running by an earlier daemon, which this daemon has no entry
+    // for in harnesses.mjs `turns`. A message waits for it so the session never runs two turns at once.
+    idle(id, pollMs = 1000) {
+      return new Promise(resolve => {
+        const check = () => (adopted(id, find(id)?.worker?.turn) ? setTimeout(check, pollMs) : resolve());
+        check();
+      });
     },
     // Sweeps now and then every `pollMs`. Returns the function that stops it.
     start(pollMs = 5000) {
