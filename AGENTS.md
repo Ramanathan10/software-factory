@@ -26,3 +26,4 @@ Follow this when the person asks to install, set up, or try the factory, or says
 - A change to `mission-console/store.mjs`, the phases in `roles.mjs`, or the Jarvis phase table is checked by the lifecycle model; `.claude/skills/verify-story-lifecycle/SKILL.md` says how to read its failures.
 - Keep imported third-party skills self-contained. Vet an exact upstream revision before importing or updating one, and preserve its source and license.
 - Profiles and story databases hold names and settings only. Never commit a profile or a database.
+- `private-details.test.mjs` checks both of the sharing rules above: no owner's name, nickname or `PRIVATE_WORDS` entry in a tracked file, and no profile or database.
