@@ -21,6 +21,7 @@ const assets = new Map([
   ['/app.js', ['app.js', 'text/javascript; charset=utf-8']],
   ['/markdown.js', ['markdown.js', 'text/javascript; charset=utf-8']],
   ['/attention.js', ['attention.js', 'text/javascript; charset=utf-8']],
+  ['/badge.js', ['badge.js', 'text/javascript; charset=utf-8']],
 ].map(([route, [file, type]]) => [route, [readFileSync(new URL('./ui/' + file, import.meta.url)), type]]));
 const security = {
   'Cache-Control': 'no-store',

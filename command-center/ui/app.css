@@ -87,14 +87,54 @@ h1 span { color: var(--muted); letter-spacing: .02em; font-weight: 500; margin-l
 .avatar {
   width: 34px; height: 34px; flex: none; border-radius: 50%;
   display: grid; place-items: center; position: relative;
-  font: 700 12px var(--mono); color: #0b0e14; background: var(--role, var(--accent));
+  font: 700 12px var(--mono); color: #0b0e14;
 }
 .avatar.sm { width: 24px; height: 24px; font-size: 10px; }
-.agent.busy .avatar::after {
-  content: ""; position: absolute; inset: -4px; border-radius: 50%;
-  border: 2px solid transparent; border-top-color: var(--role); animation: spin 1.1s linear infinite;
-}
+.avatar.initials { background: var(--role, var(--accent)); }
+.avatar svg { display: block; width: 100%; height: 100%; overflow: visible; }
+
+/* The outer ring shows state, so it reads the same with motion off: dashed when idle, gray when queued,
+   bright while working, amber while a decision waits on the owner. */
+.avatar::after { content: ""; position: absolute; inset: -4px; border-radius: 50%; border: 2px solid transparent; pointer-events: none; }
+.avatar.sm::after { inset: -3px; border-width: 1.5px; }
+.agent.idle .avatar::after { border: 1.5px dashed #4a5368; }
+.agent.queued .avatar::after { border-color: #3a4458; }
+.agent.busy .avatar::after, .swim.hot .swim-head .avatar::after,
+.card.busy .owner .avatar::after, .track.busy .owner .avatar::after { border-color: var(--text); }
+.agent.needs .avatar::after, .swim.hot[data-role="approver"] .swim-head .avatar::after,
+.card.waiting .owner .avatar::after, .track.waiting .owner .avatar::after { border-color: var(--amber); }
+
+/* The badge, drawn by badge.js from the role's `badge` in roles.mjs: one rule per ring style and per motion. */
+.avatar .edge { stroke: rgba(255, 255, 255, .16); stroke-width: 1; }
+.avatar .ring { fill: none; stroke-width: 1.5; }
+.avatar .ring.thin { stroke-width: 1.5; }
+.avatar .ring.band { stroke-width: 3; }
+.avatar .ring.hud { stroke-dasharray: 9 4; }
+.avatar .ring.dotted { stroke-dasharray: .5 3.2; stroke-linecap: round; stroke-width: 2; }
+.avatar .ring.tick { stroke-dasharray: 1.5 5.2; }
+.avatar .ring.arc { stroke-width: 2.5; stroke-dasharray: 46 200; stroke-linecap: round; transform: rotate(130deg); transform-origin: 24px 24px; }
+.avatar .glyph { fill: none; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.avatar .mv { transform-box: view-box; transform-origin: 12px 12px; }
+.avatar .k-flow { stroke-dasharray: 2 2.2; }
+.avatar.moving .k-reactor { animation: spin 7s linear infinite; }
+.avatar.moving:has(.k-reactor) > svg { animation: reactor-glow 2.4s ease-in-out infinite; }
+.avatar.moving .k-swing { animation: swing 2.6s ease-in-out infinite; }
+.avatar.moving .k-orbit { animation: orbit 2.8s linear infinite; }
+.avatar.moving .k-rise { animation: rise 1.8s ease-in infinite; }
+.avatar.moving .k-rock { animation: rock 1.4s ease-in-out infinite; }
+.avatar.moving .k-blink { animation: blink-eye 3.6s ease-in-out infinite; }
+.avatar.moving .k-slide { animation: slide 2.4s ease-in-out infinite; }
+.avatar.moving .k-sweep { animation: spin 2.4s linear infinite; }
+.avatar.moving .k-flow { animation: flow .9s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
+@keyframes reactor-glow { 50% { filter: drop-shadow(0 0 4px currentColor); } }
+@keyframes swing { 0%, 100% { transform: rotate(-22deg); } 50% { transform: rotate(22deg); } }
+@keyframes orbit { 0%, 100% { transform: translate(1.5px, 0); } 25% { transform: translate(0, 1.5px); } 50% { transform: translate(-1.5px, 0); } 75% { transform: translate(0, -1.5px); } }
+@keyframes rise { 0% { transform: translateY(0); opacity: 0; } 25% { opacity: 1; } 100% { transform: translateY(-4px); opacity: 0; } }
+@keyframes rock { 0%, 100% { transform: rotate(-16deg); } 50% { transform: rotate(16deg); } }
+@keyframes blink-eye { 0%, 86%, 100% { transform: scaleY(1); } 92% { transform: scaleY(.12); } }
+@keyframes slide { 0%, 100% { transform: translateX(-3.5px); } 50% { transform: translateX(3.5px); } }
+@keyframes flow { to { stroke-dashoffset: -8.4; } }
 @keyframes breathe { 50% { box-shadow: 0 0 26px -2px var(--amber); } }
 
 /* Layout */
@@ -169,7 +209,6 @@ h1 span { color: var(--muted); letter-spacing: .02em; font-weight: 500; margin-l
 .swim.hot { border-color: color-mix(in srgb, var(--role) 45%, var(--line)); background: linear-gradient(90deg, color-mix(in srgb, var(--role) 9%, var(--panel)), var(--panel) 45%); }
 .swim-head { display: flex; align-items: flex-start; gap: 10px; background: none; border: 0; color: inherit; text-align: left; cursor: pointer; padding: 2px; border-radius: 8px; }
 .swim-head:hover b { color: var(--role); }
-.swim.hot .avatar::after { content: ""; position: absolute; inset: -4px; border-radius: 50%; border: 2px solid transparent; border-top-color: var(--role); animation: spin 1.1s linear infinite; }
 .swim-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; }
 
 /* Track view */

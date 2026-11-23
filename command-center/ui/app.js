@@ -1,4 +1,5 @@
 import { newlyWaiting, titleFor } from './attention.js';
+import { badgeSvg } from './badge.js';
 import { renderMarkdown } from './markdown.js';
 
 const $ = id => document.getElementById(id);
@@ -118,6 +119,12 @@ function openPlan(story) {
 
 const initials = alias => (alias || '?').split(/\s+/).map(word => word[0]).join('').slice(0, 2).toUpperCase();
 const alias = role => role === 'approver' ? 'You' : meta.roles[role]?.alias ?? role;
+// A role's badge; `moving` plays its glyph's working motion, which only full-size badges do.
+const avatar = (role, { small = false, moving = false } = {}) => {
+  const badge = meta.roles[role]?.badge;
+  return el('span', { class: ['avatar', small && 'sm', moving && 'moving', !badge && 'initials'].filter(Boolean).join(' ') },
+    badge ? badgeSvg(badge) : initials(alias(role)));
+};
 const ago = iso => {
   if (!iso) return '';
   const seconds = Math.max(0, Math.round((Date.now() - Date.parse(iso)) / 1000));
@@ -231,7 +238,7 @@ function renderCrew() {
       title: alias(role) + ' · ' + meta.roles[role].job + (filterRole === role ? ' (click to show everyone)' : ' (click to show only their work)'),
       onclick: () => setFilter(role),
     },
-      el('span', { class: 'avatar' }, initials(alias(role))),
+      avatar(role, { moving: state === 'busy' }),
       el('div', { class: 'who' },
         el('b', {}, alias(role)),
         el('small', {}, meta.roles[role].job),
@@ -260,7 +267,7 @@ function storyCard(story) {
     el('h3', {}, story.title),
     story.repo && el('p', { class: 'repo' }, story.repo),
     el('div', { class: 'owner' },
-      el('span', { class: 'avatar sm' }, idle ? '··' : initials(alias(role))),
+      idle ? el('span', { class: 'avatar sm' }, '··') : avatar(role, { small: true }),
       el('span', {}, story.blocked ? 'Blocked' : waiting ? 'Waiting on you' : busy ? alias(role) + ' is working' : story.phase === 'closed' ? 'Done' : 'Idle · ' + idleReason(story)),
       busy && el('span', { class: 'dots' }, el('i'), el('i'), el('i'))),
     last && el('p', { class: 'last' }, last.detail),
@@ -284,7 +291,7 @@ function renderToolbar() {
   if (!filterRole) return filter.replaceChildren();
   filter.dataset.role = filterRole;
   filter.replaceChildren(
-    el('span', { class: 'avatar sm' }, initials(alias(filterRole))),
+    avatar(filterRole, { small: true }),
     el('span', {}, 'Only ' + (filterRole === 'approver' ? 'your' : alias(filterRole) + '\u2019s') + ' work · ' + visible().length + ' of ' + stories.length),
     el('button', { type: 'button', onclick: () => setFilter(filterRole), 'aria-label': 'Clear filter' }, 'Show everyone'));
 }
@@ -309,7 +316,7 @@ function renderAgents(items) {
     const busy = list.some(story => role === 'approver' ? waitingOnYou(story) : isBusy(story));
     return el('section', { class: 'swim' + (busy ? ' hot' : ''), 'data-role': role },
       el('button', { type: 'button', class: 'swim-head', onclick: () => setFilter(role), title: 'Filter to ' + alias(role) },
-        el('span', { class: 'avatar' }, initials(alias(role))),
+        avatar(role, { moving: busy && role !== 'approver' }),
         el('span', { class: 'who' }, el('b', {}, alias(role)), el('small', {}, meta.roles[role]?.job ?? ''), el('em', {}, list.length + (list.length === 1 ? ' story' : ' stories')))),
       el('div', { class: 'swim-cards' }, [...list].sort((a, b) => columnIndex(a) - columnIndex(b)).map(storyCard)));
   });
@@ -562,7 +569,7 @@ function renderFeed() {
   $('feed').replaceChildren(...events.map(event => {
     const role = eventRoles[event.type] ?? meta.phases[event.phase]?.[0] ?? 'coordinator';
     return el('li', { class: fresh.some(item => item.seq === event.seq) ? 'new' : '', 'data-role': role },
-      el('span', { class: 'avatar sm' }, initials(alias(role))),
+      avatar(role, { small: true }),
       el('div', {},
         el('div', { class: 'meta' }, el('b', {}, event.story), el('span', {}, event.type), el('time', { 'data-at': event.at }, ago(event.at))),
         el('p', {}, event.detail ?? '')));
