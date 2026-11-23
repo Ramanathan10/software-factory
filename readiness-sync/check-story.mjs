@@ -6,9 +6,9 @@
 import { readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { pathToFileURL } from 'node:url';
 import { evaluate, withDefaults } from './engine.mjs';
 import { trackers } from './trackers.mjs';
+import { isMain } from '../mission-console/is-main.mjs';
 
 // Resolves to what was found, or to what the caller must do next; `problem` is set when nothing can be checked.
 export function checkStory({ id, repo, snapshot, testsPass }, { profile, table = trackers, run } = {}) {
@@ -26,7 +26,7 @@ export function checkStory({ id, repo, snapshot, testsPass }, { profile, table =
   return { tracker: settings.tracker, story: snapshot.story.id, ...evaluate(snapshot, settings) };
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (isMain(import.meta.url)) {
   const args = process.argv.slice(2);
   const value = name => (args.includes(name) ? args[args.indexOf(name) + 1] : undefined);
   const id = Number(String(args[0] ?? '').replace(/^[A-Za-z][A-Za-z0-9]*-/, ''));

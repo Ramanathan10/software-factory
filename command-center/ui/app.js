@@ -2,15 +2,8 @@ import { newlyWaiting, titleFor } from './attention.js';
 import { renderMarkdown } from './markdown.js';
 
 const $ = id => document.getElementById(id);
-const columns = [
-  { name: 'Plan', phases: ['scout', 'planning', 'approval'] },
-  { name: 'Tests', phases: ['testing', 'red'] },
-  { name: 'Build', phases: ['building', 'gates', 'mutation'] },
-  { name: 'Review', phases: ['review'] },
-  { name: 'Verify', phases: ['comparison-choice', 'comparison', 'diagram'] },
-  { name: 'Ship', phases: ['publishing', 'ci', 'merge', 'retro'] },
-  { name: 'Done', phases: ['closed'] },
-];
+// The board's columns, from /api/meta.
+let columns = [];
 const crewOrder = ['coordinator', 'planner', 'scout', 'tester', 'implementer', 'reviewer', 'verifier', 'watcher', 'diagrammer', 'approver'];
 const ACTIVE_MS = 10 * 60 * 1000;
 const eventRoles = {
@@ -716,6 +709,7 @@ function connect() {
 }
 
 meta = await (await fetch('/api/meta')).json();
+columns = meta.columns;
 if (!['lanes', 'agents', 'track'].includes(view)) view = 'lanes';
 for (const button of document.querySelectorAll('.views button')) button.addEventListener('click', () => setView(button.dataset.view));
 $('stat-waiting-button').addEventListener('click', () => setFilter('approver'));

@@ -19,6 +19,7 @@ function fakeProgram(output = '', exit) {
   const calls = [];
   const spawnProcess = (command, args, options) => {
     const child = new EventEmitter();
+    child.pid = 5000 + calls.length;
     child.stdin = { on: () => child.stdin, end: prompt => { call.prompt = prompt; } };
     const call = { command, args, cwd: options.cwd, child };
     calls.push(call);
@@ -141,6 +142,43 @@ test('a second message to the same session waits for the first turn to end', asy
   await second;
   assert.deepEqual(calls.map(call => call.prompt), ['first', 'second']);
   calls[1].child.emit('close');
+});
+
+// delivery-model.mjs: a decision handed while the kickoff turn ran started a second turn of the session.
+test('a message to a new session waits for the kickoff turn startWorker began', async () => {
+  const { calls, spawnProcess } = fakeProgram();
+  const { session } = await startWorker({ harness: 'Claude Code', worktree: '.', prompt: 'kickoff' }, { spawnProcess, settings: restricted, settleMs: 0 });
+  const message = messageWorker({ harness: 'Claude Code', session, worktree: '.', prompt: 'The owner answered.' }, { spawnProcess, settings: restricted, settleMs: 0 });
+  await new Promise(resolve => setTimeout(resolve, 20));
+  assert.equal(calls.length, 1, 'the message started a turn while the kickoff turn was running');
+  calls[0].child.emit('close', 0);
+  await message;
+  assert.deepEqual(calls.map(call => call.prompt), ['kickoff', 'The owner answered.']);
+  calls[1].child.emit('close', 0);
+});
+
+// delivery-model.mjs: a daemon that restarted while a new turn settled found no turn in the store to wait for.
+test('a message reports its turn as soon as the process exists, before the turn settles', async () => {
+  const { calls, spawnProcess } = fakeProgram();
+  const told = [];
+  const message = messageWorker({ harness: 'Codex', session: 'early', worktree: '.', prompt: 'next' }, { spawnProcess, settings: restricted, settleMs: 200, onTurn: turn => told.push(turn.pid) });
+  await new Promise(resolve => setTimeout(resolve, 20));
+  assert.deepEqual(told, [calls[0].child.pid]);
+  await message;
+  calls[0].child.emit('close', 0);
+});
+
+test('a message waits for what the caller says is still running', async () => {
+  const { calls, spawnProcess } = fakeProgram();
+  let release;
+  const after = new Promise(resolve => { release = resolve; });
+  const message = messageWorker({ harness: 'Codex', session: 'adopted', worktree: '.', prompt: 'next' }, { spawnProcess, settings: restricted, settleMs: 0, after });
+  await new Promise(resolve => setTimeout(resolve, 20));
+  assert.equal(calls.length, 0);
+  release();
+  await message;
+  assert.equal(calls.length, 1);
+  calls[0].child.emit('close', 0);
 });
 
 test('a program that cannot be started is reported, and the session accepts the next message', async () => {
