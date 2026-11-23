@@ -1,20 +1,9 @@
-import { harnessKey, phases, roles } from './roles.mjs';
+import { harnessKey, lanes, phases, roles } from './roles.mjs';
 
 const ui = id => document.getElementById(id);
-const workflow = [
-  ['Scout', ['scout']],
-  ['Plan', ['planning', 'approval']],
-  ['Test', ['testing', 'red']],
-  ['Build', ['building']],
-  ['Gates', ['gates']],
-  ['Mutation', ['mutation']],
-  ['Review', ['review']],
-  ['Before & after', ['comparison-choice', 'comparison']],
-  ['Architecture', ['diagram']],
-  ['PR', ['publishing', 'ci', 'merge', 'retro', 'closed']],
-];
-const planPhases = new Set(['approval', 'testing', 'red', 'building', 'gates', 'mutation', 'review', 'comparison-choice',
-  'comparison', 'diagram', 'publishing', 'ci', 'merge', 'retro', 'closed']);
+const workflow = lanes(phases, 3).map(lane => [lane.name, lane.phases]);
+// From plan approval on, the story has a plan to show.
+const planPhases = new Set(Object.keys(phases).slice(Object.keys(phases).indexOf('approval')));
 let stories = [];
 let selected;
 let view = 'stories';
