@@ -105,25 +105,42 @@ export async function start({ port = DEFAULT_PORT, dbPath = DEFAULT_DB_PATH, ada
   let supervisor;
   let stopping = false;
   const starts = new Map();
+  const blockTestStart = (id, error) => {
+    const current = service.snapshot().find(item => item.id === id);
+    if (stopping || current?.phase !== 'testing' || current.worker || current.blocked || current.cleanup) return;
+    service.recordEvent({ story: id, type: 'blocked', detail: 'Bruce Banner could not start after plan approval: ' + error.message });
+  };
   const beginWorker = input => {
     if (stopping) throw new InputError('The Command Center is stopping.', 503);
     if (starts.has(input.story) && !input.automatic) throw new InputError('A worker start is already in progress. Wait for its assignment, then deliver additional instructions to that worker.', 409);
     if (!starts.has(input.story)) {
+      let intended = false;
       const pending = startStoryWorker(input, { service, supervisor, launch, prepare: (story, prompt) => {
         if (story.phase !== 'testing') return prompt;
         const history = service.store.history(story.id);
         const approval = history.find(event => event.type === 'approve');
         if (!approval) throw new InputError('The testing phase has no recorded approval.', 409);
         if (interruptedTestStart(history)) throw new InputError('An earlier start was interrupted before assignment. Verify its worker process and log before resuming; another worker has not been launched.', 409);
+        if (!input.automatic && history.some(event => event.type === 'assign-worker' && event.seq > approval.seq)) return prompt;
         const marker = testStartIntent + ' Approval event ' + approval.seq + '.';
         const previous = history.find(event => event.type === 'activity' && event.detail === marker);
         if (input.automatic && previous && history.some(event => event.type === 'assign-worker' && event.seq > previous.seq)) {
           throw new InputError('This approval already started a test worker. Reconcile its handoff or failed turn before explicitly starting a replacement.', 409);
         }
         service.recordEvent({ story: story.id, type: 'activity', detail: marker });
+        intended = true;
         const kickoff = testingKickoff(story, [approval.seq], dbPath);
         return input.automatic ? kickoff : kickoff + '\n\nAdditional coordinator handoff (within the approved tests-only boundary; this does not authorize implementation or a scope change):\n' + prompt;
-      } });
+      } }).catch(error => {
+        if (intended) {
+          try {
+            blockTestStart(input.story, error);
+          } catch (failure) {
+            console.error('The failed start on ' + input.story + ' could not be recorded (' + failure.message + ').');
+          }
+        }
+        throw error;
+      });
       starts.set(input.story, pending);
       pending.finally(() => starts.delete(input.story)).catch(() => {});
     }
@@ -149,10 +166,7 @@ export async function start({ port = DEFAULT_PORT, dbPath = DEFAULT_DB_PATH, ada
           await beginWorker({ story: story.id, expectedPhase: 'testing', automatic: true, prompt: 'Continue the approved test-first phase.' });
           return 'worker';
         } catch (error) {
-          const current = service.snapshot().find(item => item.id === story.id);
-          if (!stopping && current?.phase === 'testing' && !current.worker && !current.blocked && !current.cleanup) {
-            service.recordEvent({ story: story.id, type: 'blocked', detail: 'Bruce Banner could not start after plan approval: ' + error.message });
-          }
+          blockTestStart(story.id, error);
           console.error('Bruce Banner could not start on ' + story.id + ': ' + error.message);
           return 'nobody';
         }

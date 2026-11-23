@@ -367,3 +367,37 @@ test('a start for a story whose worker is mid-turn is refused at once, without w
   assert.match(await Promise.race([refusal, waited]), /already has a worker/);
   await assert.rejects(requestStart('tl-1', 'Scout a third time.', port), /already has a worker/);
 });
+
+test('a manual test start that fails to launch shows the failure on the story, and a resume permits the retry', async t => {
+  const { start: open, recorder, story } = approvedFixture(t, 'Claude Code');
+  let launched = 0;
+  const center = await open({ launch: async () => {
+    launched += 1;
+    if (launched === 1) throw new Error('Not signed in.');
+    return { session: 'tester-after-sign-in' };
+  } });
+  const port = Number(new URL(center.url).port);
+  recorder.recordEvent({ story: 'tl-1', type: 'approve' });
+  await assert.rejects(requestStart('tl-1', 'Write the tests.', port), /Not signed in/);
+  assert.match(story().blocked, /Not signed in/);
+  await assert.rejects(requestStart('tl-1', 'Write the tests.', port), /Resolve the story blocker/);
+  recorder.recordEvent({ story: 'tl-1', type: 'resume', detail: 'Signed in; no worker process was left running.' });
+  await requestStart('tl-1', 'Write the tests.', port);
+  assert.equal(launched, 2);
+  assert.equal(story().worker.session, 'tester-after-sign-in');
+});
+
+test('a manual start after the approved test worker was assigned carries only the coordinator prompt', async t => {
+  const { start: open, recorder, story } = approvedFixture(t, 'Claude Code');
+  const launched = [];
+  const center = await open({ launch: async input => { launched.push(input); return { session: 'tester-' + launched.length }; } });
+  const port = Number(new URL(center.url).port);
+  recorder.recordEvent({ story: 'tl-1', type: 'approve' });
+  await requestDelivery('tl-1', port);
+  assert.match(launched[0].prompt, /independent test author/);
+  recorder.recordEvent({ story: 'tl-1', type: 'release-worker', assignment: story().worker.id, detail: 'Tests written.' });
+  await requestStart('tl-1', 'Strengthen the export test to kill the surviving mutant.', port);
+  assert.equal(launched[1].prompt, 'Strengthen the export test to kill the surviving mutant.');
+  assert.equal(story().worker.session, 'tester-2');
+  assert.equal(recorder.store.history('tl-1').filter(event => event.type === 'activity' && /Starting an independent/.test(event.detail)).length, 1);
+});
