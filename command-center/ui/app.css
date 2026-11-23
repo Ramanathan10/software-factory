@@ -13,15 +13,17 @@
   --font: "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
   --mono: "Cascadia Code", Consolas, monospace;
 }
-[data-role="coordinator"] { --role: #5aa9ff; }
+/* Each role's color comes from its persona's badge. Amber, red and green already mean waiting, blocked and
+   done, so no other role may look like them; the two roles one persona plays share a color. */
+[data-role="coordinator"] { --role: #6fd3ff; }
 [data-role="planner"] { --role: #6f8cff; }
-[data-role="scout"] { --role: #c77dff; }
-[data-role="tester"] { --role: #3ecf8e; }
-[data-role="implementer"] { --role: #ff7a59; }
-[data-role="reviewer"] { --role: #b98cff; }
-[data-role="verifier"] { --role: #2fc6c6; }
-[data-role="watcher"] { --role: #e2c044; }
-[data-role="diagrammer"] { --role: #ff8fb3; }
+[data-role="scout"] { --role: #f472b6; }
+[data-role="tester"] { --role: #7bd94f; }
+[data-role="implementer"] { --role: #ff8c42; }
+[data-role="reviewer"] { --role: #2fc6c6; }
+[data-role="verifier"] { --role: #7bd94f; }
+[data-role="watcher"] { --role: #b38cff; }
+[data-role="diagrammer"] { --role: #aeb9c9; }
 [data-role="approver"] { --role: var(--amber); }
 
 * { box-sizing: border-box; }
