@@ -51,7 +51,10 @@ test('each role color is readable, and looks like neither a state color nor anot
     return [id, value.startsWith('var(') ? token(value.slice(6, -1)) : value];
   }));
   for (const [id, color] of Object.entries(colors)) {
-    assert.ok(contrast(color, token('panel')) >= 4.5, id + ' is ' + contrast(color, token('panel')).toFixed(2) + ':1 on the panel; story ids in it need 4.5:1');
+    // Tracks sit on --panel and story cards on the lighter --panel-2; both draw story ids in the role color.
+    for (const ground of ['panel', 'panel-2']) {
+      assert.ok(contrast(color, token(ground)) >= 4.5, id + ' is ' + contrast(color, token(ground)).toFixed(2) + ':1 on --' + ground + '; story ids in it need 4.5:1');
+    }
     if (id === 'approver') continue;
     for (const [state, value] of Object.entries(states)) {
       assert.ok(difference(color, value) >= 8, id + ' is ' + difference(color, value).toFixed(1) + ' from ' + state + ', which means a state');
