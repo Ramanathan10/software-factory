@@ -132,7 +132,7 @@ test('a tracker reader can run only commands that read', () => {
   ]) assert.doesNotThrow(() => run(command, args), command + ' ' + args.join(' '));
   for (const [command, args] of [
     ['gh', ['issue', 'edit', '4', '--add-label', 'ready']], ['gh', ['issue', 'close', '4']], ['gh', ['pr', 'merge', '9']],
-    ['gh', ['api', '-X', 'PATCH', 'repos/a/b/issues/4']], ['gh', ['api', 'repos/a/b/issues/4/labels', '-f', 'labels[]=ready']], ['gh', ['api', '--method=POST', 'x']],
+    ['gh', ['api', '-X', 'PATCH', 'repos/a/b/issues/4']], ['gh', ['api', 'repos/a/b/issues/4/labels', '-f', 'labels[]=ready']], ['gh', ['api', '--method=POST', 'x']], ['gh', ['api', '-XPOST', 'x']], ['gh', ['api', 'x', '-ftitle=changed']], ['gh', ['api', 'x', '-Fbody=@file']],
     ['az', ['boards', 'work-item', 'update', '--id', '1', '--state', 'Closed']], ['az', ['repos', 'pr', 'create']], ['git', ['push']],
   ]) assert.throws(() => run(command, args), /only reads its tracker/, command + ' ' + args.join(' '));
 });

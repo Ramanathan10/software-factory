@@ -5,7 +5,7 @@ const words = args => {
   const flag = args.findIndex(arg => arg.startsWith('-'));
   return flag < 0 ? args : args.slice(0, flag);
 };
-const writesThroughApi = args => args.some(arg => /^(-X|--method|-f|-F|--field|--raw-field|--input)(=|$)/.test(arg));
+const writesThroughApi = args => args.some(arg => /^-[XfF]|^--(method|field|raw-field|input)(=|$)/.test(arg));
 const readCommands = {
   gh: args => (args[0] === 'api' && !writesThroughApi(args)) || (['issue', 'pr'].includes(args[0]) && ['view', 'list'].includes(args[1])),
   az: args => ['show', 'list'].includes(words(args).at(-1)),
