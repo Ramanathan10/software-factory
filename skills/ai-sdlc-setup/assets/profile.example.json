@@ -18,7 +18,7 @@
         "lint": "npm run lint",
         "typecheck": "npx tsc --noEmit",
         "build": "npm run build",
-        "secrets": "gitleaks git --no-banner",
+        "secrets": "gitleaks git --no-banner --log-opts={base}..HEAD",
         "dependencies": null,
         "staticAnalysis": null,
         "mutation": "npx stryker run --mutate {files}"

@@ -33,7 +33,7 @@
         "properties": {
           "schemaVersion": { "description": "Accepted from profiles saved before the two schemas were merged.", "enum": [1] },
           "gates": {
-            "description": "Checks that must pass before a pull request opens. A command string makes the gate required; null means the owner decided it is not required. {files} is replaced with the changed production files.",
+            "description": "Checks that must pass before a pull request opens. A command string makes the gate required; null means the owner decided it is not required. {files} is replaced with the changed production files, and {base} with the remote default branch the story was cut from, such as origin/main.",
             "type": "object",
             "additionalProperties": false,
             "properties": {

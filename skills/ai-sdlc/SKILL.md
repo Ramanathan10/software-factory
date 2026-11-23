@@ -96,10 +96,10 @@ Turn the valid red test green without weakening or deleting its assertion. If th
 Run every gate the profile requires for the repository, with the command the profile gives, before any model reviews the change. These checks give the same answer every time; model review does not replace them.
 
 - `test`, `lint`, `typecheck`, `build`: the repository's own commands.
-- `secrets`, `dependencies`, `staticAnalysis`: the profile's scanners. Run `dependencies` when a manifest or lockfile changed.
+- `secrets`, `dependencies`, `staticAnalysis`: the profile's scanners. Run `dependencies` when a manifest or lockfile changed. Replace `{base}` with the remote default branch the story was cut from, such as `origin/main`. A scanner that reads git history sees only commits, so commit the story's work before running it.
 - `mutation`: replace `{files}` with the changed production files and run it on those only.
 
-Fix a failing gate in the implementation. For each mutant that survives on a changed line, hand it to a test-author subagent under the phase 2 boundary to add or strengthen a test that kills it, then rerun. A mutant that cannot change observable behavior may stay alive with a one-line reason in the verification notes.
+Fix a failing gate in the implementation. When a gate fails on something the story did not change, run the same command on the unchanged remote default branch. If it fails there too, the failure is not the story's: stop and tell the owner, with both results. Do not fix unrelated code, allowlist the finding, or drop the gate to get past it. For each mutant that survives on a changed line, hand it to a test-author subagent under the phase 2 boundary to add or strengthen a test that kills it, then rerun. A mutant that cannot change observable behavior may stay alive with a one-line reason in the verification notes.
 
 When the mutation tool cannot run or activate a mutant on a changed line, make the mutation by hand instead. This happens, for example, with code that runs only in a browser test fixture, or with syntax the tool does not mutate. Change one operator, condition, literal, or call on that line, run the focused test, restore the file, and record the mutation and the failing-test count in the verification notes. A hand mutation that no test catches counts as a surviving mutant.
 
