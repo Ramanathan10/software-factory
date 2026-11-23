@@ -341,3 +341,29 @@ test('a released planner wait uses the current approved plan and worktree when i
   assert.ok(launched[0].prompt.includes(currentWorktree));
   assert.ok(!launched[0].prompt.includes('Superseded plan.'));
 });
+
+test('a start for a story whose worker is mid-turn is refused at once, without waiting for the turn', async t => {
+  const directory = mkdtempSync(join(tmpdir(), 'factory-busy-'));
+  const dbPath = join(directory, 'stories.sqlite');
+  const recorder = createConsoleService({ dbPath });
+  recorder.createStory({ story: 'tl-1', title: 'Add export', detail: 'Export selected rows.', branch: 'tl-1', harness: 'Claude Code', worktree: directory });
+  let endTurn;
+  const ended = new Promise(resolve => { endTurn = resolve; });
+  const center = await start({ port: 0, dbPath, launch: async (input, options) => {
+    options.onTurn({ session: 'scout', pid: process.pid, log: join(directory, 'scout.log'), ended });
+    return { session: 'scout' };
+  } });
+  t.after(async () => {
+    endTurn(0);
+    await center.close();
+    recorder.close();
+    rmSync(directory, { recursive: true, force: true });
+  });
+  const port = Number(new URL(center.url).port);
+  await requestStart('tl-1', 'Scout the repository.', port);
+  assert.ok(recorder.snapshot()[0].worker.turn);
+  const refusal = requestStart('tl-1', 'Scout again.', port).then(() => 'started', error => error.message);
+  const waited = new Promise(resolve => setTimeout(() => resolve('still waiting'), 3000));
+  assert.match(await Promise.race([refusal, waited]), /already has a worker/);
+  await assert.rejects(requestStart('tl-1', 'Scout a third time.', port), /already has a worker/);
+});

@@ -50,15 +50,21 @@ export async function deliver({ story, seqs, types, session, worktree, phase, on
 }
 
 export async function startStoryWorker({ story: id, prompt, expectedPhase }, { service, supervisor, launch = startWorker, prepare }) {
-  await supervisor.idle(id);
-  const story = service.snapshot().find(story => story.id === id);
-  if (!story) throw new InputError('Story does not exist.', 404);
-  if (typeof prompt !== 'string' || !prompt.trim()) throw new InputError('Send the kickoff prompt.');
-  if (story.blocked || story.cleanup) throw new InputError('Resolve the story blocker or cleanup before starting a worker.', 409);
-  if (expectedPhase && story.phase !== expectedPhase) throw new InputError('The story phase changed before the worker could start.', 409);
+  const startable = () => {
+    const story = service.snapshot().find(story => story.id === id);
+    if (!story) throw new InputError('Story does not exist.', 404);
+    if (typeof prompt !== 'string' || !prompt.trim()) throw new InputError('Send the kickoff prompt.');
+    if (story.blocked || story.cleanup) throw new InputError('Resolve the story blocker or cleanup before starting a worker.', 409);
+    if (expectedPhase && story.phase !== expectedPhase) throw new InputError('The story phase changed before the worker could start.', 409);
+    if (row(story.harness).workers !== 'command-line') return story;
+    if (story.worker) throw new InputError('Story ' + id + ' already has a worker. Message it with deliver, or record release-worker first.', 409);
+    if (!workerPhases.has(story.phase)) throw new InputError('The ' + story.phase + ' phase has no worker to start.', 409);
+    return story;
+  };
+  let story = startable();
   if (row(story.harness).workers !== 'command-line') return launch({ harness: story.harness, worktree: story.worktree, prompt });
-  if (story.worker) throw new InputError('Story ' + id + ' already has a worker. Message it with deliver, or record release-worker first.', 409);
-  if (!workerPhases.has(story.phase)) throw new InputError('The ' + story.phase + ' phase has no worker to start.', 409);
+  await supervisor.idle(id);
+  story = startable();
   if (!existsSync(story.worktree)) throw new InputError('The worktree ' + story.worktree + ' does not exist. Create it, then record it on the story.', 409);
   if (prepare) prompt = prepare(story, prompt);
   let turn;
