@@ -52,14 +52,17 @@ function lineAt(src, index) {
   return line;
 }
 
+const REGEX_AFTER_PAREN = new Set(["if", "while", "for", "with"]);
+
 const REGEX_AFTER_WORD = new Set([
   "return", "typeof", "instanceof", "in", "of", "new", "delete", "void", "throw",
   "case", "do", "else", "yield", "await",
 ]);
 
-export function scanJs(src, offset = 0, end = src.length) {
+export function scanJs(src, offset = 0, end = src.length, literals = []) {
   const out = [];
   const braces = [];
+  const parens = [];
   let i = offset;
   let prev = "";
   let prevWord = "";
@@ -69,6 +72,7 @@ export function scanJs(src, offset = 0, end = src.length) {
     return !/[)\]}]/.test(prev) || prev === "}";
   };
   const readString = (q) => {
+    const start = i;
     i++;
     while (i < end && src[i] !== q) {
       if (src[i] === "\\") i++;
@@ -76,17 +80,22 @@ export function scanJs(src, offset = 0, end = src.length) {
       i++;
     }
     i++;
+    literals.push([start, Math.min(i, end)]);
   };
   const readTemplate = () => {
+    const start = i;
     i++;
     while (i < end) {
       if (src[i] === "\\") { i += 2; continue; }
-      if (src[i] === "`") { i++; return; }
-      if (src[i] === "$" && src[i + 1] === "{") { i += 2; braces.push("tpl"); return; }
+      if (src[i] === "`") { i++; literals.push([start, i]); return "end"; }
+      if (src[i] === "$" && src[i + 1] === "{") { i += 2; braces.push("tpl"); literals.push([start, i]); return "expr"; }
       i++;
     }
+    literals.push([start, end]);
+    return "end";
   };
   const readRegex = () => {
+    const start = i;
     i++;
     let cls = false;
     while (i < end && src[i] !== "\n") {
@@ -98,6 +107,7 @@ export function scanJs(src, offset = 0, end = src.length) {
     }
     i++;
     while (i < end && /[a-z]/i.test(src[i])) i++;
+    literals.push([start, Math.min(i, end)]);
   };
   while (i < end) {
     const c = src[i];
@@ -115,14 +125,16 @@ export function scanJs(src, offset = 0, end = src.length) {
       continue;
     }
     if (c === "'" || c === '"') { readString(c); prev = "v"; prevWord = ""; continue; }
-    if (c === "`") { readTemplate(); prev = "v"; prevWord = ""; continue; }
+    if (c === "`") { prev = readTemplate() === "expr" ? "" : "v"; prevWord = ""; continue; }
     if (c === "/" && regexAllowed()) { readRegex(); prev = "v"; prevWord = ""; continue; }
     if (c === "{") { braces.push("block"); prev = c; prevWord = ""; i++; continue; }
     if (c === "}") {
       const top = braces.pop();
-      if (top === "tpl") { i--; readTemplate(); prev = "v"; prevWord = ""; continue; }
+      if (top === "tpl") { prev = readTemplate() === "expr" ? "" : "v"; prevWord = ""; continue; }
       prev = c; prevWord = ""; i++; continue;
     }
+    if (c === "(") { parens.push(prev === "w" && REGEX_AFTER_PAREN.has(prevWord)); prev = c; prevWord = ""; i++; continue; }
+    if (c === ")") { prev = parens.pop() ? "" : c; prevWord = ""; i++; continue; }
     if (/[\w$]/.test(c)) {
       const start = i;
       while (i < end && /[\w$]/.test(src[i])) i++;
@@ -136,15 +148,17 @@ export function scanJs(src, offset = 0, end = src.length) {
   return out;
 }
 
-export function scanCss(src, offset = 0, end = src.length) {
+export function scanCss(src, offset = 0, end = src.length, literals = []) {
   const out = [];
   let i = offset;
   while (i < end) {
     const c = src[i];
     if (c === "'" || c === '"') {
+      const start = i;
       i++;
       while (i < end && src[i] !== c && src[i] !== "\n") { if (src[i] === "\\") i++; i++; }
       i++;
+      literals.push([start, Math.min(i, end)]);
       continue;
     }
     if (c === "/" && src[i + 1] === "*") {
@@ -159,7 +173,7 @@ export function scanCss(src, offset = 0, end = src.length) {
   return out;
 }
 
-export function scanHtml(src) {
+export function scanHtml(src, literals = []) {
   const out = [];
   let i = 0;
   while (i < src.length) {
@@ -178,7 +192,7 @@ export function scanHtml(src) {
       const bodyEnd = closeAt === -1 ? src.length : closeAt;
       const inner = /\btype\s*=\s*["']?(application\/(ld\+)?json|importmap|text\/template)/i.test(open[0])
         ? []
-        : tag === "script" ? scanJs(src, bodyStart, bodyEnd) : scanCss(src, bodyStart, bodyEnd);
+        : tag === "script" ? scanJs(src, bodyStart, bodyEnd, literals) : scanCss(src, bodyStart, bodyEnd, literals);
       out.push(...inner);
       i = bodyEnd;
       continue;
@@ -188,7 +202,7 @@ export function scanHtml(src) {
   return out;
 }
 
-export function scanPython(src) {
+export function scanPython(src, literals = []) {
   const out = [];
   const usesDoc = /__doc__/.test(src);
   let i = 0;
@@ -225,6 +239,8 @@ export function scanPython(src) {
       const docPosition = lastCodeChar === "" || lastCodeChar === ":";
       if (standalone && docPosition && q.length === 3 && !usesDoc && !/[fFbB]/.test(str[1])) {
         out.push({ start, end: i, text: src.slice(start + str[0].length, i - 3), kind: "docstring" });
+      } else {
+        literals.push([start, Math.min(i, src.length)]);
       }
       lineStartCode = false;
       lastCodeChar = q;
@@ -239,17 +255,19 @@ export function scanPython(src) {
   return out;
 }
 
-export function scanShell(src) {
+export function scanShell(src, literals = []) {
   const out = [];
   const lines = src.split("\n");
   let pos = 0;
   let heredoc = null;
   let quote = null;
+  let quoteStart = 0;
   for (let n = 0; n < lines.length; n++) {
     const line = lines[n];
     if (heredoc) {
       const body = heredoc.strip ? line.replace(/^\t+/, "") : line;
       if (body === heredoc.tag) heredoc = null;
+      else literals.push([pos, pos + line.length]);
       pos += line.length + 1;
       continue;
     }
@@ -258,11 +276,11 @@ export function scanShell(src) {
       const c = line[k];
       if (quote) {
         if (c === "\\" && quote === '"') { k++; continue; }
-        if (c === quote) quote = null;
+        if (c === quote) { quote = null; literals.push([quoteStart, pos + k + 1]); }
         continue;
       }
       if (c === "\\") { k++; continue; }
-      if (c === "'" || c === '"' || c === "`") { quote = c; continue; }
+      if (c === "'" || c === '"' || c === "`") { quote = c; quoteStart = pos + k; continue; }
       const here = /^<<(-?)\s*(['"]?)([A-Za-z_]\w*)\2/.exec(line.slice(k));
       if (here) { heredoc = { tag: here[3], strip: here[1] === "-" }; k += here[0].length - 1; continue; }
       if (c === "#" && (k === 0 || /[\s;&|()]/.test(line[k - 1]))) {
@@ -275,7 +293,7 @@ export function scanShell(src) {
   return out;
 }
 
-export function scanPowerShell(src) {
+export function scanPowerShell(src, literals = []) {
   const out = [];
   let i = 0;
   let atWordStart = true;
@@ -291,14 +309,18 @@ export function scanPowerShell(src) {
     }
     if (c === "@" && (src[i + 1] === '"' || src[i + 1] === "'") && /\r?\n/.test(src.slice(i + 2, i + 4))) {
       const q = src[i + 1];
+      const start = i;
       const close = src.indexOf(`\n${q}@`, i + 2);
       i = close === -1 ? src.length : close + 3;
+      literals.push([start, i]);
       continue;
     }
     if (c === "'" || c === '"') {
+      const start = i;
       i++;
       while (i < src.length && src[i] !== c) { if (c === '"' && src[i] === "`") i++; i++; }
       i++;
+      literals.push([start, Math.min(i, src.length)]);
       atWordStart = false;
       continue;
     }
@@ -326,7 +348,7 @@ function loadTypeScript() {
   return typescript;
 }
 
-export function scanTsx(src) {
+export function scanTsx(src, literals = []) {
   const ts = loadTypeScript();
   if (!ts) throw new Error("Scanning .tsx/.jsx needs the typescript package installed in this repository.");
   const sf = ts.createSourceFile("x.tsx", src, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
@@ -338,6 +360,7 @@ export function scanTsx(src) {
       for (const r of ts.getTrailingCommentRanges(src, at) ?? []) add(r.pos, r.end);
     }
     if (ts.isJsxExpression(node) && !node.expression) wrappers.push([node.getStart(sf), node.end]);
+    if (LITERAL_KINDS.has(ts.SyntaxKind[node.kind])) literals.push([node.getStart(sf), node.end]);
     node.getChildren(sf).forEach(visit);
   };
   const wrappers = [];
@@ -350,31 +373,53 @@ export function scanTsx(src) {
   return found;
 }
 
-const SCANNERS = { tsx: scanTsx, js: scanJs, css: scanCss, html: scanHtml, py: scanPython, sh: scanShell, ps1: scanPowerShell };
+const LITERAL_KINDS = new Set([
+  "StringLiteral", "NoSubstitutionTemplateLiteral", "TemplateHead", "TemplateMiddle", "TemplateTail", "RegularExpressionLiteral",
+]);
 
-export function rawComments(file, src) {
+const SCANNERS = {
+  tsx: scanTsx,
+  js: (src, literals) => scanJs(src, 0, src.length, literals),
+  css: (src, literals) => scanCss(src, 0, src.length, literals),
+  html: scanHtml,
+  py: scanPython,
+  sh: scanShell,
+  ps1: scanPowerShell,
+};
+
+export function rawComments(file, src, literals = []) {
   const lang = languageOf(file);
-  return lang ? SCANNERS[lang](src) : [];
+  return lang ? SCANNERS[lang](src, literals) : [];
 }
 
 export function stripComments(file, input) {
   const src = input.replace(/\r\n/g, "\n");
+  const literals = [];
+  const comments = rawComments(file, src, literals);
+  const cuts = [
+    ...comments.map((c) => ({ start: c.wrapStart ?? c.start, end: c.wrapEnd ?? c.end, keep: false })),
+    ...literals.map(([start, end]) => ({ start, end, keep: true })),
+  ].sort((a, b) => a.start - b.start || b.end - a.end);
+  const kept = [];
   let out = "";
   let at = 0;
-  for (const c of rawComments(file, src)) {
-    const start = c.wrapStart ?? c.start;
-    const end = c.wrapEnd ?? c.end;
-    if (start < at) continue;
-    out += src.slice(at, start);
-    at = end;
+  for (const cut of cuts) {
+    if (cut.start < at) continue;
+    out += src.slice(at, cut.start);
+    if (cut.keep) {
+      out += `\u0000${kept.length}\u0000`;
+      kept.push(src.slice(cut.start, cut.end));
+    }
+    at = cut.end;
   }
   out += src.slice(at);
   const python = languageOf(file) === "py";
-  return out
+  const code = out
     .split("\n")
     .map((line) => (python ? line.replace(/(\S)[ \t]+/g, "$1 ") : line.trim().replace(/[ \t]+/g, " ").replace(/\{ \}/g, "{}")).trimEnd())
     .filter((line) => line !== "")
     .join("\n");
+  return `${code}\n\u0001${kept.join("\u0002")}`;
 }
 
 export function findComments(file, input) {

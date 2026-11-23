@@ -116,7 +116,23 @@ test("stripComments: removing comments and blank lines leaves the same code", ()
   assert.notEqual(stripComments("a.mjs", before), stripComments("a.mjs", "const a = 2;\nconst b = a + 2;\n"));
   assert.equal(stripComments("a.mjs", "try { f(); } catch { /* none */ }\n"), stripComments("a.mjs", "try { f(); } catch {}\n"));
   const py = "def f():\n    # why\n    return 1  # note\n";
-  assert.equal(stripComments("a.py", py), "def f():\n    return 1");
+  assert.equal(stripComments("a.py", py), stripComments("a.py", "def f():\n    return 1\n"));
+});
+
+test("js: a regex after a control condition or at the start of a template expression is not a comment", () => {
+  assert.deepEqual(texts("a.ts", "if (ok) /[/*]/.test(value);\nwhile (x) /a*/.exec(y);\nconst t = `${/[/*]/.source}`;\n"), []);
+  assert.deepEqual(texts("a.ts", "const q = f(a) / 2; /* real */\n"), ["real"]);
+});
+
+test("stripComments: whitespace inside strings, templates and regexes still counts as a change", () => {
+  assert.notEqual(stripComments("a.mjs", 'const s = "a  b";'), stripComments("a.mjs", 'const s = "a b";'));
+  assert.notEqual(stripComments("a.mjs", "const t = `a  ${b}  c`;"), stripComments("a.mjs", "const t = `a ${b} c`;"));
+  assert.notEqual(stripComments("a.mjs", "const r = /a  b/;"), stripComments("a.mjs", "const r = /a b/;"));
+  assert.notEqual(stripComments("a.py", 's = "a  b"'), stripComments("a.py", 's = "a b"'));
+  assert.notEqual(stripComments("a.sh", 'echo "a  b"'), stripComments("a.sh", 'echo "a b"'));
+  assert.notEqual(stripComments("a.ps1", "$s = 'a  b'"), stripComments("a.ps1", "$s = 'a b'"));
+  assert.notEqual(stripComments("a.mjs", 'const s = "{ }";'), stripComments("a.mjs", 'const s = "{}";'));
+  assert.equal(stripComments("a.mjs", 'f("x" /* why */ ,  "y");'), stripComments("a.mjs", 'f("x" , "y");'));
 });
 
 test("CRLF checkouts find the same comments", () => {
