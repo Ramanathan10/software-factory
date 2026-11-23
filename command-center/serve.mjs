@@ -28,13 +28,14 @@ export function loadAdapters(table = harnesses, send = messageWorker) {
 // describes. `adapter` is undefined when the story's harness has none. A decision that cannot reach its
 // worker stays pending in the store and goes to Jarvis, who tells the owner what to do next.
 // Resolves to who was told: 'worker', 'coordinator', or 'nobody' (the reason is logged instead).
-// `onTurn` is told the turn the message started, so the daemon can watch it.
-export async function deliver({ story, seqs, types, session, worktree, phase, onTurn }, adapter, log = console.log) {
+// `onTurn` is told the turn the message started, so the daemon can watch it, and `after` is a promise the
+// message waits for before its turn starts.
+export async function deliver({ story, seqs, types, session, worktree, phase, onTurn, after }, adapter, log = console.log) {
   const event = '[Mission Console event] The owner recorded ' + types.join(', ') + ' on story ' + story + ' (event seq ' + seqs.join(', ') + '). ';
   let reason = !adapter ? 'its harness has no adapter' : !session ? 'no worker is assigned' : '';
   if (!reason) {
     try {
-      await adapter.messageWorker({ session, worktree, phase, prompt: event + 'Read the console, act on these events, acknowledge them, and continue.' }, { onTurn });
+      await adapter.messageWorker({ session, worktree, phase, prompt: event + 'Read the console, act on these events, acknowledge them, and continue.' }, { onTurn, after });
       return 'worker';
     } catch (error) {
       reason = 'the worker could not be messaged (' + error.message + ')';
@@ -100,7 +101,8 @@ export async function start({ port = DEFAULT_PORT, dbPath, adapters = new Map(),
     onDecision: async decision => {
       const story = service.snapshot().find(story => story.id === decision.story);
       const onTurn = turn => supervisor.track({ story: decision.story, ...turn });
-      return deliver({ ...decision, worktree: story?.worktree, phase: story?.phase, onTurn }, adapters.get(harnessKey(story?.harness)));
+      return deliver({ ...decision, worktree: story?.worktree, phase: story?.phase, onTurn, after: supervisor.idle(decision.story) },
+        adapters.get(harnessKey(story?.harness)));
     },
     onStartWorker: input => startStoryWorker(input, { service, supervisor, launch }),
     modelPlan: () => models(),
