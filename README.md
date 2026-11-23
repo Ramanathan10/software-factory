@@ -8,16 +8,6 @@ Everything needed to run the AI software development lifecycle from one clone: t
 
 [![The Command Center: stories on a board by stage, the owner's inbox, plan approval, the live feed and a story's detail](docs/command-center-demo.gif)](docs/command-center-demo.mp4)
 
-A 53-second walkthrough of the Command Center on sample data; select it for the full-resolution video. It shows, in order:
-
-1. Every story on one board, from plan to merged pull request.
-2. The crew strip: each story has its own agent worker.
-3. The Agents and Track views of the same stories.
-4. The inbox: a worker stops only when it needs the owner, who answers a planning question in one click.
-5. Plan approval: no code is written before the owner approves the plan.
-6. The decision reaching the story's worker, and work resuming in the live feed.
-7. A story's detail: plan, evidence, changed files and timeline.
-
 ## Architecture
 
 Start at the owner. The owner talks to Jarvis in the harness chat and makes every decision in the Command Center dashboard. The dashboard, the supervisor, the story store and the PR watcher run as one local process, the factory daemon. Jarvis asks the supervisor to start a story's worker; the supervisor starts it through the harness table, hands it the owner's decisions, and records when each of its turns starts and ends. The worker runs the lifecycle skills in its own worktree and records each step in the story store. Jarvis does no phase work: it asks for workers and hears about their progress from the store.
