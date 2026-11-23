@@ -24,3 +24,4 @@ Follow this when the person asks to install, set up, or try the factory, or says
 - When the `ai-sdlc` phases change, update the console's phases, the store's transitions, and the Jarvis phase table in the same change.
 - Keep imported third-party skills self-contained. Vet an exact upstream revision before importing or updating one, and preserve its source and license.
 - Profiles and story databases hold names and settings only. Never commit a profile or a database.
+- `private-details.test.mjs` checks both of the sharing rules above: no owner's name, nickname or `PRIVATE_WORDS` entry in a tracked file, and no profile or database.
