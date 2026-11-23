@@ -122,6 +122,7 @@ test("stripComments: removing comments and blank lines leaves the same code", ()
 test("js: a regex after a control condition or at the start of a template expression is not a comment", () => {
   assert.deepEqual(texts("a.ts", "if (ok) /[/*]/.test(value);\nwhile (x) /a*/.exec(y);\nconst t = `${/[/*]/.source}`;\n"), []);
   assert.deepEqual(texts("a.ts", "const q = f(a) / 2; /* real */\n"), ["real"]);
+  assert.deepEqual(texts("a.mjs", "const half = count++ / 2; // why\nconst x = a[i]-- / 3; // two\nconst y = ++a; /* three */\n"), ["why", "two", "three"]);
 });
 
 test("stripComments: whitespace inside strings, templates and regexes still counts as a change", () => {

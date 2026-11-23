@@ -133,6 +133,13 @@ export function scanJs(src, offset = 0, end = src.length, literals = []) {
       if (top === "tpl") { prev = readTemplate() === "expr" ? "" : "v"; prevWord = ""; continue; }
       prev = c; prevWord = ""; i++; continue;
     }
+    if ((c === "+" || c === "-") && src[i + 1] === c) {
+      const afterValue = prev === "v" || prev === ")" || prev === "]" || (prev === "w" && !REGEX_AFTER_WORD.has(prevWord));
+      prev = afterValue ? "v" : c;
+      prevWord = "";
+      i += 2;
+      continue;
+    }
     if (c === "(") { parens.push(prev === "w" && REGEX_AFTER_PAREN.has(prevWord)); prev = c; prevWord = ""; i++; continue; }
     if (c === ")") { prev = parens.pop() ? "" : c; prevWord = ""; i++; continue; }
     if (/[\w$]/.test(c)) {
