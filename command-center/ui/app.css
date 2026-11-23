@@ -76,7 +76,7 @@ h1 span { color: var(--muted); letter-spacing: .02em; font-weight: 500; margin-l
 .agent.idle .who { display: none; }
 .agent.queued { opacity: .8; }
 .agent.busy { border-color: var(--role); box-shadow: 0 0 18px -6px var(--role); }
-.agent.needs { border-color: var(--amber); box-shadow: 0 0 18px -4px var(--amber); animation: breathe 2.2s ease-in-out infinite; }
+.agent.needs { border-color: var(--amber); box-shadow: 0 0 22px -4px var(--amber); }
 .who { display: grid; line-height: 1.2; }
 .who b { font-size: 13px; }
 .who small { color: var(--muted); font-size: 11px; }
@@ -130,7 +130,6 @@ h1 span { color: var(--muted); letter-spacing: .02em; font-weight: 500; margin-l
 @keyframes blink-eye { 0%, 86%, 100% { transform: scaleY(1); } 92% { transform: scaleY(.12); } }
 @keyframes slide { 0%, 100% { transform: translateX(-3.5px); } 50% { transform: translateX(3.5px); } }
 @keyframes flow { to { stroke-dashoffset: -8.4; } }
-@keyframes breathe { 50% { box-shadow: 0 0 26px -2px var(--amber); } }
 
 .layout { display: grid; grid-template-columns: 1fr 340px; min-height: 0; }
 .board-wrap { overflow: hidden; padding: 14px 20px 16px; display: flex; flex-direction: column; gap: 12px; min-height: 0; }
@@ -144,7 +143,7 @@ h1 span { color: var(--muted); letter-spacing: .02em; font-weight: 500; margin-l
 .lane.hot { border-color: #2c3a55; background: linear-gradient(180deg, #152036, var(--panel) 40%); }
 .lane h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .14em; color: var(--muted); display: flex; justify-content: space-between; margin-bottom: 10px; }
 .lane h2 span { font-family: var(--mono); }
-.cards { display: grid; gap: 8px; }
+.cards { display: grid; gap: 8px; grid-auto-rows: max-content; }
 .empty { color: var(--muted); text-align: center; padding: 40px; }
 
 .card {
@@ -155,16 +154,19 @@ h1 span { color: var(--muted); letter-spacing: .02em; font-weight: 500; margin-l
 }
 .card.new { animation: enter .35s ease-out; }
 .card:hover, .card:focus-visible { transform: translateY(-2px); outline: none; border-color: var(--role); }
-.card.busy::before {
-  content: ""; position: absolute; inset: 0; pointer-events: none;
-  background: linear-gradient(100deg, transparent 30%, color-mix(in srgb, var(--role) 18%, transparent) 50%, transparent 70%);
-  background-size: 250% 100%; animation: sweep 2.4s linear infinite;
-}
 .card.busy { border-color: color-mix(in srgb, var(--role) 45%, var(--line)); }
+@property --lap { syntax: '<angle>'; inherits: false; initial-value: 0deg; }
+.card.busy::before, .track.busy::before {
+  content: ""; position: absolute; inset: -1px; border-radius: inherit; padding: 2px; pointer-events: none;
+  background: conic-gradient(from var(--lap), transparent 0 78%, color-mix(in srgb, var(--role) 35%, transparent) 88%, var(--role) 97%, transparent);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+  animation: lap 3s linear infinite;
+}
+@keyframes lap { to { --lap: 360deg; } }
 .card.waiting { border-color: rgba(245, 181, 68, .6); }
 .card.blocked { border-color: rgba(239, 93, 93, .6); }
 .card.done { opacity: .6; }
-@keyframes sweep { from { background-position: 150% 0; } to { background-position: -100% 0; } }
 @keyframes enter { from { opacity: 0; transform: translateY(6px); } }
 .card header { display: flex; justify-content: space-between; gap: 6px; font: 11px var(--mono); color: var(--muted); white-space: nowrap; }
 .card header .phase { overflow: hidden; text-overflow: ellipsis; }
@@ -202,13 +204,12 @@ h1 span { color: var(--muted); letter-spacing: .02em; font-weight: 500; margin-l
 .swim-head:hover b { color: var(--role); }
 .swim-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; }
 
-.board.view-track { display: grid; gap: 8px; align-content: start; }
+.board.view-track { display: grid; gap: 8px; align-content: start; grid-auto-rows: max-content; }
 .track-head, .track { display: grid; grid-template-columns: minmax(200px, 30%) 1fr; gap: 16px; align-items: center; }
 .track-head { position: sticky; top: 0; z-index: 1; padding: 0 12px 4px; background: var(--bg); font-size: 11px; text-transform: uppercase; letter-spacing: .14em; color: var(--muted); }
 .track { position: relative; overflow: hidden; padding: 12px; border-radius: 12px; background: var(--panel); border: 1px solid var(--line); cursor: pointer; transition: border-color .3s, transform .15s; }
 .track:hover, .track:focus-visible { outline: none; border-color: var(--role); transform: translateX(2px); }
 .track.busy { border-color: color-mix(in srgb, var(--role) 45%, var(--line)); }
-.track.busy::before { content: ""; position: absolute; inset: 0; pointer-events: none; background: linear-gradient(100deg, transparent 30%, color-mix(in srgb, var(--role) 14%, transparent) 50%, transparent 70%); background-size: 250% 100%; animation: sweep 2.8s linear infinite; }
 .track.waiting { border-color: rgba(245, 181, 68, .6); }
 .track.blocked { border-color: rgba(239, 93, 93, .6); }
 .track.done { opacity: .55; }
@@ -379,6 +380,7 @@ dialog.reader { width: min(1100px, 96vw); max-height: 92vh; }
 }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
+  .card.busy::before, .track.busy::before { display: none; }
 }
 
 .track time.elapsed { font-variant-numeric: tabular-nums; }
