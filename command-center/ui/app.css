@@ -155,6 +155,15 @@ h1 span { color: var(--muted); letter-spacing: .02em; font-weight: 500; margin-l
 .card.new { animation: enter .35s ease-out; }
 .card:hover, .card:focus-visible { transform: translateY(-2px); outline: none; border-color: var(--role); }
 .card.busy { border-color: color-mix(in srgb, var(--role) 45%, var(--line)); }
+@property --lap { syntax: '<angle>'; inherits: false; initial-value: 0deg; }
+.card.busy::before, .track.busy::before {
+  content: ""; position: absolute; inset: -1px; border-radius: inherit; padding: 2px; pointer-events: none;
+  background: conic-gradient(from var(--lap), transparent 0 78%, color-mix(in srgb, var(--role) 35%, transparent) 88%, var(--role) 97%, transparent);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+  animation: lap 3s linear infinite;
+}
+@keyframes lap { to { --lap: 360deg; } }
 .card.waiting { border-color: rgba(245, 181, 68, .6); }
 .card.blocked { border-color: rgba(239, 93, 93, .6); }
 .card.done { opacity: .6; }
@@ -371,6 +380,7 @@ dialog.reader { width: min(1100px, 96vw); max-height: 92vh; }
 }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
+  .card.busy::before, .track.busy::before { display: none; }
 }
 
 .track time.elapsed { font-variant-numeric: tabular-nums; }

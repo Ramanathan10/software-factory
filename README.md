@@ -6,7 +6,7 @@ Everything needed to run the AI software development lifecycle from one clone: t
 
 ## See it work
 
-[![The software factory in 40 seconds: the Avenger crew and the skill each one runs, stories running in parallel in the Command Center, the owner told that a plan waits on them and commenting on it, and the two install steps](docs/software-factory-demo.gif)](docs/software-factory-demo.mp4)
+[![The software factory in 40 seconds: the Avenger crew in lifecycle order with the phase each one owns, stories running in parallel in the Command Center, the owner told that a plan waits on them and commenting on it, and the two install steps](docs/software-factory-demo.gif)](docs/software-factory-demo.mp4)
 
 The GIF links to the full-resolution MP4.
 
