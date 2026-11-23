@@ -15,8 +15,8 @@ const tracked = git('ls-files', '-z').split('\0').filter(Boolean);
 // more letters count as a whole word too. Bots and generic words are skipped.
 function privateWords(env = process.env) {
   const owner = env.GITHUB_REPOSITORY_OWNER || /[:/]([^/]+)\/[^/]+?(?:\.git)?$/.exec(git('remote', 'get-url', 'origin').replace(/^.*\/git\/(?=[^/]+\/[^/]+$)/, '/'))?.[1];
-  let identities = '';
-  try { identities = git('log', '--format=%an%n%cn') + '\n' + git('config', 'user.name'); } catch { /* no identity configured */ }
+  let identities = git('log', '--format=%an%n%cn');
+  try { identities += '\n' + git('config', 'user.name'); } catch { /* no identity configured */ }
   const generic = /^(github|dependabot|claude|actions|bot|noreply|web-flow|users)$/i;
   const names = [owner, ...identities.split('\n')].flatMap(name => String(name ?? '').split(/[^A-Za-z]+/))
     .filter(word => word.length >= 3 && !generic.test(word) && !/\[bot\]/.test(word));
@@ -32,7 +32,9 @@ const text = file => !/\.(png|jpe?g|gif|webp|mp4|webm|ico|pdf|zip)$/i.test(file)
 test('no tracked file names the owner or other private details', () => {
   const words = privateWords();
   assert.ok(words.length, 'no names to look for');
-  const pattern = new RegExp('\\b(' + words.map(word => word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|') + ')\\b');
+  // A word edge only where the entry itself starts or ends with a letter or digit, so "PCS-" still matches "PCS-12".
+  const bounded = word => (/^\w/.test(word) ? '(?<![A-Za-z0-9])' : '') + word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + (/\w$/.test(word) ? '(?![A-Za-z0-9])' : '');
+  const pattern = new RegExp('(' + words.map(bounded).join('|') + ')', 'i');
   const found = [];
   for (const file of tracked.filter(file => text(file) && !exempt.test(file))) {
     readFileSync(join(repo, file), 'utf8').split('\n').forEach((line, index) => {
