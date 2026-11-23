@@ -229,6 +229,8 @@ h1 span { color: var(--muted); letter-spacing: .02em; font-weight: 500; margin-l
 .question .q-prompt { margin: 0; font-size: 13px; line-height: 1.45; }
 .choices button[aria-pressed="true"] { background: var(--amber); color: #1b1405; border-color: var(--amber); font-weight: 600; }
 .choices button.rec-option { border-color: rgba(245, 181, 68, .55); }
+/* Writing an own answer: the amber border belongs to the text box alone. */
+.question:has(textarea:focus, textarea:not(:placeholder-shown)) .choices button.rec-option:not([aria-pressed="true"], :hover) { border-color: var(--line); }
 textarea { width: 100%; resize: vertical; background: #0e121b; color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 8px; font: 13px/1.45 var(--font); }
 textarea:focus { outline: none; border-color: var(--amber); }
 .shots { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }

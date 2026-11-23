@@ -9,6 +9,10 @@ Map the idea as a design tree: each decision can unlock dependent decisions. Wor
 
 Find facts in the repository or environment yourself. Ask the owner to make decisions, not to retrieve facts you can inspect. When a fact is still being investigated, continue with independent questions and return to dependent ones afterward.
 
+Every decision is the owner's. Never settle one yourself, however obvious the answer looks: ask it with your recommendation and let the owner accept it. A fact is something the repository or environment shows to be true today; anything with more than one workable answer is a decision, including scope, naming, placement, behavior in edge cases, and what to leave out. When unsure which it is, ask. A decision the owner already made, in a saved profile or an earlier answer, is not asked again.
+
+With each round, list what you did not ask: every fact you relied on with where you found it, and every earlier decision you reused with where it came from. The owner can overrule any line, and an overruled line becomes a question in the next round.
+
 Finish when the frontier is empty. Summarize the proposed plan and wait for the owner to confirm the shared understanding. Do not edit the target repository, implement, or open a PR during this interview. AI SDLC owns the later phases.
 
 ## Source
