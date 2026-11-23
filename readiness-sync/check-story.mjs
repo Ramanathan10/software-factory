@@ -1,4 +1,4 @@
-// Read-only readiness check for one story. Never writes to a tracker.
+// Read-only readiness check for one story.
 //   node check-story.mjs <story id> --repo <owner/name> [--tests-pass] [--snapshot]
 // The repository's `readiness` section of the AI SDLC profile says which tracker to read and which checks
 // apply. With --snapshot the story is not read here: a snapshot is taken from stdin, which is how a tracker

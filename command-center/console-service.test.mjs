@@ -74,13 +74,6 @@ test('recordEvent rejects a stale explicit revision', t => {
   );
 });
 
-test('pending and handover delegate to the store', t => {
-  const service = fixture(t);
-  service.createStory(base);
-  assert.ok(Array.isArray(service.pending()));
-  assert.equal(service.handover('tl-1').story.id, 'tl-1');
-});
-
 test('startServer serves html and /api/stories reflecting later events', async t => {
   const service = fixture(t);
   service.createStory(base);

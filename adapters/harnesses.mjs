@@ -195,7 +195,6 @@ function run({ command, args }, { worktree, prompt, log, spawnProcess = spawn })
   return child;
 }
 
-// Where a session's turns are logged, under `workers` in the AI SDLC home.
 function logFor(name, env) {
   const folder = join(home(env), 'workers');
   mkdirSync(folder, { recursive: true });

@@ -274,7 +274,6 @@ function storyCard(story) {
 
 function renderToolbar() {
   for (const button of document.querySelectorAll('.views button')) button.setAttribute('aria-selected', String(button.dataset.view === view));
-  // The repository picker appears once stories span more than one repository.
   const names = repos();
   const picker = $('repo-filter');
   picker.hidden = names.length < 2;
@@ -676,7 +675,6 @@ function render() {
   // Time-bucket busy state so "is working" fades without a new event.
   const busyKey = stories.map(story => [story.id, isBusy(story)]);
   if (changed('crew', [stories, busyKey, filterRole])) renderCrew();
-  // A repository whose last story is gone cannot stay selected.
   if (filterRepo && !repos().includes(filterRepo)) filterRepo = '';
   if (changed('toolbar', [view, filterRole, filterRepo, repos(), stories.length, visible().length])) renderToolbar();
   const decisionKey = [filterRole === 'approver', stories.map(story => [story.id, story.phase, openQuestions(story).map(question => question.id), story.plan, story.draftPlan?.text])];

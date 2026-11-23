@@ -1,8 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { appliesAt, checks, evaluate, withDefaults } from './engine.mjs';
 import { checkStory } from './check-story.mjs';
-import { trackers } from './trackers.mjs';
+import { readOnly, trackers } from './trackers.mjs';
 
 const settings = {
   tracker: 'azure-devops', organization: 'your-org', project: 'Your Project',
@@ -115,6 +116,25 @@ test('GitHub: the issue, its sub-issues and the pull requests that close it beco
     tasks: [{ id: 6, title: 'Docs', state: 'Closed' }, { id: 7, title: 'Tests', state: 'Open' }],
     prs: [{ id: 9, status: 'completed', target: 'main', linked: true }],
   });
+});
+
+test('the rule engine imports nothing, so it can neither read nor write', () => {
+  const source = readFileSync(new URL('./engine.mjs', import.meta.url), 'utf8');
+  assert.doesNotMatch(source, /^\s*import\b|\bimport\(|\brequire\(|\bprocess\.|\bfetch\(/m,
+    'engine.mjs decides from the snapshot it is given; read in trackers.mjs or check-story.mjs instead.');
+});
+
+test('a tracker reader can run only commands that read', () => {
+  const run = readOnly(() => ({}));
+  for (const [command, args] of [
+    ['gh', ['api', 'user']], ['gh', ['issue', 'view', '4', '--repo', 'a/b']], ['gh', ['pr', 'view', '9']],
+    ['az', ['account', 'show', '--query', 'user.name']], ['az', ['boards', 'work-item', 'show', '--id', '1']], ['az', ['repos', 'pr', 'show', '--id', '7']],
+  ]) assert.doesNotThrow(() => run(command, args), command + ' ' + args.join(' '));
+  for (const [command, args] of [
+    ['gh', ['issue', 'edit', '4', '--add-label', 'ready']], ['gh', ['issue', 'close', '4']], ['gh', ['pr', 'merge', '9']],
+    ['gh', ['api', '-X', 'PATCH', 'repos/a/b/issues/4']], ['gh', ['api', 'repos/a/b/issues/4/labels', '-f', 'labels[]=ready']], ['gh', ['api', '--method=POST', 'x']], ['gh', ['api', '-XPOST', 'x']], ['gh', ['api', 'x', '-ftitle=changed']], ['gh', ['api', 'x', '-Fbody=@file']],
+    ['az', ['boards', 'work-item', 'update', '--id', '1', '--state', 'Closed']], ['az', ['repos', 'pr', 'create']], ['git', ['push']],
+  ]) assert.throws(() => run(command, args), /only reads its tracker/, command + ' ' + args.join(' '));
 });
 
 test('every tracker says how its stories are read', () => {
