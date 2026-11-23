@@ -9,9 +9,10 @@ const files = ['command-center/ui/app.js', 'command-center/ui/markdown.js', 'com
 test('no element is guarded by a bare count, which renders 0 as text', () => {
   const found = [];
   for (const file of files) {
-    readFileSync(new URL('../' + file, import.meta.url), 'utf8').split('\n').forEach((line, index) => {
-      if (/\.length\s*&&\s*(el|node|md)\(/.test(line)) found.push(file + ':' + (index + 1));
-    });
+    const source = readFileSync(new URL('../' + file, import.meta.url), 'utf8');
+    for (const match of source.matchAll(/\.length\s*&&\s*(el|node|md)\(/g)) {
+      found.push(file + ':' + (source.slice(0, match.index).split('\n').length));
+    }
   }
   assert.deepEqual(found, [], 'Write `list.length > 0 && el(...)`: with an empty list, `list.length && el(...)` is 0, and the page shows "0".');
 });
