@@ -1,8 +1,3 @@
-// The factory daemon: the Command Center dashboard, the supervisor of every story worker's turns, and the
-// PR watcher, in one process.
-//   node serve.mjs [port]                   start the daemon
-//   node serve.mjs start <story> [port]     start a story's worker; kickoff prompt on stdin
-//   node serve.mjs deliver <story> [port]   hand a story's waiting decisions to its worker
 import { randomUUID } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { harnesses, messageWorker, modelPlan, row, sessionRan, startWorker } from '../adapters/harnesses.mjs';
@@ -15,21 +10,11 @@ import { isMain } from '../mission-console/is-main.mjs';
 
 export const DEFAULT_PORT = 4174;
 
-// One adapter for each harness in adapters/harnesses.mjs whose workers are driven from the command line,
-// keyed by the name stories record. An adapter has `messageWorker({ session, worktree, prompt })`, which
-// sends a prompt to a worker session, and may have `wakeCoordinator({ prompt })`, which sends one to the
-// Jarvis chat. A harness that messages workers from inside its own app delivers decisions there instead.
 export function loadAdapters(table = harnesses, send = messageWorker) {
   return new Map(Object.keys(table).filter(harness => table[harness].workers === 'command-line')
     .map(harness => [harnessKey(harness), { messageWorker: (message, options) => send({ harness, ...message }, options) }]));
 }
 
-// Hands one batch of the owner's decisions to the story's worker, as the factory runbook's event chain
-// describes. `adapter` is undefined when the story's harness has none. A decision that cannot reach its
-// worker stays pending in the store and goes to Jarvis, who tells the owner what to do next.
-// Resolves to who was told: 'worker', 'coordinator', or 'nobody' (the reason is logged instead).
-// `onTurn` is told the turn the message started, so the daemon can watch it, and `after` is a promise the
-// message waits for before its turn starts.
 export async function deliver({ story, seqs, types, session, worktree, phase, onTurn, after }, adapter, log = console.log) {
   const event = '[Mission Console event] The owner recorded ' + types.join(', ') + ' on story ' + story + ' (event seq ' + seqs.join(', ') + '). ';
   let reason = !adapter ? 'its harness has no adapter' : !session ? 'no worker is assigned' : '';
@@ -55,9 +40,6 @@ export async function deliver({ story, seqs, types, session, worktree, phase, on
   return 'nobody';
 }
 
-// Starts the worker of one story and records it, so the daemon is the parent of the worker's program and
-// hears the turn end. Resolves to what the harness table's start call resolves to: the session and log of
-// a running worker, or what Jarvis does instead for a harness whose workers are not started from here.
 export async function startStoryWorker({ story: id, prompt }, { service, supervisor, launch = startWorker }) {
   const story = service.snapshot().find(story => story.id === id);
   if (!story) throw new InputError('Story does not exist.', 404);
@@ -71,7 +53,6 @@ export async function startStoryWorker({ story: id, prompt }, { service, supervi
   try {
     started = await launch({ harness: story.harness, worktree: story.worktree, prompt, phase: story.phase }, { onTurn: running => { turn = running; } });
   } catch (error) {
-    // Why the program could not be started is for the owner to read, not an internal fault.
     throw Object.assign(error, { status: 502, expose: true });
   }
   service.recordEvent({ story: id, type: 'assign-worker', key: randomUUID(), session: started.session });
@@ -79,19 +60,15 @@ export async function startStoryWorker({ story: id, prompt }, { service, supervi
   return started;
 }
 
-// `watchSeconds` is how often registered pull requests are observed; left out, the daemon does not watch.
-// `ran` reads what a worker session last ran on from its harness's record; see `sessionRan`.
 export async function start({ port = DEFAULT_PORT, dbPath, adapters = new Map(), watchSeconds, turnPollMs, launch, models = modelPlan, ran = sessionRan } = {}) {
   let supervisor;
-  // session -> { at, value }: the record is read again at most every few seconds, and only while the
-  // session's turn is running or nothing has been read from it yet.
   const lastRan = new Map();
   const workerRan = story => {
     const { session, turn } = story.worker;
     const known = lastRan.get(session);
     if (!known || ((turn || !known.value) && Date.now() - known.at > 5000)) {
       let value;
-      try { value = ran(story.harness, session); } catch { /* a harness with no workers here has no record */ }
+      try { value = ran(story.harness, session); } catch {}
       lastRan.set(session, { at: Date.now(), value: value ?? known?.value });
     }
     return lastRan.get(session).value;
@@ -143,11 +120,8 @@ async function post(path, body, port) {
   return result;
 }
 
-// Asks the running daemon to start a story's worker, so the daemon is the one that watches it.
 export const requestStart = (story, prompt, port = DEFAULT_PORT) => post('/api/worker/start', { story, prompt }, port);
 
-// Asks the running Command Center to hand a story's waiting decisions to its worker, so every decision
-// reaches a worker through the one process that keeps a session to one turn at a time.
 export const requestDelivery = (story, port = DEFAULT_PORT) => post('/api/deliver', { story }, port);
 
 const direct = isMain(import.meta.url);

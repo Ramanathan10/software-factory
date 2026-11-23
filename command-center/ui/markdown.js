@@ -1,4 +1,3 @@
-// Small Markdown renderer that builds DOM through `el`.
 const inline = (text, el) => {
   const out = [];
   const pattern = /(`[^`]+`)|\*\*([^*]+)\*\*|__([^_]+)__|\*([^*\s][^*]*)\*|\[([^\]]+)\]\(([^)\s]+)\)/g;

@@ -1,6 +1,3 @@
-// Explores every story state the real store can reach, by recording events through openStore against a real
-// SQLite database. There is no hand-written model to drift from store.mjs: each transition is the store's own
-// answer to an event. See .claude/skills/verify-story-lifecycle/SKILL.md.
 import { DatabaseSync } from 'node:sqlite';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -12,9 +9,6 @@ const WORKER = 'W';
 const PR = 'https://github.com/acme/widgets/pull/1';
 const HEADS = ['a'.repeat(40), 'b'.repeat(40)];
 
-// The story fields some guard in store.mjs reads, reduced to what the guard reads of them. Every other field
-// is written for the dashboard or the timeline and never changes which event is accepted, so states that
-// differ only there are one state. lifecycle-model.test.mjs fails when store.mjs reads a field listed nowhere.
 export const guarded = ['phase', 'harness', 'branch', 'questions', 'worker', 'blocked', 'cleanup', 'pr', 'prObservation', 'readyHead', 'diagram', 'retro', 'deleted'];
 export const unguarded = ['id', 'title', 'brief', 'worktree', 'revision', 'createdAt', 'updatedAt', 'activity', 'draftPlan', 'plan',
   'feedback', 'reviewRounds', 'comparisonRequested', 'files', 'artifacts', 'pipeline', 'repo'];
@@ -34,7 +28,6 @@ export function abstract(story) {
   return state;
 }
 
-// The stored story for an abstract state: the guarded fields, and fixed values for the rest.
 function concrete(state) {
   if (state.deleted) return { id: ID, deleted: true };
   const story = { id: ID, title: 'Story', brief: 'Brief.', worktree: '/worktrees/story', revision: 1, files: [], ...state,
@@ -47,7 +40,6 @@ function concrete(state) {
   return story;
 }
 
-// One or more inputs for each event type, chosen so each guard in store.mjs sees both outcomes.
 export function eventInputs(evidence) {
   const detail = { detail: 'Evidence.' };
   const worker = { assignment: WORKER };
@@ -91,14 +83,10 @@ export function eventInputs(evidence) {
   ];
 }
 
-// Breadth-first search over abstract story states, each expanded by every input above through the real
-// store. Returns a map from state to { state, path, edges }: `path` is the shortest event sequence that
-// reaches it, and each edge an accepted event and the state it leads to.
 export function explore({ open = openStore, limit = 200000 } = {}) {
   const folder = mkdtempSync(join(tmpdir(), 'lifecycle-model-'));
   const evidence = join(folder, 'after.png');
   writeFileSync(evidence, 'png');
-  // A shared in-memory database: the store and this explorer each hold a connection, and nothing waits on a disk.
   const path = 'file:lifecycle-' + process.pid + '-' + Date.now() + '?mode=memory&cache=shared';
   const raw = new DatabaseSync(path);
   const store = open(path);
@@ -141,7 +129,6 @@ export function explore({ open = openStore, limit = 200000 } = {}) {
   }
 }
 
-// The ids of states that can reach one where `goal` holds.
 export function canReach(states, goal) {
   const into = new Map([...states.keys()].map(id => [id, []]));
   for (const [id, node] of states) for (const edge of node.edges) into.get(edge.to).push(id);
@@ -151,7 +138,6 @@ export function canReach(states, goal) {
   return reached;
 }
 
-// Applies `types` in order from `id`, taking the first edge of each type, or returns null when one is refused.
 export function follow(states, id, types) {
   for (const type of types) {
     const edge = states.get(id).edges.find(item => item.type === type);
@@ -161,7 +147,6 @@ export function follow(states, id, types) {
   return states.get(id).state;
 }
 
-// Every event the Jarvis phase table names for a console phase: [{ phases, events }], one per row.
 export function jarvisTable(markdown) {
   const rows = markdown.split('\n').filter(line => /^\| \d+\. /.test(line));
   const names = text => [...text.matchAll(/`([a-z-]+)`/g)].map(match => match[1]);

@@ -1,6 +1,3 @@
-// Installs this repository's skills into each agent harness on the machine, or reports what is installed.
-//   node install.mjs [--check] [--replace] [harness ...]
-// The harnesses, and whether each reads the skills in place or needs copies, come from adapters/harnesses.mjs.
 import { spawnSync } from 'node:child_process';
 import { cpSync, existsSync, lstatSync, mkdirSync, readdirSync, realpathSync, renameSync, symlinkSync } from 'node:fs';
 import { homedir } from 'node:os';
@@ -14,28 +11,15 @@ const repo = fileURLToPath(new URL('.', import.meta.url));
 const stat = path => { try { return lstatSync(path); } catch { return null; } };
 const real = path => { try { return realpathSync(path); } catch { return null; } };
 
-// A harness that needs copies keeps its own version of a skill it has customized.
 const keptCopies = ['diagram-design'];
-// The parts of this repository the Command Center needs to run from a harness's extension folder.
 const extensionParts = ['command-center', 'mission-console', 'readiness-sync', join('adapters', 'harnesses.mjs')];
 
-// Copies `source` to `target`, first moving what is already there aside so nothing is lost. `aside` is the
-// folder to move when it is not `target` itself.
 function replace(source, target, stamp, aside = target) {
   if (stat(aside)) renameSync(aside, `${aside}.bak-${stamp}`);
   mkdirSync(resolve(target, '..'), { recursive: true });
   cpSync(source, target, { recursive: true });
 }
 
-// Each result is { harness, skill, path, state }.
-// For a harness that reads skills in place, one link per skill, so skills from other repositories can sit
-// beside them: created, linked, blocked (something else has that name, described in `existing`, so this
-// repository's skill is not in use), or folder-is-link (the whole skills folder points elsewhere). With
-// `replace`, what blocks a skill is moved to a .bak-<time> folder beside it and the skill is linked: replaced.
-// For a harness that needs copies: copied, or kept for a skill in `keptCopies` that is already there. A copy
-// replaces the previous one, which is moved to a .bak-<time> folder beside it. `skill` is 'extension' for
-// the Command Center extension.
-// When `write` is false nothing changes, and anything not yet there is reported as missing.
 export function install({ home = homedir(), repoDir = repo, skillsDir = join(repoDir, 'skills'), only = [], write = true, replace: replaceBlocked = false, stamp = Date.now() } = {}) {
   const skills = readdirSync(skillsDir).filter(name => existsSync(join(skillsDir, name, 'SKILL.md')));
   const results = [];
@@ -48,7 +32,6 @@ export function install({ home = homedir(), repoDir = repo, skillsDir = join(rep
       if (harness.extension) {
         const target = join(home, harness.extension);
         if (write) {
-          // The extension folder is assembled from this repository's parts so the harness runs without the checkout.
           replace(join(repoDir, 'adapters', harness.id, 'extension.mjs'), join(target, 'extension.mjs'), stamp, target);
           for (const part of extensionParts) cpSync(join(repoDir, part), join(target, part), { recursive: true });
         }
@@ -113,7 +96,6 @@ function main(args) {
       continue;
     }
     console.log(name + ': ' + ['created', 'linked', 'replaced', 'copied', 'installed', 'missing', 'blocked', 'kept'].filter(count).map(state => count(state) + ' ' + state).join(', '));
-    // The skills still install; the owner is told now that Jarvis could not start a story session here.
     const problem = harnesses[name].workers === 'command-line' && launchProblem(name);
     if (problem) console.log('  Story sessions will not start: ' + problem);
     for (const result of mine.filter(result => result.state === 'kept')) {
@@ -126,7 +108,6 @@ function main(args) {
       console.log('  NOT INSTALLED: ' + result.skill + '. ' + result.path + ' is ' + result.existing + ', so the harness uses that one.');
     }
   }
-  // A skill of this repository that the harness will not actually use is a failure, not a success.
   const unusable = results.filter(result => ['blocked', 'folder-is-link', ...(check ? ['missing'] : [])].includes(result.state));
   if (unusable.some(result => result.state === 'blocked')) {
     console.log('\nSome skills are blocked by ones already there. Run "node install.mjs --replace" to move those aside (to <name>.bak-<time>, nothing is deleted) and install these.');

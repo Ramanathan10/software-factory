@@ -1,22 +1,3 @@
-// A model of how the owner's decisions reach a story's worker session, checked over every interleaving of its
-// steps. Each step is code that runs without an `await` in between, so the model interleaves exactly where
-// the real code can be interleaved. See .claude/skills/verify-decision-delivery/SKILL.md.
-//
-// Step               Code
-// Record             console-service.mjs  /api/decision → recordEvent, notify queues the decision in `batches`
-// BatchFire          console-service.mjs  notify's timer calls `hand` with the batch
-// JarvisDeliver      console-service.mjs  deliverPending (`serve.mjs deliver`) filters the pending decisions, calls `hand`
-// Hand               console-service.mjs  hand, up to `await onDecision`; harnesses.mjs messageWorker up to `await previous`
-// Spawn              harnesses.mjs        messageWorker spawns the turn, and it is handed the decisions in its prompt;
-//                                         with `recordsAtSpawn`, onTurn records it in the store in the same step
-// Settled            console-service.mjs  onDecision resolves to 'worker' once the turn has settled; hand marks `sent`,
-//                                         and without `recordsAtSpawn` the turn is recorded only now
-// Ack                the worker records `ack` on the store for a decision it acted on
-// TurnEnd            the harness program exits; its entry in harnesses.mjs `turns` resolves
-// Restart            the daemon stops and starts again: `sent`, `batches` and `turns` are gone, turns keep running,
-//                                         and the new daemon adopts those recorded in the store
-//
-// `fix` names the behaviors that differ between versions of the code, so a past version can be replayed.
 export const current = { filterSent: true, handReserves: true, startRegistersTurn: true, waitsForAdoptedTurns: true, recordsAtSpawn: true };
 
 const DECISIONS = 2;
@@ -27,19 +8,14 @@ const initial = fix => ({
   restarts: 0, jarvisCalls: 0, nextId: 1,
   recorded: Array(DECISIONS).fill(false), pending: Array(DECISIONS).fill(false),
   handed: Array(DECISIONS).fill(0), sent: Array(DECISIONS).fill(false), batch: Array(DECISIONS).fill(false),
-  // Calls of `hand` that have not resolved: `waitsFor` is the `turns` entry messageWorker awaits.
   procs: [],
-  // The session's entry in `turns`: the id of the call or turn the next message waits for.
   tail: fix.startRegistersTurn ? 0 : null,
-  // Running turns of the session. Turn 0 is the kickoff turn startWorker began; the story has no worker to hand
-  // decisions to until it is recorded, so it starts recorded.
   turns: [{ id: 0, seqs: Array(DECISIONS).fill(false), adopted: false, recorded: true }],
 });
 
 const any = seqs => seqs.some(Boolean);
 const settledEntry = (state, id) => id === null || (!state.procs.some(proc => proc.id === id) && !state.turns.some(turn => turn.id === id));
 
-// `hand` up to its first await: which decisions this call carries, and messageWorker taking its place in `turns`.
 function hand(state, fix, seqs, via) {
   const carried = fix.handReserves ? seqs.map((seq, d) => seq && !state.sent[d]) : seqs;
   if (!any(carried)) return null;
@@ -51,7 +27,6 @@ function hand(state, fix, seqs, via) {
   return next;
 }
 
-// Every step enabled in `state`, as [label, next state].
 export function steps(state, fix) {
   const out = [];
   const step = (label, change) => {
@@ -111,15 +86,10 @@ export function steps(state, fix) {
 }
 
 export const invariants = {
-  // Two turns of one session at once: two programs resume the same conversation and race on its worktree.
   OneTurnPerSession: state => state.turns.length <= 1,
-  // A decision handed twice by one daemon: the worker acts on the owner's answer twice.
   NoDuplicateDelivery: state => state.handed.every(count => count <= 1),
 };
 
-// Breadth-first search, so each trace is a shortest one. Returns the first violation of one of `names` as
-// { invariant, trace }, a state where a call of `hand` can never finish as { stuck, trace }, or { states }
-// when every reachable state holds.
 export function check(fix = current, names = Object.keys(invariants)) {
   const start = initial(fix);
   const seen = new Map([[JSON.stringify(start), null]]);

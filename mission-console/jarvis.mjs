@@ -112,7 +112,6 @@ async function main() {
   if (command === 'wait' && (!Number.isInteger(waitSeconds) || waitSeconds < 0 || waitSeconds > 60)) {
     throw new InputError('Wait must be between 0 and 60 seconds.');
   }
-  // wait-any runs in the background until a worker has news for Jarvis; half a day bounds one left behind.
   const after = argument === undefined ? undefined : Number(argument);
   const anySeconds = Number(secondsArg ?? 43200);
   if (command === 'wait-any' && ((after !== undefined && (!Number.isSafeInteger(after) || after < 0)) || !Number.isInteger(anySeconds) || anySeconds < 0 || anySeconds > 86400)) {

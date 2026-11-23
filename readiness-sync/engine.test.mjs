@@ -71,7 +71,6 @@ test('defaults fill what a repository does not set, and a repository without a t
   assert.equal(appliesAt('merge', withDefaults()), false);
 });
 
-// Stands in for a tracker's command-line program: answers each call from a table keyed by its arguments.
 const program = answers => (command, args) => {
   const key = Object.keys(answers).find(key => [command, ...args].join(' ').includes(key));
   if (!key) throw new Error('unexpected call: ' + [command, ...args].join(' '));

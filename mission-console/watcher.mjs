@@ -88,12 +88,8 @@ export async function waitForWake(store, story, seconds) {
   }
 }
 
-// The owner's own decisions go to the story's worker, so they are not news for Jarvis.
 const forWorker = new Set(['answer', 'approve', 'plan-feedback', 'comparison-choice', 'request-cleanup']);
 
-// Resolves with the events recorded for Jarvis after seq `after`, across every story, as soon as there is
-// one, or with none once `seconds` have passed. Without `after` it reports only what is recorded from now
-// on. Run as a background command, its ending is what brings the Jarvis chat back when a worker ends a turn.
 export async function waitForAny(store, { after, seconds, pollMs = 1000 }) {
   const from = after ?? Math.max(0, ...store.pending().map(event => event.seq));
   const deadline = performance.now() + seconds * 1000;

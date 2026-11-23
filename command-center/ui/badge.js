@@ -1,6 +1,3 @@
-// Draws a crew member's badge from its role's `badge` in mission-console/roles.mjs. Every node is built as SVG,
-// so nothing here is parsed as markup. The part of the glyph that moves carries the class `k-<motion>`, which
-// app.css animates only while the badge's avatar is `moving`.
 const SVG = 'http://www.w3.org/2000/svg';
 
 function svg(tag, attrs, ...children) {

@@ -8,7 +8,6 @@ import { fileURLToPath } from 'node:url';
 import { branchPatternProblem, check, componentSeverity, components, detect, findCommandCenter, nextSteps, onPath, phaseTiers, validate } from './preflight.mjs';
 
 const asset = name => JSON.parse(readFileSync(fileURLToPath(new URL(`../assets/${name}`, import.meta.url)), 'utf8'));
-// This checkout holds the Command Center, so it is the folder a profile saved on this machine would name.
 const checkout = findCommandCenter();
 const machine = { schemaVersion: 1, ownerName: 'Sam', crossModelReviewAuthorized: true, commandCenterPath: checkout };
 const repoProfile = gates => ({ gates });
@@ -87,7 +86,6 @@ test('check reports the way-of-working settings, with defaults for the ones not 
     ['lite', 2, 'never', 'always', 'unrestricted', 'feature/{id}-{slug}']);
   assert.deepEqual(result.adapters, { copilot: { repoAliases: {} } });
   assert.equal(result.repo.worktreeRoot, '/work/trees');
-  // Not saved: a folder named for the repository, beside it.
   assert.equal(byDefault.repo.worktreeRoot, join(byDefault.repo.root, '..', 'repo-worktrees'));
 });
 
@@ -200,9 +198,8 @@ test('check links components to the gates that use them and remembers declined o
     machineProfile: { ...machine, declinedComponents: ['hyperframes'] },
     repoEntry: repoProfile({ test: 'git --version', mutation: 'git stryker run --mutate {files}' }),
   });
-  // The machine running the tests may have Stryker installed for everyone; this repository must not see it.
-  const path = (env.PATH || env.Path || '').split(delimiter).filter(dir => !onPath('stryker', { ...env, PATH: dir })).join(delimiter);
-  const result = check(repo, { ...env, PATH: path, Path: path });
+  const pathWithoutStryker = (env.PATH || env.Path || '').split(delimiter).filter(dir => !onPath('stryker', { ...env, PATH: dir })).join(delimiter);
+  const result = check(repo, { ...env, PATH: pathWithoutStryker, Path: pathWithoutStryker });
   assert.deepEqual(part(result.components, 'stryker').usedBy, ['mutation']);
   assert.equal(part(result.components, 'hyperframes').declined, true);
   assert.doesNotMatch(result.warnings.join('\n'), /hyperframes/);
@@ -240,7 +237,6 @@ test('the CLI runs when the skill folder is reached through a link', t => {
     if (process.platform === 'win32') rmdirSync(link); else unlinkSync(link);
   }
   assert.equal(JSON.parse(output).repo.slug, 'acme/widgets');
-  // The linked script still finds the checkout it really lives in.
   assert.equal(JSON.parse(output).commandCenterPath, checkout);
 });
 
@@ -265,7 +261,6 @@ test('check refuses a saved folder that no longer holds the Command Center, and 
   const never = workspace(t, { machineProfile: unset, repoEntry: repoProfile({}) });
   assert.match(check(never.repo, never.env).problems.join('\n'), /profile\.commandCenterPath is not set\. Set it to "/);
 
-  // Nothing installed anywhere: the fix is the installer, not a path.
   assert.match(check(never.repo, never.env, null).problems.join('\n'), /commandCenterPath is not set\. Run "node install\.mjs"/);
 });
 

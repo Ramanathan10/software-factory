@@ -1,16 +1,3 @@
-// Pure readiness rule engine: (snapshot, settings) -> { checklist, questions }.
-// A tracker reader in trackers.mjs builds the snapshot, and the caller
-// raises each question with the owner. `settings` is the repository's `readiness` section of the AI SDLC
-// profile, with defaults filled in by `withDefaults`.
-//
-// A snapshot is the same shape for every tracker:
-//   user        who is signed in to the tracker
-//   story       { id, assignee, effort }
-//   tasks       [{ id, title, state, assignee, assigneeName }]   the story's child items
-//   prs         [{ id, status: 'active' | 'completed' | 'abandoned', target, linked }]
-//   testsPass   true when the caller has test evidence; leave out when it has none
-//   noPrConfirmed, handoffConfirmed   true once the owner has said so
-
 export const checks = ['testsPass', 'tasksClosed', 'prMergedToTarget', 'prLinked', 'effortSet', 'userConfirm'];
 
 const defaults = {
@@ -43,7 +30,6 @@ function checklist(snapshot, settings) {
   return settings.checklist.map(id => ({ id, met: results[id][0], reason: results[id][0] ? '' : results[id][1] }));
 }
 
-// Whether a story that has just entered this console phase should be checked.
 export const appliesAt = (phase, settings) => settings.tracker !== 'none' && settings.phases.includes(phase);
 
 export function evaluate(snapshot, rawSettings) {
@@ -56,8 +42,6 @@ export function evaluate(snapshot, rawSettings) {
   const unmet = items.filter(item => !item.met && item.id !== 'userConfirm');
   const { handoffTaskTitle, handoffAssignee } = settings;
   const handedOff = Boolean(handoffTaskTitle) && snapshot.tasks.some(task => task.title === handoffTaskTitle && (same(task.assignee, handoffAssignee) || same(task.assigneeName, handoffAssignee)));
-  // While a pull request is still open the checklist alone reports the gaps. Once every one is merged,
-  // the owner is asked for what only they can give: the effort, or the handoff.
   const merged = snapshot.prs.length > 0 && snapshot.prs.every(pr => pr.status === 'completed');
   if (!handedOff && merged) {
     const effort = items.find(item => item.id === 'effortSet');
