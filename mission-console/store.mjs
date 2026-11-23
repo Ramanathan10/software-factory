@@ -359,6 +359,7 @@ export function openStore(path) {
   const receipt = db.prepare('SELECT seq, request FROM events WHERE key = ?');
   const insert = db.prepare('INSERT INTO events (key, story, request, event, pending) VALUES (?, ?, ?, ?, ?)');
   const recent = db.prepare('SELECT seq, event FROM events WHERE story = ? ORDER BY seq DESC LIMIT 40');
+  const history = db.prepare('SELECT seq, event FROM events WHERE story = ? ORDER BY seq DESC');
   const firstEvent = db.prepare('SELECT event FROM events WHERE story = ? ORDER BY seq LIMIT 1');
   const all = db.prepare('SELECT state FROM stories ORDER BY id');
   const pending = db.prepare('SELECT seq, story, event FROM events WHERE pending = 1 ORDER BY seq');
@@ -402,6 +403,12 @@ export function openStore(path) {
         .map(withHistory));
     },
     pending: () => wakeRecords(pending.all()),
+    history(id) {
+      identifier(id, 'story ID');
+      const row = find.get(id);
+      requireThat(row && !JSON.parse(row.state).deleted, 'Story does not exist.', 404);
+      return history.all(id).map(({ seq, event }) => ({ seq, ...JSON.parse(event) }));
+    },
     artifact(id, artifactId) {
       identifier(id, 'story ID');
       identifier(artifactId, 'evidence ID');

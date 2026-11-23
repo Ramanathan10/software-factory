@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync } from 'node:fs';
+import { spawn } from 'node:child_process';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, relative } from 'node:path';
 import { test } from 'node:test';
 import { createConsoleService } from './console-service.mjs';
-import { deliver, loadAdapters, requestDelivery, start } from './serve.mjs';
+import { deliver, loadAdapters, requestDelivery, requestStart, start } from './serve.mjs';
 
 const decision = { story: 'TL-1', seqs: [4, 5], types: ['answer'], session: 'worker-1' };
 
@@ -106,4 +107,237 @@ test('each command-line harness in the table gets an adapter, found by the name 
   assert.deepEqual([...adapters.keys()], ['claude code', 'codex']);
   await deliver({ ...decision, worktree: '/work/tl-1', phase: 'planning' }, adapters.get('codex'));
   assert.deepEqual([sent[0].harness, sent[0].session, sent[0].worktree, sent[0].phase], ['Codex', 'worker-1', '/work/tl-1', 'planning']);
+});
+
+function approvedFixture(t, harness = 'Codex') {
+  const directory = mkdtempSync(join(tmpdir(), 'factory-approved-'));
+  const dbPath = join(directory, 'stories.sqlite');
+  const recorder = createConsoleService({ dbPath });
+  let center;
+  const close = async () => { await center?.close(); center = undefined; };
+  t.after(async () => {
+    await close();
+    recorder.close();
+    rmSync(directory, { recursive: true, force: true });
+  });
+  recorder.createStory({ story: 'tl-1', title: 'Add export', detail: 'Export selected rows.', branch: 'tl-1', harness, worktree: directory });
+  recorder.recordEvent({ story: 'tl-1', type: 'handoff', detail: 'Context pack ready.' });
+  recorder.recordEvent({ story: 'tl-1', type: 'plan', detail: 'Export selected rows; keep unselected rows private.' });
+  return { directory, dbPath, recorder, close, story: () => recorder.snapshot()[0], start: async options => (center = await start({ port: 0, dbPath, ...options })) };
+}
+
+test('approving a plan with no assigned planner starts a Codex test worker from the approved handover', async t => {
+  const { start: open, recorder, story } = approvedFixture(t);
+  const launched = [];
+  const center = await open({ launch: async input => { launched.push(input); return { session: 'test-author' }; } });
+  const response = await fetch(center.url + 'api/decision', {
+    method: 'POST', headers: { 'Content-Type': 'application/json', Origin: center.url.slice(0, -1) },
+    body: JSON.stringify({ story: 'tl-1', type: 'approve', revision: story().revision }),
+  });
+  assert.equal(response.status, 200);
+  await requestDelivery('tl-1', Number(new URL(center.url).port));
+  assert.equal(launched.length, 1);
+  assert.deepEqual([launched[0].harness, launched[0].phase, launched[0].worktree], ['Codex', 'testing', story().worktree]);
+  assert.match(launched[0].prompt, /Bruce Banner/);
+  assert.match(launched[0].prompt, /Export selected rows; keep unselected rows private/);
+  assert.match(launched[0].prompt, /tests and necessary fixtures only/);
+  assert.equal(story().worker.role, 'tester');
+  assert.equal(story().worker.session, 'test-author');
+  assert.ok(recorder.pending().some(event => event.type === 'approve'), 'delivery does not acknowledge work for the agent');
+  await requestDelivery('tl-1', Number(new URL(center.url).port));
+  assert.equal(launched.length, 1);
+});
+
+test('an approval already pending when the daemon restarts starts its missing test worker', async t => {
+  const { start: open, recorder, story } = approvedFixture(t);
+  recorder.recordEvent({ story: 'tl-1', type: 'approve' });
+  const launched = [];
+  await open({ launch: async input => { launched.push(input); return { session: 'recovered-tester' }; } });
+  for (let attempt = 0; !story().worker && attempt < 50; attempt += 1) await new Promise(resolve => setTimeout(resolve, 10));
+  assert.equal(launched.length, 1);
+  assert.equal(story().worker.session, 'recovered-tester');
+});
+
+test('an unlaunchable approved test worker leaves its decision pending and shows the failure on the story', async t => {
+  const { start: open, recorder, story } = approvedFixture(t);
+  const center = await open({ launch: async () => { throw new Error('Harness sign-in expired.'); } });
+  const approval = recorder.recordEvent({ story: 'tl-1', type: 'approve' });
+  assert.equal((await requestDelivery('tl-1', Number(new URL(center.url).port))).told, 'nobody');
+  assert.equal(story().worker, undefined);
+  assert.match(story().blocked, /Bruce Banner.*Harness sign-in expired/s);
+  assert.ok(recorder.pending().some(event => event.seq === approval.seq));
+});
+
+test('ordinary answers without a worker cannot start tests without plan approval', async t => {
+  const { start: open, recorder } = approvedFixture(t);
+  recorder.recordEvent({ story: 'tl-1', type: 'replan', detail: 'One more decision.' });
+  recorder.recordEvent({ story: 'tl-1', type: 'question', question: 'scope', prompt: 'Which rows?', options: ['All', 'Selected'], recommended: 1 });
+  recorder.recordEvent({ story: 'tl-1', type: 'answer', question: 'scope', answer: 1 });
+  let launched = 0;
+  const center = await open({ launch: async () => { launched += 1; return { session: 'wrong' }; } });
+  assert.equal((await requestDelivery('tl-1', Number(new URL(center.url).port))).told, 'nobody');
+  assert.equal(launched, 0);
+});
+
+test('restart refuses another launch when the previous approved start has no recorded outcome', async t => {
+  const { start: open, recorder, story } = approvedFixture(t);
+  recorder.recordEvent({ story: 'tl-1', type: 'approve' });
+  recorder.recordEvent({ story: 'tl-1', type: 'activity', detail: 'Starting an independent Bruce Banner session after plan approval.' });
+  for (let index = 0; index < 45; index += 1) recorder.recordEvent({ story: 'tl-1', type: 'activity', detail: 'Recorded progress ' + index });
+  assert.equal(story().events.length, 40);
+  let launched = 0;
+  await open({ launch: async () => { launched += 1; return { session: 'duplicate' }; } });
+  for (let attempt = 0; !story().blocked && attempt < 50; attempt += 1) await new Promise(resolve => setTimeout(resolve, 10));
+  assert.equal(launched, 0);
+  assert.match(story().blocked, /earlier start was interrupted.*Verify its worker process/s);
+});
+
+test('a blocked approved story is not automatically retried at startup', async t => {
+  const { start: open, recorder, story } = approvedFixture(t);
+  recorder.recordEvent({ story: 'tl-1', type: 'approve' });
+  recorder.recordEvent({ story: 'tl-1', type: 'blocked', detail: 'Worker capacity unavailable.' });
+  let launched = 0;
+  const center = await open({ launch: async () => { launched += 1; return { session: 'wrong' }; } });
+  await requestDelivery('tl-1', Number(new URL(center.url).port));
+  assert.equal(launched, 0);
+  assert.equal(story().blocked, 'Worker capacity unavailable.');
+});
+
+test('test dispatch preserves a Claude Code story rather than choosing an installed alternative', async t => {
+  const { start: open, recorder, story } = approvedFixture(t, 'Claude Code');
+  const launched = [];
+  const center = await open({ launch: async input => { launched.push(input); return { session: 'claude-tester' }; } });
+  recorder.recordEvent({ story: 'tl-1', type: 'approve' });
+  await requestDelivery('tl-1', Number(new URL(center.url).port));
+  assert.equal(launched[0].harness, 'Claude Code');
+  assert.equal(story().harness, 'Claude Code');
+});
+
+test('an explicit resume after a diagnosed launch failure permits a verified retry', async t => {
+  const { start: open, recorder, story } = approvedFixture(t);
+  let launched = 0;
+  const center = await open({ launch: async () => {
+    launched += 1;
+    if (launched === 1) throw new Error('Capacity unavailable.');
+    return { session: 'tester-after-resume' };
+  } });
+  recorder.recordEvent({ story: 'tl-1', type: 'approve' });
+  const port = Number(new URL(center.url).port);
+  await requestDelivery('tl-1', port);
+  assert.match(story().blocked, /Capacity unavailable/);
+  recorder.recordEvent({ story: 'tl-1', type: 'resume', detail: 'Capacity restored; prior process verified exited.' });
+  assert.equal((await requestDelivery('tl-1', port)).told, 'worker');
+  assert.equal(launched, 2);
+  assert.equal(story().worker.session, 'tester-after-resume');
+});
+
+test('overlapping manual and approval starts launch only one worker in the story worktree', async t => {
+  const { start: open, recorder, story } = approvedFixture(t);
+  let unblock;
+  const held = new Promise(resolve => { unblock = resolve; });
+  let launched = 0;
+  const center = await open({ launch: async () => { launched += 1; await held; return { session: 'only-tester' }; } });
+  const port = Number(new URL(center.url).port);
+  recorder.recordEvent({ story: 'tl-1', type: 'approve' });
+  const automatic = requestDelivery('tl-1', port);
+  const manual = requestStart('tl-1', 'Use the approved plan.', port);
+  const results = Promise.allSettled([automatic, manual]);
+  await new Promise(resolve => setTimeout(resolve, 50));
+  unblock();
+  await results;
+  assert.equal(launched, 1);
+  assert.equal(story().worker.session, 'only-tester');
+});
+
+test('a manual-first overlap still carries the approved test contract and durable start intent', async t => {
+  const { start: open, recorder } = approvedFixture(t);
+  let unblock;
+  let entered;
+  const held = new Promise(resolve => { unblock = resolve; });
+  const launching = new Promise(resolve => { entered = resolve; });
+  const launched = [];
+  const center = await open({ launch: async input => { launched.push(input); entered(); await held; return { session: 'only-tester' }; } });
+  recorder.recordEvent({ story: 'tl-1', type: 'approve' });
+  const port = Number(new URL(center.url).port);
+  const manual = requestStart('tl-1', 'Reconcile the failed turn before adding missing pagination tests.', port);
+  await launching;
+  const automatic = requestDelivery('tl-1', port);
+  unblock();
+  await Promise.all([manual, automatic]);
+  assert.equal(launched.length, 1);
+  assert.match(launched[0].prompt, /Export selected rows; keep unselected rows private/);
+  assert.match(launched[0].prompt, /tests and necessary fixtures only/);
+  assert.match(launched[0].prompt, /Additional coordinator handoff \(within the approved tests-only boundary/);
+  assert.match(launched[0].prompt, /Reconcile the failed turn before adding missing pagination tests/);
+  assert.ok(recorder.store.history('tl-1').some(event => event.detail.startsWith('Starting an independent Bruce Banner session')));
+});
+
+test('a manual handoff arriving after automatic startup begins is explicitly refused rather than silently lost', async t => {
+  const { start: open, recorder } = approvedFixture(t);
+  let unblock;
+  let entered;
+  const held = new Promise(resolve => { unblock = resolve; });
+  const launching = new Promise(resolve => { entered = resolve; });
+  const center = await open({ launch: async () => { entered(); await held; return { session: 'tester' }; } });
+  recorder.recordEvent({ story: 'tl-1', type: 'approve' });
+  const port = Number(new URL(center.url).port);
+  const automatic = requestDelivery('tl-1', port);
+  await launching;
+  await assert.rejects(requestStart('tl-1', 'Additional remediation details.', port), /already in progress.*deliver additional instructions/);
+  unblock();
+  assert.equal((await automatic).told, 'worker');
+});
+
+test('a worker receives the absolute database path even when the daemon was configured with a relative one', async t => {
+  const { dbPath, start: open, recorder } = approvedFixture(t);
+  const launched = [];
+  const center = await open({ dbPath: relative(process.cwd(), dbPath), launch: async input => { launched.push(input); return { session: 'tester' }; } });
+  recorder.recordEvent({ story: 'tl-1', type: 'approve' });
+  await requestDelivery('tl-1', Number(new URL(center.url).port));
+  assert.ok(launched[0].prompt.includes('Console database: ' + dbPath));
+});
+
+test('an unacknowledged approval is not launched again after its test worker was assigned and released', async t => {
+  const { dbPath, start: open, close, recorder, story } = approvedFixture(t);
+  recorder.recordEvent({ story: 'tl-1', type: 'approve' });
+  const first = await open({ launch: async () => ({ session: 'first-tester' }) });
+  for (let attempt = 0; !story().worker && attempt < 50; attempt += 1) await new Promise(resolve => setTimeout(resolve, 10));
+  recorder.recordEvent({ story: 'tl-1', type: 'release-worker', assignment: story().worker.id, detail: 'No longer writing; handoff requires reconciliation.' });
+  await close();
+  let launches = 0;
+  const second = await start({ port: 0, dbPath, launch: async () => { launches += 1; return { session: 'duplicate' }; } });
+  try {
+    for (let attempt = 0; !story().blocked && attempt < 50; attempt += 1) await new Promise(resolve => setTimeout(resolve, 10));
+    assert.equal(launches, 0);
+    assert.match(story().blocked, /approval already started a test worker/);
+  } finally {
+    await second.close();
+  }
+});
+
+test('a released planner wait uses the current approved plan and worktree when it finally launches', async t => {
+  const { directory, start: open, recorder } = approvedFixture(t);
+  const planner = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 500)'], { stdio: 'ignore' });
+  t.after(() => planner.kill());
+  recorder.recordEvent({ story: 'tl-1', type: 'replan', detail: 'Prepare the planner turn.' });
+  recorder.recordEvent({ story: 'tl-1', type: 'assign-worker', session: 'planner' });
+  const assignment = recorder.snapshot()[0].worker.id;
+  recorder.recordEvent({ story: 'tl-1', type: 'turn-started', assignment, pid: planner.pid, log: join(directory, 'planner.log') });
+  recorder.recordEvent({ story: 'tl-1', type: 'release-worker', assignment, detail: 'Planner is finishing.' });
+  recorder.recordEvent({ story: 'tl-1', type: 'plan', detail: 'Superseded plan.' });
+  recorder.recordEvent({ story: 'tl-1', type: 'approve' });
+  const launched = [];
+  const center = await open({ launch: async input => { launched.push(input); return { session: 'current-tester' }; } });
+  const currentWorktree = join(directory, 'current');
+  mkdirSync(currentWorktree);
+  recorder.recordEvent({ story: 'tl-1', type: 'assign-worktree', branch: 'updated-branch', worktree: currentWorktree });
+  recorder.recordEvent({ story: 'tl-1', type: 'replan', detail: 'Correct the plan while the released process finishes.' });
+  recorder.recordEvent({ story: 'tl-1', type: 'plan', detail: 'Current approved behavior.' });
+  recorder.recordEvent({ story: 'tl-1', type: 'approve' });
+  await requestDelivery('tl-1', Number(new URL(center.url).port));
+  assert.equal(launched.length, 1);
+  assert.equal(launched[0].worktree, currentWorktree);
+  assert.match(launched[0].prompt, /Current approved behavior/);
+  assert.ok(launched[0].prompt.includes(currentWorktree));
+  assert.ok(!launched[0].prompt.includes('Superseded plan.'));
 });

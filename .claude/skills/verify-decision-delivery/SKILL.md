@@ -19,9 +19,14 @@ A decision handed again after a restart is allowed. The new daemon cannot know w
 
 ```
 node --test command-center/delivery-model.test.mjs
+node --test command-center/approval-model.test.mjs
 ```
 
 `node --test` runs it with everything else, so CI runs it on every pull request.
+
+`approval-model.mjs` additionally models an approved story with its planner released but its process still finishing, two overlapping manual/automatic start requests, launch failure and a restart before assignment. `OneWriterPerWorktree` and `OneApprovedStartup` protect the separate-session handoff. The launch leaves approval pending for the agent to handle. `RequestStart` mirrors the per-story promise and durable start intent in `serve.mjs`; `Spawn` waits on `supervisor.idle`, including released turns; `Restart` blocks an intent without a recorded assignment/outcome. Tests in `serve.test.mjs` pin coalescing, restart recovery, interrupted-start refusal and failure handling; `supervisor.test.mjs` pins waits for owned and adopted released planners. This model covers automatic approval starts, not arbitrary manual starts or concurrent daemons; the existing assigned-session model retains its bounds below.
+
+`ReleaseTester` leaves approval pending after a successfully assigned test session; `stopsDeliveredApproval` pins the guard that forbids automatically launching that approval again. This is verified against full event history, including after the dashboard's recent-event window is exceeded. Manual testing starts use the same fresh approved kickoff and intent as automatic ones; the manual-first integration test pins that contract.
 
 ## The code each step stands for
 

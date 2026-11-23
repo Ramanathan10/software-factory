@@ -21,3 +21,4 @@ Each record explains one decision the code cannot show by itself. Code in this r
 | [0015](0015-model-checks-for-delivery-and-lifecycle.md) | Exhaustive model checks guard decision delivery and the story lifecycle |
 | [0016](0016-private-details-are-found-without-being-written-down.md) | Private details are found without being written into the repository |
 | [0017](0017-existing-story-databases-stay-where-they-are.md) | Existing story databases stay where they are, and the store holds its file open |
+| [0018](0018-approved-plans-start-an-independent-test-worker.md) | Approved plans start an independent test author in the originating harness |
