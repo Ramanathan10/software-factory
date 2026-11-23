@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
-import { existsSync, mkdtempSync, rmSync, writeFileSync, writeSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync, writeSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
-import { commandFor, harnesses, launchProblem, messageWorker, row, startWorker, workerSettings } from './harnesses.mjs';
+import { commandFor, harnesses, launchProblem, messageWorker, modelFor, modelPlan, row, sessionRan, startWorker, workerSettings } from './harnesses.mjs';
+import { phaseTiers, phases, tiers } from '../mission-console/roles.mjs';
 
 // Every turn is logged in the AI SDLC home; keep the tests out of the real one.
 process.env.AI_SDLC_HOME = mkdtempSync(join(tmpdir(), 'factory-home-'));
@@ -91,9 +92,34 @@ test('the start call answers for every harness, starting a program only for a co
 });
 
 test('worker settings come from the profile, and are restricted without one', t => {
-  assert.deepEqual(workerSettings(home(t)), { permissions: 'restricted', tools: ['git', 'gh', 'node'] });
-  const env = home(t, { workerPermissions: 'unrestricted', repos: { 'a/b': { gates: { test: 'npm test', lint: 'npx eslint .', build: null } }, 'c/d': { gates: { test: 'npm run t' } } } });
-  assert.deepEqual(workerSettings(env), { permissions: 'unrestricted', tools: ['git', 'gh', 'node', 'npm', 'npx'] });
+  assert.deepEqual(workerSettings(home(t)), { permissions: 'restricted', tools: ['git', 'gh', 'node'], models: {}, phaseTiers });
+  const models = { codex: { deep: 'big' } };
+  const env = home(t, { workerPermissions: 'unrestricted', models, phaseTiers: { ci: 'fast' }, repos: { 'a/b': { gates: { test: 'npm test', lint: 'npx eslint .', build: null } }, 'c/d': { gates: { test: 'npm run t' } } } });
+  assert.deepEqual(workerSettings(env), { permissions: 'unrestricted', tools: ['git', 'gh', 'node', 'npm', 'npx'], models, phaseTiers: { ...phaseTiers, ci: 'fast' } });
+});
+
+test('every phase with a tier is a real phase, and every tier is a known one', () => {
+  for (const [phase, tier] of Object.entries(phaseTiers)) {
+    assert.ok(phases[phase], phase);
+    assert.ok(tiers.includes(tier), `${phase} -> ${tier}`);
+  }
+});
+
+test('a turn runs on the model the profile names for its phase, and on the harness default otherwise', t => {
+  const settings = workerSettings(home(t, { models: { 'claude-code': { deep: 'big', standard: 'middle' }, codex: { deep: 'other-big', fast: 'small' } }, phaseTiers: { ci: 'fast' } }));
+  assert.deepEqual(commandFor('Claude Code', 'start', { session: 'S-1', phase: 'scout' }, settings).args.slice(-2), ['--model', 'big']);
+  assert.deepEqual(commandFor('Claude Code', 'message', { session: 'S-1', phase: 'testing' }, settings).args.slice(-2), ['--model', 'middle']);
+  // Codex keeps the stdin marker last.
+  assert.deepEqual(commandFor('Codex', 'message', { session: 'S-2', phase: 'review' }, settings).args.slice(-3), ['--model', 'other-big', '-']);
+  assert.equal(modelFor('codex', 'ci', settings), 'small', 'the profile moved ci to the fast tier');
+  const plan = modelPlan(settings);
+  assert.deepEqual([plan.phaseTiers.ci, plan.models.codex, plan.models['claude code'].deep, plan.models.cursor], ['fast', { deep: 'other-big', fast: 'small' }, 'big', {}]);
+  // No model is named for: a tier the harness has no entry for, a phase with no tier, a turn with no phase.
+  assert.equal(modelFor('Claude Code', 'ci', settings), undefined);
+  assert.equal(modelFor('Codex', 'building', settings), undefined);
+  assert.equal(modelFor('Claude Code', 'merge', settings), undefined);
+  assert.ok(!commandFor('Claude Code', 'message', { session: 'S-1' }, settings).args.includes('--model'));
+  assert.ok(!commandFor('Claude Code', 'start', { session: 'S-1', phase: 'scout' }, restricted).args.includes('--model'), 'settings with no models');
 });
 
 test('a message runs in the story worktree with the prompt on stdin', async () => {
@@ -207,4 +233,38 @@ test('starting a worker returns the id it chose, or the id the program reports',
   const silent = fakeProgram();
   await assert.rejects(startWorker({ harness: 'Codex', worktree: '.', prompt: 'kickoff' }, { env, spawnProcess: silent.spawnProcess, settings: restricted, settleMs: 0, waitMs: 300 }),
     /did not report a session id/);
+});
+
+test('the model and effort a session last ran on are read from the harness\'s own record of it', t => {
+  const directory = mkdtempSync(join(tmpdir(), 'factory-records-'));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const env = { CLAUDE_CONFIG_DIR: join(directory, 'claude'), CODEX_HOME: join(directory, 'codex') };
+  const lines = (...items) => items.map(item => JSON.stringify(item)).join('\n') + '\n';
+
+  assert.equal(sessionRan('Claude Code', 'c-1', env), undefined, 'no record yet');
+  const claude = join(env.CLAUDE_CONFIG_DIR, 'projects', 'C--work-tl-1');
+  mkdirSync(claude, { recursive: true });
+  writeFileSync(join(claude, 'c-1.jsonl'), lines(
+    { type: 'assistant', isSidechain: false, effort: 'low', message: { model: 'first-model' } },
+    { type: 'assistant', isSidechain: false, effort: 'high', message: { model: 'main-model' } },
+    // Neither a subagent's model nor a line the program wrote itself is the session's.
+    { type: 'assistant', isSidechain: true, effort: 'low', message: { model: 'subagent-model' } },
+    { type: 'assistant', isSidechain: false, message: { model: '<synthetic>' } },
+    { type: 'user', message: { content: 'x'.repeat(2 * 1024 * 1024) } }) + 'a line still being written');
+  assert.deepEqual(sessionRan('Claude Code', 'c-1', env), { model: 'main-model', effort: 'high' }, 'found behind a long newer line');
+  appendFileSync(join(claude, 'c-1.jsonl'), '\n' + lines({ type: 'assistant', isSidechain: false, message: { model: 'next-model' } }));
+  assert.deepEqual(sessionRan('claude-code', 'c-1', env), { model: 'next-model' }, 'the newest turn, with no effort recorded');
+
+  const codex = join(env.CODEX_HOME, 'sessions', '2030', '01', '02');
+  mkdirSync(codex, { recursive: true });
+  writeFileSync(join(codex, 'rollout-2030-01-02T03-04-05-x-9.jsonl'), lines(
+    { type: 'session_meta', payload: {} },
+    { type: 'turn_context', payload: { model: 'codex-model', effort: 'medium' } },
+    { type: 'response_item', payload: { model: 'not-this' } }));
+  assert.deepEqual(sessionRan('Codex', 'x-9', env), { model: 'codex-model', effort: 'medium' });
+
+  // No record this table can read: a session that never ran, and a harness whose workers are not started here.
+  assert.equal(sessionRan('Codex', 'never', env), undefined);
+  assert.equal(sessionRan('Cursor', 'c-1', env), undefined);
+  assert.equal(sessionRan('GitHub Copilot app', undefined, env), undefined);
 });

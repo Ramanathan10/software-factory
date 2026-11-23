@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { branchPatternProblem, check, componentSeverity, components, detect, findCommandCenter, nextSteps, onPath, validate } from './preflight.mjs';
+import { branchPatternProblem, check, componentSeverity, components, detect, findCommandCenter, nextSteps, onPath, phaseTiers, validate } from './preflight.mjs';
 
 const asset = name => JSON.parse(readFileSync(fileURLToPath(new URL(`../assets/${name}`, import.meta.url)), 'utf8'));
 // This checkout holds the Command Center, so it is the folder a profile saved on this machine would name.
@@ -89,6 +89,25 @@ test('check reports the way-of-working settings, with defaults for the ones not 
   assert.equal(result.repo.worktreeRoot, '/work/trees');
   // Not saved: a folder named for the repository, beside it.
   assert.equal(byDefault.repo.worktreeRoot, join(byDefault.repo.root, '..', 'repo-worktrees'));
+});
+
+test('check reports the model of each tier and the tier of each phase, as the owner changed them', async t => {
+  const roles = await import('../../../mission-console/roles.mjs');
+  assert.deepEqual(phaseTiers, roles.phaseTiers, 'the skill and the Command Center agree on the tier of each phase');
+  const defaults = workspace(t, { machineProfile: machine, repoEntry: repoProfile({}) });
+  assert.deepEqual([check(defaults.repo, defaults.env).models, check(defaults.repo, defaults.env).phaseTiers], [{}, phaseTiers]);
+
+  const models = { 'claude-code': { deep: 'big', standard: 'middle', fast: 'small' } };
+  const saved = workspace(t, { machineProfile: { ...machine, models, phaseTiers: { ci: 'fast' } }, repoEntry: repoProfile({}) });
+  const result = check(saved.repo, saved.env);
+  assert.deepEqual(result.problems, []);
+  assert.deepEqual([result.models, result.phaseTiers], [models, { ...phaseTiers, ci: 'fast' }]);
+
+  const wrong = workspace(t, { machineProfile: { ...machine, models: { codex: { huge: 'x' } }, phaseTiers: { ci: 'cheap', lunch: 'fast' } }, repoEntry: repoProfile({}) });
+  const problems = check(wrong.repo, wrong.env).problems.join(' ');
+  assert.match(problems, /models\.codex\.huge is not a known field/);
+  assert.match(problems, /phaseTiers\.ci must be one of/);
+  assert.match(problems, /phaseTiers\.lunch is not a known field/);
 });
 
 test('check rejects a setting outside its fixed choices', t => {

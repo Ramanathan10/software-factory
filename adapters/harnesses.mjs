@@ -4,10 +4,11 @@
 // the owner's decisions to a worker.
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { closeSync, existsSync, mkdirSync, openSync, readFileSync } from 'node:fs';
+import { closeSync, existsSync, fstatSync, mkdirSync, openSync, readFileSync, readSync, readdirSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { delimiter, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { phaseTiers } from '../mission-console/roles.mjs';
 
 // One row per harness, keyed by the name stories record.
 // Installing: `id` is the name install.mjs takes, `marker` the folder in the home directory whose presence
@@ -20,7 +21,15 @@ import { pathToFileURL } from 'node:url';
 // A command-line row gives `command`, and `start` and `message` return its arguments; the prompt always
 // goes in on stdin. `permissions` holds the arguments for each choice of the profile's `workerPermissions`;
 // `tools` are the programs a restricted worker may run. A row whose program chooses the session id itself
-// gives `sessionFrom`, which finds the id in the program's output.
+// gives `sessionFrom`, which finds the id in the program's output. `model` returns the arguments that run
+// a turn on a named model; the name comes from the profile's `models`, never from this table.
+// The program keeps its own record of each session, one JSON object to a line. `record` returns that
+// file's path, or undefined when there is none yet, and `ran` returns the `{ model, effort }` a line of it
+// shows a turn ran on, or undefined for a line that does not say.
+function list(folder, recursive = false) {
+  try { return readdirSync(folder, { recursive }); } catch { return []; }
+}
+
 export const harnesses = {
   'GitHub Copilot app': {
     id: 'copilot', marker: '.copilot', skills: join('.copilot', 'skills'), install: 'copy',
@@ -34,6 +43,14 @@ export const harnesses = {
     command: 'claude',
     start: ({ session }) => ['-p', '--session-id', session],
     message: ({ session }) => ['-p', '--resume', session],
+    model: name => ['--model', name],
+    record: ({ session, env }) => {
+      const projects = join(env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude'), 'projects');
+      return list(projects).map(project => join(projects, project, session + '.jsonl')).find(file => existsSync(file));
+    },
+    // A subagent's lines are marked as a side chain, and a line the program wrote itself names no real model.
+    ran: line => (line.type === 'assistant' && !line.isSidechain && /^[^<]/.test(line.message?.model ?? '')
+      ? { model: line.message.model, effort: line.effort } : undefined),
     permissions: {
       restricted: tools => ['--permission-mode', 'acceptEdits', '--allowedTools', ...tools.map(tool => `Bash(${tool} *)`)],
       unrestricted: () => ['--permission-mode', 'bypassPermissions'],
@@ -45,6 +62,13 @@ export const harnesses = {
     command: 'codex',
     start: () => ['exec', '--json'],
     message: ({ session }) => ['exec', 'resume', session],
+    model: name => ['--model', name],
+    record: ({ session, env }) => {
+      const sessions = join(env.CODEX_HOME || join(homedir(), '.codex'), 'sessions');
+      const file = list(sessions, true).find(name => name.endsWith(session + '.jsonl'));
+      return file && join(sessions, file);
+    },
+    ran: line => (line.type === 'turn_context' && line.payload?.model ? { model: line.payload.model, effort: line.payload.effort } : undefined),
     // The prompt is read from stdin when the prompt argument is "-".
     promptArgument: '-',
     sessionFrom: output => /"thread_id":\s*"([^"]+)"/.exec(output)?.[1],
@@ -58,7 +82,9 @@ export const harnesses = {
 const home = (env = process.env) => env.AI_SDLC_HOME || join(homedir(), '.ai-sdlc');
 
 // What a worker may do comes from the owner's profile: the permission choice, and for a restricted
-// worker git, gh, node, and the program each repository's gates run.
+// worker git, gh, node, and the program each repository's gates run. So does the model of each turn:
+// `models` names a model for each tier, by harness id, and `phaseTiers` is each phase's tier, the
+// factory's own unless the profile changes it.
 export function workerSettings(env = process.env) {
   let profile = {};
   try { profile = JSON.parse(readFileSync(join(home(env), 'profile.json'), 'utf8')); } catch { /* no profile yet: restricted */ }
@@ -67,6 +93,8 @@ export function workerSettings(env = process.env) {
   return {
     permissions: profile.workerPermissions === 'unrestricted' ? 'unrestricted' : 'restricted',
     tools: [...new Set(['git', 'gh', 'node', ...gateTools])],
+    models: profile.models ?? {},
+    phaseTiers: { ...phaseTiers, ...profile.phaseTiers },
   };
 }
 
@@ -78,11 +106,66 @@ export function row(harness) {
   return { name, ...harnesses[name] };
 }
 
-// The full command line for one worker turn.
-export function commandFor(harness, kind, { session }, { permissions, tools } = workerSettings()) {
+// The model the profile names for a turn that starts in `phase`, or undefined to leave the choice to the
+// harness: no phase given, a phase with no tier, or a tier the profile names no model for.
+export function modelFor(harness, phase, { models = {}, phaseTiers: tierOf = phaseTiers } = workerSettings()) {
+  return models[row(harness).id]?.[tierOf[phase]] || undefined;
+}
+
+// What the dashboard shows: each phase's tier, and the model named for each tier by harness, keyed by the
+// lower-case name stories record.
+export function modelPlan({ models = {}, phaseTiers: tierOf = phaseTiers } = workerSettings()) {
+  return {
+    phaseTiers: tierOf,
+    models: Object.fromEntries(Object.entries(harnesses).map(([name, entry]) => [name.toLowerCase(), models[entry.id] ?? {}])),
+  };
+}
+
+// session -> the path of the harness's record of it, once found.
+const records = new Map();
+
+// The model and effort a worker session last ran on, read from the end of the harness's own record of the
+// session: `{ model, effort }`, with `effort` left out when the record does not give one. Undefined when
+// the harness keeps no record this table can read, or the session has not run far enough to have one.
+export function sessionRan(harness, session, env = process.env) {
+  const entry = row(harness);
+  if (!entry.record || !session) return undefined;
+  try {
+    if (!records.has(session)) {
+      const found = entry.record({ session, env });
+      if (!found) return undefined;
+      records.set(session, found);
+    }
+    const file = openSync(records.get(session), 'r');
+    try {
+      // The newest lines usually say, and the record of a long session is large: read a longer end of it
+      // only when a shorter one did not say.
+      const size = fstatSync(file).size;
+      for (let span = 1024 * 1024; ; span *= 8) {
+        const tail = Buffer.alloc(Math.min(size, span));
+        readSync(file, tail, 0, tail.length, size - tail.length);
+        for (const text of tail.toString('utf8').split('\n').reverse()) {
+          let line;
+          try { line = JSON.parse(text); } catch { continue; }
+          const ran = entry.ran(line);
+          if (ran) return ran.effort ? { model: ran.model, effort: String(ran.effort) } : { model: ran.model };
+        }
+        if (span >= size) break;
+      }
+    } finally {
+      closeSync(file);
+    }
+  } catch { /* the record cannot be read: say nothing */ }
+  return undefined;
+}
+
+// The full command line for one worker turn. `phase` is the story's phase as the turn starts.
+export function commandFor(harness, kind, { session, phase }, settings = workerSettings()) {
   const entry = row(harness);
   if (entry.workers !== 'command-line') throw new Error(`${entry.name} workers are not started from the command line.`);
-  const args = [...entry[kind]({ session }), ...entry.permissions[permissions](tools)];
+  const { permissions, tools } = settings;
+  const model = modelFor(harness, phase, settings);
+  const args = [...entry[kind]({ session }), ...entry.permissions[permissions](tools), ...(model ? entry.model(model) : [])];
   return { command: entry.command, args: entry.promptArgument ? [...args, entry.promptArgument] : args };
 }
 
@@ -150,8 +233,8 @@ const turns = new Map();
 // Sends a prompt to an existing worker session. Waits for a turn this process already started for that
 // session, so one session never runs two turns at once, and resolves once the new turn is running.
 // `options.onTurn` is told the running turn's `pid`, `log`, and `ended`, a promise of its exit code.
-export async function messageWorker({ harness, session, worktree, prompt }, options = {}) {
-  const invocation = commandFor(harness, 'message', { session }, options.settings);
+export async function messageWorker({ harness, session, worktree, prompt, phase }, options = {}) {
+  const invocation = commandFor(harness, 'message', { session, phase }, options.settings);
   const previous = turns.get(session) ?? Promise.resolve();
   let finish;
   turns.set(session, new Promise(resolve => { finish = resolve; }));
@@ -174,7 +257,7 @@ export async function messageWorker({ harness, session, worktree, prompt }, opti
 // Starts a new worker session and resolves to its session id once the harness has reported it.
 // For a harness whose workers are not started from the command line it starts nothing, and resolves to
 // what Jarvis does instead, so the same call is the first step in every harness.
-export async function startWorker({ harness, worktree, prompt }, options = {}) {
+export async function startWorker({ harness, worktree, prompt, phase }, options = {}) {
   const entry = row(harness);
   if (entry.workers === 'in-app') {
     return { inApp: true, start: entry.start, message: entry.message, next: `Start the worker with ${entry.start}, as the "${entry.name}" section of the factory runbook describes.` };
@@ -184,7 +267,7 @@ export async function startWorker({ harness, worktree, prompt }, options = {}) {
   }
   const session = randomUUID();
   const log = logFor(session, options.env);
-  const child = run(commandFor(harness, 'start', { session }, options.settings), { worktree, prompt, log, spawnProcess: options.spawnProcess });
+  const child = run(commandFor(harness, 'start', { session, phase }, options.settings), { worktree, prompt, log, spawnProcess: options.spawnProcess });
   const ended = exit(child);
   // Told once the session id is known; kept off the result, which the command line prints as JSON.
   const running = found => { options.onTurn?.({ session: found, pid: child.pid, log, ended }); return { session: found, log }; };

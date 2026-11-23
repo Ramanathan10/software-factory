@@ -9,6 +9,8 @@
   "beforeAndAfter": "ask",
   "architectureDiagram": "ask",
   "workerPermissions": "restricted",
+  "models": { "claude-code": { "deep": "opus", "standard": "sonnet", "fast": "haiku" } },
+  "phaseTiers": {},
   "commandCenterPath": "/path/to/software-factory",
   "adapters": {},
   "repos": {

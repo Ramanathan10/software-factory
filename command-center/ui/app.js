@@ -622,11 +622,23 @@ function turnOf(worker) {
   return null;
 }
 
+// The model and effort the story's worker session last ran on, as its harness recorded them. Before the
+// worker has run: the model the profile names for the story's harness and phase, or that the harness chooses.
+function modelOf(story) {
+  const ran = story.worker?.ran;
+  if (ran) return ran.model + (ran.effort ? ' · ' + ran.effort + ' effort' : '');
+  const tier = meta.phaseTiers?.[story.phase];
+  if (!tier) return null;
+  const named = meta.models?.[story.harness?.trim().toLowerCase()]?.[tier];
+  return named ? named + ' · set in the profile, not run yet' : 'Not run yet · ' + story.harness + ' will choose';
+}
+
 function openDetail(id) {
   const story = stories.find(item => item.id === id);
   if (!story) return;
   const row = (label, value) => value ? el('div', { class: 'row' }, el('dt', {}, label), el('dd', {}, value)) : null;
-  $('detail-body').replaceChildren(
+  // A section the story has nothing for is left out; replaceChildren would print its false or 0 as text.
+  $('detail-body').replaceChildren(...[
     el('small', {}, story.id + ' · ' + (meta.phases[story.phase]?.[1] ?? story.phase)),
     el('h2', {}, story.title),
     el('p', {}, story.brief),
@@ -634,7 +646,7 @@ function openDetail(id) {
       row('Owner', alias(ownerOf(story)) + ' · ' + (meta.roles[ownerOf(story)]?.job ?? '')),
       row('Worker session', story.worker?.session),
       row('Worker turn', turnOf(story.worker)),
-      row('Repository', story.repo), row('Harness', story.harness), row('Branch', story.branch), row('Worktree', story.worktree),
+      row('Repository', story.repo), row('Harness', story.harness), row('Model', modelOf(story)), row('Branch', story.branch), row('Worktree', story.worktree),
       row('Pipeline run', story.pipeline && el('a', { href: story.pipeline, target: '_blank', rel: 'noopener' }, story.pipeline)),
       row('Pull request', story.pr && el('a', { href: story.pr, target: '_blank', rel: 'noopener' }, story.pr)),
       row('Review round', story.reviewRounds ? String(story.reviewRounds + 1) : null),
@@ -644,7 +656,8 @@ function openDetail(id) {
     story.artifacts?.length && el('section', {}, el('h3', {}, 'Evidence'), el('ul', { class: 'evidence' }, story.artifacts.map(artifact => evidenceItem(story, artifact)))),
     story.files?.length && el('section', {}, el('h3', {}, 'Files'), el('ul', {}, story.files.map(file => el('li', {}, el('code', {}, file.path), ' ', file.change)))),
     el('section', {}, el('h3', {}, 'Timeline'), el('ol', { class: 'timeline' }, (story.events ?? []).map(event =>
-      el('li', {}, el('time', {}, new Date(event.at).toLocaleString()), ' ', el('b', {}, event.type), ' ', event.detail ?? '')))));
+      el('li', {}, el('time', {}, new Date(event.at).toLocaleString()), ' ', el('b', {}, event.type), ' ', event.detail ?? '')))),
+  ].filter(Boolean));
   showWindow($('detail'), story.id + ' · ' + (meta.phases[story.phase]?.[1] ?? story.phase), () => openDetail(id));
 }
 

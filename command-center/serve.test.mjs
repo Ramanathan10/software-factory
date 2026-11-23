@@ -48,11 +48,26 @@ function folder(t) {
 
 test('the launcher serves the dashboard, and a second one on the same port is refused', async t => {
   const dbPath = join(folder(t), 'stories.sqlite');
-  const center = await start({ port: 0, dbPath });
+  const plan = { phaseTiers: { scout: 'deep' }, models: { codex: { deep: 'big' } } };
+  const asked = [];
+  const ran = (harness, session) => { asked.push(harness + ' ' + session); return session === 'worker-1' ? { model: 'big-1', effort: 'high' } : undefined; };
+  const center = await start({ port: 0, dbPath, models: () => plan, ran });
   // Close before the folder is removed: the store holds the database file open.
   try {
     const meta = await fetch(center.url + 'api/meta').then(response => response.json());
     assert.ok(meta.phases.scout);
+    assert.deepEqual([meta.phaseTiers, meta.models], [plan.phaseTiers, plan.models], 'the dashboard is told which model each phase runs on');
+    const recorder = createConsoleService({ dbPath });
+    try {
+      for (const story of ['tl-1', 'tl-2']) recorder.createStory({ story, title: 'Add export', detail: 'Export rows.', branch: story, harness: 'Codex', worktree: '/work/' + story });
+      recorder.recordEvent({ story: 'tl-1', type: 'assign-worker', session: 'worker-1' });
+    } finally {
+      recorder.close();
+    }
+    const shown = async () => Object.fromEntries((await fetch(center.url + 'api/stories').then(response => response.json())).map(story => [story.id, story.worker?.ran]));
+    assert.deepEqual(await shown(), { 'tl-1': { model: 'big-1', effort: 'high' }, 'tl-2': undefined }, 'a story is shown what its worker session ran on');
+    await shown();
+    assert.deepEqual(asked, ['Codex worker-1'], 'a session whose turn is over is read once, and a story with no worker never');
     await assert.rejects(start({ port: Number(new URL(center.url).port), dbPath }), { code: 'EADDRINUSE' });
   } finally {
     await center.close();
@@ -74,7 +89,7 @@ test('a decision recorded outside the dashboard reaches the worker when delivery
 
     const answer = recorder.recordEvent({ story: 'tl-1', type: 'answer', question: 'scope', answer: 0 });
     assert.deepEqual(await requestDelivery('tl-1', port), { story: 'tl-1', seqs: [answer.seq], told: 'worker' });
-    assert.deepEqual([sent.length, sent[0].session, sent[0].worktree], [1, 'worker-1', '/work/tl-1']);
+    assert.deepEqual([sent.length, sent[0].session, sent[0].worktree, sent[0].phase], [1, 'worker-1', '/work/tl-1', 'scout']);
     assert.match(sent[0].prompt, /answer on story tl-1/);
     assert.deepEqual([(await requestDelivery('tl-1', port)).seqs, sent.length], [[], 1], 'a decision the worker already has is not sent twice');
 
@@ -91,6 +106,6 @@ test('each command-line harness in the table gets an adapter, found by the name 
   const sent = [];
   const adapters = loadAdapters({ 'Claude Code': { workers: 'command-line' }, Codex: { workers: 'command-line' }, 'GitHub Copilot app': { workers: 'in-app' }, Cursor: { workers: 'none' } }, message => sent.push(message));
   assert.deepEqual([...adapters.keys()], ['claude code', 'codex']);
-  await deliver({ ...decision, worktree: '/work/tl-1' }, adapters.get('codex'));
-  assert.deepEqual([sent[0].harness, sent[0].session, sent[0].worktree], ['Codex', 'worker-1', '/work/tl-1']);
+  await deliver({ ...decision, worktree: '/work/tl-1', phase: 'planning' }, adapters.get('codex'));
+  assert.deepEqual([sent[0].harness, sent[0].session, sent[0].worktree, sent[0].phase], ['Codex', 'worker-1', '/work/tl-1', 'planning']);
 });

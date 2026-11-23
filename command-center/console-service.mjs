@@ -62,8 +62,11 @@ const folderFor = story => String(story).replace(/[^\w-]/g, '_');
 const imageOf = bytes => Object.entries(images).find(([, { magic }]) => magic.every((byte, index) => bytes[index] === byte))?.[0];
 
 // `onDecision` hands the owner's decisions on, and `onStartWorker` starts a story's worker; a host that
-// cannot do one leaves it out.
-export function createConsoleService({ dbPath = DEFAULT_DB_PATH, onDecision, onStartWorker, decisionDelayMs = 1500 } = {}) {
+// cannot do one leaves it out. `modelPlan` returns each phase's tier and each harness's model for a tier,
+// for the dashboard to show; it is read on each request, so a saved profile change shows on reload.
+// `workerRan` returns the `{ model, effort }` a story's worker session last ran on, when that is known; the
+// dashboard is sent it as `worker.ran`. It is not stored: the harness's own record of the session holds it.
+export function createConsoleService({ dbPath = DEFAULT_DB_PATH, onDecision, onStartWorker, modelPlan, workerRan, decisionDelayMs = 1500 } = {}) {
   mkdirSync(dirname(dbPath), { recursive: true });
   const store = openStore(dbPath);
   const currentRevision = story => store.snapshot().find(item => item.id === story)?.revision;
@@ -143,7 +146,11 @@ export function createConsoleService({ dbPath = DEFAULT_DB_PATH, onDecision, onS
     startServer(port = 0) {
       const clients = new Set();
       let last = '';
-      const frame = () => JSON.stringify({ at: new Date().toISOString(), stories: store.snapshot() });
+      const shown = () => store.snapshot().map(story => {
+        const ran = story.worker && workerRan?.(story);
+        return ran ? { ...story, worker: { ...story.worker, ran } } : story;
+      });
+      const frame = () => JSON.stringify({ at: new Date().toISOString(), stories: shown() });
       // Poll the store so events recorded by the CLI or other processes stream too.
       const tick = setInterval(() => {
         if (!clients.size) return;
@@ -161,12 +168,12 @@ export function createConsoleService({ dbPath = DEFAULT_DB_PATH, onDecision, onS
             const [body, type] = assets.get(path);
             send(response, 200, body, type);
           } else if (request.method === 'GET' && path === '/api/stories') {
-            send(response, 200, store.snapshot());
+            send(response, 200, shown());
           } else if (request.method === 'GET' && path === '/api/media') {
             const query = new URL(request.url, origin).searchParams;
             await sendMedia(request, response, store.artifact(query.get('story'), query.get('id')));
           } else if (request.method === 'GET' && path === '/api/meta') {
-            send(response, 200, { roles, phases });
+            send(response, 200, { roles, phases, ...modelPlan?.() });
           } else if (request.method === 'GET' && path === '/events') {
             response.writeHead(200, { 'Content-Type': 'text/event-stream', ...security, Connection: 'keep-alive' });
             response.write('retry: 2000\nevent: stories\ndata: ' + frame() + '\n\n');

@@ -34,3 +34,24 @@ export const phases = {
   retro: ['coordinator', 'Retro'],
   closed: ['coordinator', 'Merged'],
 };
+
+// How capable a model a phase's work needs, named without naming a model: the owner's profile says which
+// model each harness uses for a tier. A worker turn runs at the tier of the phase it starts in, and a
+// subagent a worker hands a phase to runs at that phase's tier. `scout` is deep because the turn it starts
+// runs on into planning. A phase left out is the owner's or the daemon's, and needs no model.
+export const tiers = ['deep', 'standard', 'fast'];
+export const phaseTiers = {
+  scout: 'deep',
+  planning: 'deep',
+  testing: 'standard',
+  red: 'standard',
+  building: 'standard',
+  gates: 'standard',
+  mutation: 'standard',
+  review: 'deep',
+  comparison: 'standard',
+  diagram: 'standard',
+  publishing: 'standard',
+  ci: 'standard',
+  retro: 'deep',
+};

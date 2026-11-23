@@ -6,7 +6,7 @@
 import { randomUUID } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
-import { harnesses, messageWorker, row, startWorker } from '../adapters/harnesses.mjs';
+import { harnesses, messageWorker, modelPlan, row, sessionRan, startWorker } from '../adapters/harnesses.mjs';
 import { harnessKey } from '../mission-console/roles.mjs';
 import { InputError, workerPhases } from '../mission-console/store.mjs';
 import { watchOnce } from '../mission-console/watcher.mjs';
@@ -29,12 +29,12 @@ export function loadAdapters(table = harnesses, send = messageWorker) {
 // worker stays pending in the store and goes to Jarvis, who tells the owner what to do next.
 // Resolves to who was told: 'worker', 'coordinator', or 'nobody' (the reason is logged instead).
 // `onTurn` is told the turn the message started, so the daemon can watch it.
-export async function deliver({ story, seqs, types, session, worktree, onTurn }, adapter, log = console.log) {
+export async function deliver({ story, seqs, types, session, worktree, phase, onTurn }, adapter, log = console.log) {
   const event = '[Mission Console event] The owner recorded ' + types.join(', ') + ' on story ' + story + ' (event seq ' + seqs.join(', ') + '). ';
   let reason = !adapter ? 'its harness has no adapter' : !session ? 'no worker is assigned' : '';
   if (!reason) {
     try {
-      await adapter.messageWorker({ session, worktree, prompt: event + 'Read the console, act on these events, acknowledge them, and continue.' }, { onTurn });
+      await adapter.messageWorker({ session, worktree, phase, prompt: event + 'Read the console, act on these events, acknowledge them, and continue.' }, { onTurn });
       return 'worker';
     } catch (error) {
       reason = 'the worker could not be messaged (' + error.message + ')';
@@ -68,7 +68,7 @@ export async function startStoryWorker({ story: id, prompt }, { service, supervi
   let turn;
   let started;
   try {
-    started = await launch({ harness: story.harness, worktree: story.worktree, prompt }, { onTurn: running => { turn = running; } });
+    started = await launch({ harness: story.harness, worktree: story.worktree, prompt, phase: story.phase }, { onTurn: running => { turn = running; } });
   } catch (error) {
     // Why the program could not be started is for the owner to read, not an internal fault.
     throw Object.assign(error, { status: 502, expose: true });
@@ -79,16 +79,32 @@ export async function startStoryWorker({ story: id, prompt }, { service, supervi
 }
 
 // `watchSeconds` is how often registered pull requests are observed; left out, the daemon does not watch.
-export async function start({ port = DEFAULT_PORT, dbPath, adapters = new Map(), watchSeconds, turnPollMs, launch } = {}) {
+// `ran` reads what a worker session last ran on from its harness's record; see `sessionRan`.
+export async function start({ port = DEFAULT_PORT, dbPath, adapters = new Map(), watchSeconds, turnPollMs, launch, models = modelPlan, ran = sessionRan } = {}) {
   let supervisor;
+  // session -> { at, value }: the record is read again at most every few seconds, and only while the
+  // session's turn is running or nothing has been read from it yet.
+  const lastRan = new Map();
+  const workerRan = story => {
+    const { session, turn } = story.worker;
+    const known = lastRan.get(session);
+    if (!known || ((turn || !known.value) && Date.now() - known.at > 5000)) {
+      let value;
+      try { value = ran(story.harness, session); } catch { /* a harness with no workers here has no record */ }
+      lastRan.set(session, { at: Date.now(), value: value ?? known?.value });
+    }
+    return lastRan.get(session).value;
+  };
   const service = createConsoleService({
     dbPath,
     onDecision: async decision => {
       const story = service.snapshot().find(story => story.id === decision.story);
       const onTurn = turn => supervisor.track({ story: decision.story, ...turn });
-      return deliver({ ...decision, worktree: story?.worktree, onTurn }, adapters.get(harnessKey(story?.harness)));
+      return deliver({ ...decision, worktree: story?.worktree, phase: story?.phase, onTurn }, adapters.get(harnessKey(story?.harness)));
     },
     onStartWorker: input => startStoryWorker(input, { service, supervisor, launch }),
+    modelPlan: () => models(),
+    workerRan,
   });
   supervisor = createSupervisor({ service });
   try {

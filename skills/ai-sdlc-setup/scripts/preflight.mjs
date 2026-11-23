@@ -11,6 +11,13 @@ import { fileURLToPath } from 'node:url';
 const assets = fileURLToPath(new URL('../assets/', import.meta.url));
 const schema = name => JSON.parse(readFileSync(join(assets, name), 'utf8'));
 
+// Each console phase's tier of model, as mission-console/roles.mjs has it; a test keeps the two the same.
+export const phaseTiers = {
+  scout: 'deep', planning: 'deep', testing: 'standard', red: 'standard', building: 'standard', gates: 'standard',
+  mutation: 'standard', review: 'deep', comparison: 'standard', diagram: 'standard', publishing: 'standard',
+  ci: 'standard', retro: 'deep',
+};
+
 export const profileHome = (env = process.env) => env.AI_SDLC_HOME || join(homedir(), '.ai-sdlc');
 
 const typeOf = value => (value === null ? 'null' : Array.isArray(value) ? 'array' : typeof value);
@@ -221,6 +228,9 @@ export function check(repo = '.', env = process.env, found = findCommandCenter()
     beforeAndAfter: machine?.beforeAndAfter ?? 'ask',
     architectureDiagram: machine?.architectureDiagram ?? 'ask',
     workerPermissions: machine?.workerPermissions ?? 'restricted',
+    // The model each harness runs for each tier, and each phase's tier with the owner's changes applied.
+    models: machine?.models ?? {},
+    phaseTiers: { ...phaseTiers, ...machine?.phaseTiers },
     // The full path of each file Jarvis runs, or null until the saved folder holds them.
     commandCenter: machine && !centerProblem
       ? { path: centerPath, ...Object.fromEntries(Object.entries(commandCenterFiles).map(([name, file]) => [name, join(centerPath, file)])) }
