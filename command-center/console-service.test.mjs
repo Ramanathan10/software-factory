@@ -173,6 +173,31 @@ test('overlapping deliveries hand each decision to the worker once', async t => 
   assert.deepEqual([first.seqs, second.seqs], [[answer.seq], []]);
 });
 
+test('a dashboard decision and a delivery request that overlap hand the decision once', async t => {
+  const handed = [];
+  let release;
+  const held = new Promise(resolve => { release = resolve; });
+  const directory = mkdtempSync(join(tmpdir(), 'console-deliver-'));
+  const service = createConsoleService({
+    dbPath: join(directory, 'stories.db'), decisionDelayMs: 5,
+    onDecision: async decision => { handed.push(...decision.seqs); if (handed.length === 1) await held; return 'worker'; },
+  });
+  const server = await service.startServer();
+  t.after(async () => { release(); await server.close(); service.close(); rmSync(directory, { recursive: true, force: true }); });
+  service.createStory({ story: 'tl-1', title: 'T', detail: 'B', branch: 'b', worktree: '/w', harness: 'Codex' });
+  const { revision } = service.recordEvent({ story: 'tl-1', type: 'question', question: 'q', prompt: 'Which?', options: ['a', 'b'], recommended: 0 });
+  service.recordEvent({ story: 'tl-1', type: 'assign-worker', session: 'worker-1' });
+  const origin = server.url.slice(0, -1);
+  const posted = await fetch(server.url + 'api/decision', {
+    method: 'POST', headers: { 'Content-Type': 'application/json', Origin: origin },
+    body: JSON.stringify({ story: 'tl-1', type: 'answer', question: 'q', answer: 0, revision: revision + 1 }),
+  }).then(response => response.json());
+  await new Promise(resolve => setTimeout(resolve, 40));
+  assert.deepEqual(handed, [posted.seq], 'the dashboard batch handed the answer');
+  const requested = await service.deliverPending('tl-1');
+  assert.deepEqual([handed, requested.seqs], [[posted.seq], []]);
+});
+
 test('a decision that did not reach the worker is handed again on the next delivery', async t => {
   let told = 'coordinator';
   const handed = [];

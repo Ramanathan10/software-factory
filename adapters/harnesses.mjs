@@ -232,23 +232,24 @@ const turns = new Map();
 
 // Sends a prompt to an existing worker session. Waits for a turn this process already started for that
 // session, and for `options.after`, so one session never runs two turns at once, and resolves once the new
-// turn is running. `options.onTurn` is told the running turn's `pid`, `log`, and `ended`, a promise of its
-// exit code.
+// turn is running. `options.onTurn` is told the turn's `pid`, `log`, and `ended`, a promise of its exit code,
+// as soon as its process exists.
 export async function messageWorker({ harness, session, worktree, prompt, phase }, options = {}) {
   const invocation = commandFor(harness, 'message', { session, phase }, options.settings);
   const previous = Promise.all([turns.get(session), options.after]);
   let finish;
   turns.set(session, new Promise(resolve => { finish = resolve; }));
-  await previous;
   try {
+    await previous;
     const log = logFor(session, options.env);
     const child = run(invocation, { worktree, prompt, log, spawnProcess: options.spawnProcess });
     child.once('close', finish).once('error', finish);
     const ended = exit(child);
+    // Reported as soon as the process exists, so a daemon that restarts while the turn settles finds it in the store.
+    if (child.pid) options.onTurn?.({ session, pid: child.pid, log, ended });
     await started(child);
     await settled(child, { harness, log, ms: options.settleMs });
     child.unref?.();
-    options.onTurn?.({ session, pid: child.pid, log, ended });
   } catch (error) {
     finish();
     throw explained(harness, error, options.launchEnv);

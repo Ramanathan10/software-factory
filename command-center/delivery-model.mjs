@@ -7,14 +7,17 @@
 // BatchFire          console-service.mjs  notify's timer calls `hand` with the batch
 // JarvisDeliver      console-service.mjs  deliverPending (`serve.mjs deliver`) filters the pending decisions, calls `hand`
 // Hand               console-service.mjs  hand, up to `await onDecision`; harnesses.mjs messageWorker up to `await previous`
-// Spawn              harnesses.mjs        messageWorker spawns the turn, and it is handed the decisions in its prompt
-// Settled            console-service.mjs  onDecision resolves to 'worker' once the turn is running; hand marks `sent`
+// Spawn              harnesses.mjs        messageWorker spawns the turn, and it is handed the decisions in its prompt;
+//                                         with `recordsAtSpawn`, onTurn records it in the store in the same step
+// Settled            console-service.mjs  onDecision resolves to 'worker' once the turn has settled; hand marks `sent`,
+//                                         and without `recordsAtSpawn` the turn is recorded only now
 // Ack                the worker records `ack` on the store for a decision it acted on
 // TurnEnd            the harness program exits; its entry in harnesses.mjs `turns` resolves
-// Restart            the daemon stops and starts again: `sent`, `batches` and `turns` are gone, turns keep running
+// Restart            the daemon stops and starts again: `sent`, `batches` and `turns` are gone, turns keep running,
+//                                         and the new daemon adopts those recorded in the store
 //
 // `fix` names the behaviors that differ between versions of the code, so a past version can be replayed.
-export const current = { filterSent: true, handReserves: true, startRegistersTurn: true, waitsForAdoptedTurns: true };
+export const current = { filterSent: true, handReserves: true, startRegistersTurn: true, waitsForAdoptedTurns: true, recordsAtSpawn: true };
 
 const DECISIONS = 2;
 const JARVIS_CALLS = 2;
@@ -28,8 +31,9 @@ const initial = fix => ({
   procs: [],
   // The session's entry in `turns`: the id of the call or turn the next message waits for.
   tail: fix.startRegistersTurn ? 0 : null,
-  // Running turns of the session. Turn 0 is the kickoff turn startWorker began.
-  turns: [{ id: 0, seqs: Array(DECISIONS).fill(false), adopted: false }],
+  // Running turns of the session. Turn 0 is the kickoff turn startWorker began; the story has no worker to hand
+  // decisions to until it is recorded, so it starts recorded.
+  turns: [{ id: 0, seqs: Array(DECISIONS).fill(false), adopted: false, recorded: true }],
 });
 
 const any = seqs => seqs.some(Boolean);
@@ -73,13 +77,14 @@ export function steps(state, fix) {
     if (!proc.spawned && settledEntry(state, proc.waitsFor) && !(fix.waitsForAdoptedTurns && adoptedRunning)) {
       step('Spawn(' + proc.via + '#' + proc.id + ')', next => {
         next.procs[at].spawned = true;
-        next.turns.push({ id: proc.id, seqs: proc.seqs, adopted: false });
+        next.turns.push({ id: proc.id, seqs: proc.seqs, adopted: false, recorded: Boolean(fix.recordsAtSpawn) });
         proc.seqs.forEach((seq, d) => { if (seq) next.handed[d] += 1; });
       });
     }
     if (proc.spawned) {
       step('Settled(' + proc.via + '#' + proc.id + ')', next => {
         if (!fix.handReserves) proc.seqs.forEach((seq, d) => { if (seq) next.sent[d] = true; });
+        next.turns.forEach(turn => { if (turn.id === proc.id) turn.recorded = true; });
         next.procs.splice(at, 1);
       });
     }
@@ -99,7 +104,7 @@ export function steps(state, fix) {
       next.handed.fill(0);
       next.procs = [];
       next.tail = null;
-      next.turns.forEach(turn => { turn.adopted = true; });
+      next.turns.forEach(turn => { turn.adopted = turn.recorded; });
     });
   }
   return out;

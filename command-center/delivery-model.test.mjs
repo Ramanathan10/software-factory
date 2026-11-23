@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { check, current } from './delivery-model.mjs';
 
-const version = (filterSent, handReserves, startRegistersTurn, waitsForAdoptedTurns) => ({ filterSent, handReserves, startRegistersTurn, waitsForAdoptedTurns });
+const version = (filterSent, handReserves, startRegistersTurn, waitsForAdoptedTurns, recordsAtSpawn = true) => ({ filterSent, handReserves, startRegistersTurn, waitsForAdoptedTurns, recordsAtSpawn });
 
 test('the code as it is: one turn per session, each decision handed once, no delivery stuck', () => {
   const result = check(current);
@@ -26,4 +26,10 @@ test('a message did not wait for the kickoff turn startWorker began', () => {
 
 test('after a restart a message did not wait for the turn the earlier daemon left running', () => {
   assert.equal(check(version(true, true, true, false), ['OneTurnPerSession']).invariant, 'OneTurnPerSession');
+});
+
+test('after a restart while a new turn settled, the turn was in no store for the next message to wait for', () => {
+  const result = check(version(true, true, true, true, false), ['OneTurnPerSession']);
+  assert.equal(result.invariant, 'OneTurnPerSession');
+  assert.ok(result.trace.indexOf('Restart') > result.trace.findIndex(step => step.startsWith('Spawn')), result.trace.join(' → '));
 });

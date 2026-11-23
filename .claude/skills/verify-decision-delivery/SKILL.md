@@ -25,13 +25,14 @@ node --test command-center/delivery-model.test.mjs
 
 ## The code each step stands for
 
-The table at the top of `delivery-model.mjs` maps each step to the code it models. `current` in that file names four behaviors, and each one is pinned in the real code by a test, so the model cannot claim a fix the code lacks:
+The table at the top of `delivery-model.mjs` maps each step to the code it models. `current` in that file names five behaviors, and each one is pinned in the real code by a test, so the model cannot claim a fix the code lacks:
 
 | Flag | What the code does | Test that holds the code to it |
 |---|---|---|
-| `filterSent`, `handReserves` | `hand` claims its seqs in `sent` before its first await, on both the batch and the `deliverPending` path, and releases them unless the worker was told | `console-service.test.mjs`: "overlapping deliveries hand each decision to the worker once", "a decision that did not reach the worker is handed again" |
+| `filterSent`, `handReserves` | `hand` claims its seqs in `sent` before its first await, on both the batch and the `deliverPending` path, and releases them unless the worker was told | `console-service.test.mjs`: "overlapping deliveries hand each decision to the worker once", "a dashboard decision and a delivery request that overlap hand the decision once", "a decision that did not reach the worker is handed again" |
 | `startRegistersTurn` | `startWorker` puts the kickoff turn in `turns` | `harnesses.test.mjs`: "a message to a new session waits for the kickoff turn startWorker began" |
-| `waitsForAdoptedTurns` | `serve.mjs` passes `supervisor.idle(story)` to `messageWorker` as `after` | `supervisor.test.mjs`: "a message waits until the turn left by an earlier daemon has ended"; `harnesses.test.mjs`: "a message waits for what the caller says is still running" |
+| `waitsForAdoptedTurns` | `serve.mjs` passes `supervisor.idle(story)` to `messageWorker` as `after`, and stopping the daemon rejects those waits | `supervisor.test.mjs`: "a message waits until the turn left by an earlier daemon has ended", "stopping the daemon ends a wait for an earlier daemon's turn"; `harnesses.test.mjs`: "a message waits for what the caller says is still running" |
+| `recordsAtSpawn` | `messageWorker` calls `onTurn`, which records `turn-started`, as soon as the process exists, before the turn settles | `harnesses.test.mjs`: "a message reports its turn as soon as the process exists, before the turn settles" |
 
 When you change one of these behaviors, change the step in the model and its flag in `current` in the same pull request, and keep or replace the test that pins it.
 
@@ -47,6 +48,7 @@ Before you treat a failure as a bug, check that the step it names still matches 
 - A `messageWorker` that fails to start its program. The code releases the claimed seqs in that case, and `console-service.test.mjs` covers it, but the model has no failure step.
 - The order of decisions within one turn, the store's own transactions (see `verify-story-lifecycle`), and harnesses whose workers run in-app.
 - Several daemons running at once. `serve.mjs` refuses to start a second one on the same port.
+- A restart while a kickoff turn settles. The story has no worker recorded until `startWorker` returns, so no decision can be handed to it, but Jarvis could start a second worker for the story.
 
 ## Coverage record
 

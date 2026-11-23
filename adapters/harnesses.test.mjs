@@ -19,6 +19,7 @@ function fakeProgram(output = '', exit) {
   const calls = [];
   const spawnProcess = (command, args, options) => {
     const child = new EventEmitter();
+    child.pid = 5000 + calls.length;
     child.stdin = { on: () => child.stdin, end: prompt => { call.prompt = prompt; } };
     const call = { command, args, cwd: options.cwd, child };
     calls.push(call);
@@ -154,6 +155,17 @@ test('a message to a new session waits for the kickoff turn startWorker began', 
   await message;
   assert.deepEqual(calls.map(call => call.prompt), ['kickoff', 'The owner answered.']);
   calls[1].child.emit('close', 0);
+});
+
+// delivery-model.mjs: a daemon that restarted while a new turn settled found no turn in the store to wait for.
+test('a message reports its turn as soon as the process exists, before the turn settles', async () => {
+  const { calls, spawnProcess } = fakeProgram();
+  const told = [];
+  const message = messageWorker({ harness: 'Codex', session: 'early', worktree: '.', prompt: 'next' }, { spawnProcess, settings: restricted, settleMs: 200, onTurn: turn => told.push(turn.pid) });
+  await new Promise(resolve => setTimeout(resolve, 20));
+  assert.deepEqual(told, [calls[0].child.pid]);
+  await message;
+  calls[0].child.emit('close', 0);
 });
 
 test('a message waits for what the caller says is still running', async () => {

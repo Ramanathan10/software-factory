@@ -117,6 +117,16 @@ test('a message waits until the turn left by an earlier daemon has ended', async
   assert.equal(idle, true);
 });
 
+test('stopping the daemon ends a wait for an earlier daemon\'s turn', async t => {
+  const { service, supervisor, story } = fixture(t, { alive: () => true, bootedAt: 0 });
+  service.recordEvent({ story: 'tl-1', type: 'turn-started', assignment: story().worker.id, pid: 7004, log: '/logs/old.log' });
+  const stop = supervisor.start(60000);
+  const waiting = supervisor.idle('tl-1', 5);
+  await new Promise(resolve => setTimeout(resolve, 20));
+  stop();
+  await assert.rejects(waiting, /stopped before the earlier turn ended/);
+});
+
 test('a story with no turn left by an earlier daemon is idle at once', async t => {
   const { supervisor } = fixture(t, { alive: () => true, bootedAt: 0 });
   await supervisor.idle('tl-1');

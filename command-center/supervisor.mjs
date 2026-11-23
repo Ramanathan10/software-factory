@@ -93,6 +93,9 @@ export function createSupervisor({ service, verdict = turnVerdict, alive = isAli
   // exists, and it began after the machine did.
   const adopted = (id, turn) => turn && !owned.has(id + ':' + turn.pid) && Date.parse(turn.at) >= bootedAt && alive(turn.pid);
 
+  // Waits in `idle`, as their timers and rejects, so stopping the daemon ends them.
+  const waits = new Map();
+
   const supervisor = {
     // Called with each turn this daemon starts: `ended` resolves to the program's exit code.
     track({ story, pid, log: file, ended }) {
@@ -123,8 +126,12 @@ export function createSupervisor({ service, verdict = turnVerdict, alive = isAli
     // Resolves once the story has no turn left running by an earlier daemon, which this daemon has no entry
     // for in harnesses.mjs `turns`. A message waits for it so the session never runs two turns at once.
     idle(id, pollMs = 1000) {
-      return new Promise(resolve => {
-        const check = () => (adopted(id, find(id)?.worker?.turn) ? setTimeout(check, pollMs) : resolve());
+      return new Promise((resolve, reject) => {
+        const check = () => {
+          waits.delete(check);
+          if (!adopted(id, find(id)?.worker?.turn)) return resolve();
+          waits.set(check, { timer: setTimeout(check, pollMs), reject });
+        };
         check();
       });
     },
@@ -140,7 +147,14 @@ export function createSupervisor({ service, verdict = turnVerdict, alive = isAli
       safely();
       const timer = setInterval(safely, pollMs);
       timer.unref();
-      return () => clearInterval(timer);
+      return () => {
+        clearInterval(timer);
+        for (const { timer: wait, reject } of waits.values()) {
+          clearTimeout(wait);
+          reject(new Error('The Command Center stopped before the earlier turn ended.'));
+        }
+        waits.clear();
+      };
     },
   };
   return supervisor;
