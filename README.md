@@ -6,7 +6,9 @@ Everything needed to run the AI software development lifecycle from one clone: t
 
 ## See it work
 
-[![The Command Center: stories on a board by stage, the owner's inbox, plan approval, the live feed and a story's detail](docs/command-center-demo.gif)](docs/command-center-demo.mp4)
+[![The software factory in 88 seconds: the Avenger crew and the skill each one runs, a story moving through plan, tests, build, review, verify and ship, the thirteen skills, and the Command Center live, with the owner answering a question and approving a plan](docs/software-factory-demo.gif)](docs/software-factory-demo.mp4)
+
+The GIF links to the full-resolution MP4.
 
 ## Architecture
 
