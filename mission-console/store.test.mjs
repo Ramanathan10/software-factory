@@ -547,6 +547,20 @@ test('gates and mutation sit between build and review, and survivors return to t
   assert.ok(created.seq);
 });
 
+test('the owner can send a story back to build from the comparison', t => {
+  const store = fixture(t)();
+  start(store, 'look');
+  const record = writer(store, 'look');
+  toGreen(record);
+  record('handoff', { detail: 'Gates passed.', command: 'npm run lint' });
+  record('handoff', { detail: 'No survivors.', command: 'npx stryker run' });
+  record('handoff', { detail: 'Reviewed.' });
+  record('comparison-choice', { run: true });
+  record('return-to-build', { detail: 'The owner wants the divider kept.' });
+  assert.equal(store.snapshot()[0].phase, 'building');
+  assert.equal(store.snapshot()[0].reviewRounds, undefined);
+});
+
 test('Rocket can run straight after review and return to publishing', t => {
   const store = fixture(t)();
   start(store, 'early');

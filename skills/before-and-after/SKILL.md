@@ -47,9 +47,26 @@ When falling back to computer use:
 - Tell the computer-use agent the product, the exact screen, and the record or fixture to open.
 - Limit it to that product window. Leave other applications, permission prompts, and account settings alone.
 - Ask for a screenshot of that window for each state.
-- Use a short screen recording only when a still pair cannot show the change, such as a transition. Discard a recording that does not show the comparison.
+- Record instead of a screenshot only as the next section describes.
 
 Two existing images need no new capture. Compare those files directly.
+
+## Record a transition
+
+Record only when a still pair cannot show the change, such as a transition or an animation. Use the host's own screen recorder when it has one, or the video a browser test runner already records. Otherwise use `ffmpeg`, which records the screen without either:
+
+```
+ffmpeg -f gdigrab -framerate 15 -t 8 -i title="<window title>" -pix_fmt yuv420p output/before-after/<screen>-before.mp4
+```
+
+`gdigrab` is the Windows input. On macOS use `-f avfoundation` and on Linux `-f x11grab`, each cropped to the region the window occupies.
+
+- Record the product window, or the region it occupies. Never record the whole desktop.
+- Start the recording in the background, perform the steps with the browser or computer-use tool, and let `-t` end it. Keep each clip to the seconds the change takes.
+- Perform the same steps, at the same window size, for before and for after.
+- Read frames from each clip before reporting, and discard a recording that does not show the comparison.
+
+With neither a host recorder nor `ffmpeg`, say the recording was not made and offer a still pair.
 
 ## Report
 
@@ -65,7 +82,7 @@ A pair of images is the evidence. The written difference is the result.
 
 ## Where evidence goes
 
-Save images in the current task workspace, under `output/before-after/`, with names that identify the screen and state, such as `billing-review-before.png` and `billing-review-after.png`.
+Save images and recordings in the current task workspace, under `output/before-after/`, with names that identify the screen and state, such as `billing-review-before.png` and `billing-review-after.png`.
 
 Keep the files on the machine. Put them in a pull request, ticket, or chat attachment only when the user asks, and only in a destination they name. When an image will leave the machine, crop fields that are not needed to see the change, including personal data, account identifiers, tokens, and secrets.
 

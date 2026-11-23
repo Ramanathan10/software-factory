@@ -261,7 +261,7 @@ function apply(story, input, now) {
       story.phase = 'retro';
       return 'Retro started.';
     case 'return-to-build':
-      requireThat(['review', 'gates'].includes(story.phase), 'Return to build from review or the deterministic gates.', 409);
+      requireThat(['review', 'gates', 'comparison'].includes(story.phase), 'Return to build from review, the deterministic gates, or the comparison.', 409);
       if (story.phase === 'review') story.reviewRounds = (story.reviewRounds ?? 0) + 1;
       story.phase = 'building';
       return string(input.detail, 'review finding');

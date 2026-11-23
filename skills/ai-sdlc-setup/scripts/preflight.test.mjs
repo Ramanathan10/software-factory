@@ -2,10 +2,10 @@ import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, rmdirSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { delimiter, join } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { branchPatternProblem, check, componentSeverity, components, detect, findCommandCenter, nextSteps, validate } from './preflight.mjs';
+import { branchPatternProblem, check, componentSeverity, components, detect, findCommandCenter, nextSteps, onPath, validate } from './preflight.mjs';
 
 const asset = name => JSON.parse(readFileSync(fileURLToPath(new URL(`../assets/${name}`, import.meta.url)), 'utf8'));
 // This checkout holds the Command Center, so it is the folder a profile saved on this machine would name.
@@ -181,7 +181,9 @@ test('check links components to the gates that use them and remembers declined o
     machineProfile: { ...machine, declinedComponents: ['hyperframes'] },
     repoEntry: repoProfile({ test: 'git --version', mutation: 'git stryker run --mutate {files}' }),
   });
-  const result = check(repo, env);
+  // The machine running the tests may have Stryker installed for everyone; this repository must not see it.
+  const path = (env.PATH || env.Path || '').split(delimiter).filter(dir => !onPath('stryker', { ...env, PATH: dir })).join(delimiter);
+  const result = check(repo, { ...env, PATH: path, Path: path });
   assert.deepEqual(part(result.components, 'stryker').usedBy, ['mutation']);
   assert.equal(part(result.components, 'hyperframes').declined, true);
   assert.doesNotMatch(result.warnings.join('\n'), /hyperframes/);

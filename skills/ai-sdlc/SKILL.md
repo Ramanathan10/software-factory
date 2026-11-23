@@ -30,7 +30,7 @@ node <ai-sdlc-setup skill>/scripts/preflight.mjs check <repository>
 
 If it reports problems, read and follow `ai-sdlc-setup` to fix them, then check again. Do not start a story on a failing check.
 
-Warnings do not stop a story. Each names a missing component, such as Stryker or the video tools. Tell the owner once, with the suggested install, and offer the missing-components question from `ai-sdlc-setup`. Do not offer evidence in phase 1 that a missing component or host ability rules out: no recording without screen recording, no explainer video without `hyperframes` and `ffmpeg`.
+Warnings do not stop a story. Each names a missing component, such as Stryker or the video tools. Tell the owner once, with the suggested install, and offer the missing-components question from `ai-sdlc-setup`. Do not offer evidence in phase 1 that a missing component or host ability rules out: no recording without the host's screen recorder or `ffmpeg`, no explainer video without `hyperframes` and `ffmpeg`.
 
 The check's output is the configuration for this run: the owner's name, whether cross-model sharing is authorized, the machine's shared resources and default verification environment, the implementation level, the review round limit, the before-and-after and architecture diagram settings, the worker permissions, the full paths of the Command Center files under `commandCenter`, and for the repository its required gates, the gates the owner declined, branch pattern, worktree folder, team rules, work tracker, required pipelines, review bot, and spec location. Use these values as given; do not substitute a default of your own. When a later phase needs an answer the profile lacks, ask that one question through `ai-sdlc-setup` and continue.
 
@@ -58,7 +58,7 @@ Use this lane when the owner reports broken existing behavior. Reproduce the bug
 
 Ask these with the rest of the frontier, each with a recommended answer, so nothing waits on the owner after approval:
 
-- **Before and after:** when the profile says `ask`, whether to capture it; `always` and `never` are already the answer. When it will be captured: the screen to compare, the environment (default: the profile's verification environment), and the before reference that `before-and-after` needs. When the before reference is the current running product, capture the before image right after approval, before any implementation changes it.
+- **Before and after:** when the profile says `ask`, whether to capture it; `always` and `never` are already the answer. When it will be captured, the owner also decides how the change is verified, asked with your recommendation: output from a test, command, or log; screenshots; or a recording when a still pair cannot show the change. Offer only the methods this host can carry out. Settle with it the screen to compare, the environment (default: the profile's verification environment), and the before reference that `before-and-after` needs. The default before reference is the product as it runs today: capture it by the chosen method right after approval, before any implementation changes it.
 - **Architecture diagram:** when the profile says `ask`, whether the PR description needs one; `always` and `never` are already the answer. When it needs one: its scope.
 
 Cross-model sharing, required gates, mutation testing, pipelines, the spec location, the branch pattern, the implementation level, and the review round limit are already answered by the profile; do not ask them again.
@@ -113,7 +113,9 @@ Fix findings that clear its bar, rerun the gates affected by the fix, then revie
 
 ## 6. Before and after
 
-Run only when the spec says to. Read and follow `before-and-after` with the screen, environment, and before reference recorded in the spec. Check the evidence before advancing. If the check cannot show the feature working, stop and say what is missing. Skip this phase when the spec says no.
+Run only when the spec says to. Read and follow `before-and-after` with the method, screen, environment, and before reference recorded in the spec. Check the evidence before advancing. If the check cannot show the feature working, stop and say what is missing. Skip this phase when the spec says no.
+
+Then show the owner the comparison, each before beside its after by the method the spec named, whether output, screenshots, or a recording, with the written difference, and wait for them to accept it. The review is the owner's own: do not accept it for them, and do not open the pull request while it is waiting. When they ask for a change, return to phase 3 with their comment as the finding, rerun the gates and the review the fix affects, and capture the after state again.
 
 ## 7. Architecture diagram
 
@@ -122,6 +124,8 @@ Run only when the spec says the PR description needs one. Read and follow the lo
 ## 8. Pull request
 
 Fetch the remote and bring the story branch up to date with the current remote default branch, then rerun the gates the update affects. Create the pull request for the approved, reviewed change. The description links or contains the spec and includes the gate results from phase 4, the review verdict, the before-and-after comparison when captured, and the architecture diagram when drawn.
+
+Do not commit the before-and-after screenshots or recordings, or the diagram image, to the repository: they are evidence for the description, not part of the change. Attach them to the pull request through its host's own upload, which returns an address the description can show. Where the host accepts an upload only through its web page, as GitHub does, use a browser tool that is signed in to it; without one, give the comparison in words, open the pull request, and tell the owner which files to drop into the description and where they are. Never send them to any other file host. Evidence that is text, such as test or command output, goes into the description as text.
 
 When the profile lists required pipelines, the pull request is not reported ready until each has succeeded on its current head. Report each run's result and link. For a pipeline that only triggers on the default branch, queue it on the story branch when the CI system allows; otherwise tell the owner it has not run.
 
@@ -147,5 +151,6 @@ Report the lessons recorded and where, or that there were none.
 - Model review waits for every required gate to pass and for killed or explained mutants on changed lines.
 - Private code is not sent to an additional model provider unless the profile authorizes it.
 - Before-and-after and the architecture diagram run only when the spec says so, and both finish before the pull request opens.
+- The owner accepts the before-and-after comparison before the pull request opens, and its screenshots and recordings are never committed.
 - The pull request is reported ready only after its required pipelines succeed on the current head.
 - The run ends with a retro report.

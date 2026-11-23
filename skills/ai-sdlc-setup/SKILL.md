@@ -35,13 +35,13 @@ The script cannot see what the agent host can do. Check your own tool list for t
 
 - A browser tool that can open a local or private page and take a screenshot, for `before-and-after`.
 - Computer use or a desktop screenshot tool, for a desktop app or a window the browser cannot reach.
-- Screen recording, for a before-and-after recording of a transition.
+- Screen recording, for a before-and-after recording of a transition. `ffmpeg` provides this when the host has no recorder of its own, so count it as present when detection found `ffmpeg`.
 
 Skip the machine interview when a valid profile exists, and the repository interview when the profile has a valid section for this repository, unless the owner asked to redo setup.
 
 ## 2. Interview
 
-Ask in rounds, each question with a recommended answer worded so "yes" accepts it. Use the host's question tool when it has one. Every answer is the owner's own; do not copy another person's profile or infer preferences from their history.
+Ask in rounds, each question with a recommended answer worded so "yes" accepts it. Use the host's question tool when it has one. Ask each numbered item below as its own question, with its own choices: never fold one item into another's question or carry its answer in another's option descriptions, because the owner then accepts a setting they were never shown as a choice. Every answer is the owner's own; do not copy another person's profile or infer preferences from their history.
 
 ### Machine, once per machine
 
