@@ -5,13 +5,13 @@
 //   node serve.mjs deliver <story> [port]   hand a story's waiting decisions to its worker
 import { randomUUID } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
-import { pathToFileURL } from 'node:url';
 import { harnesses, messageWorker, modelPlan, row, sessionRan, startWorker } from '../adapters/harnesses.mjs';
 import { harnessKey } from '../mission-console/roles.mjs';
 import { InputError, workerPhases } from '../mission-console/store.mjs';
 import { watchOnce } from '../mission-console/watcher.mjs';
 import { createConsoleService } from './console-service.mjs';
 import { createSupervisor } from './supervisor.mjs';
+import { isMain } from '../mission-console/is-main.mjs';
 
 export const DEFAULT_PORT = 4174;
 
@@ -28,13 +28,14 @@ export function loadAdapters(table = harnesses, send = messageWorker) {
 // describes. `adapter` is undefined when the story's harness has none. A decision that cannot reach its
 // worker stays pending in the store and goes to Jarvis, who tells the owner what to do next.
 // Resolves to who was told: 'worker', 'coordinator', or 'nobody' (the reason is logged instead).
-// `onTurn` is told the turn the message started, so the daemon can watch it.
-export async function deliver({ story, seqs, types, session, worktree, phase, onTurn }, adapter, log = console.log) {
+// `onTurn` is told the turn the message started, so the daemon can watch it, and `after` is a promise the
+// message waits for before its turn starts.
+export async function deliver({ story, seqs, types, session, worktree, phase, onTurn, after }, adapter, log = console.log) {
   const event = '[Mission Console event] The owner recorded ' + types.join(', ') + ' on story ' + story + ' (event seq ' + seqs.join(', ') + '). ';
   let reason = !adapter ? 'its harness has no adapter' : !session ? 'no worker is assigned' : '';
   if (!reason) {
     try {
-      await adapter.messageWorker({ session, worktree, phase, prompt: event + 'Read the console, act on these events, acknowledge them, and continue.' }, { onTurn });
+      await adapter.messageWorker({ session, worktree, phase, prompt: event + 'Read the console, act on these events, acknowledge them, and continue.' }, { onTurn, after });
       return 'worker';
     } catch (error) {
       reason = 'the worker could not be messaged (' + error.message + ')';
@@ -100,7 +101,8 @@ export async function start({ port = DEFAULT_PORT, dbPath, adapters = new Map(),
     onDecision: async decision => {
       const story = service.snapshot().find(story => story.id === decision.story);
       const onTurn = turn => supervisor.track({ story: decision.story, ...turn });
-      return deliver({ ...decision, worktree: story?.worktree, phase: story?.phase, onTurn }, adapters.get(harnessKey(story?.harness)));
+      return deliver({ ...decision, worktree: story?.worktree, phase: story?.phase, onTurn, after: supervisor.idle(decision.story) },
+        adapters.get(harnessKey(story?.harness)));
     },
     onStartWorker: input => startStoryWorker(input, { service, supervisor, launch }),
     modelPlan: () => models(),
@@ -148,7 +150,7 @@ export const requestStart = (story, prompt, port = DEFAULT_PORT) => post('/api/w
 // reaches a worker through the one process that keeps a session to one turn at a time.
 export const requestDelivery = (story, port = DEFAULT_PORT) => post('/api/deliver', { story }, port);
 
-const direct = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
+const direct = isMain(import.meta.url);
 
 if (direct && ['deliver', 'start'].includes(process.argv[2])) {
   const port = Number(process.argv[4] ?? DEFAULT_PORT);
@@ -160,6 +162,9 @@ if (direct && ['deliver', 'start'].includes(process.argv[2])) {
     console.error(error.cause?.code === 'ECONNREFUSED' ? 'The Command Center is not running. Start it with: node ' + process.argv[1] : error.message);
     process.exitCode = 1;
   }
+} else if (direct && !Number.isInteger(Number(process.argv[2] ?? DEFAULT_PORT))) {
+  console.error('Usage: node serve.mjs [port] | start <story> [port] | deliver <story> [port]');
+  process.exitCode = 2;
 } else if (direct) {
   const port = Number(process.argv[2] ?? DEFAULT_PORT);
   try {

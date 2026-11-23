@@ -25,3 +25,6 @@ jobs:
         with:
           node-version-file: .nvmrc
       - run: node --test
+        env:
+          # Words private-details.test.mjs must not find, such as a work story prefix. Set under Settings → Variables.
+          PRIVATE_WORDS: ${{ vars.PRIVATE_WORDS }}
