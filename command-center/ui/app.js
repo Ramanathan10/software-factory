@@ -653,8 +653,8 @@ function openDetail(id) {
       row('Blocked', story.blocked)),
     hasDesign(story) && el('p', {}, el('button', { type: 'button', class: 'primary', onclick: () => openDesign(id) }, 'Read approved plan and design')),
     story.plan && el('section', {}, el('h3', {}, 'Plan'), md(story.plan)),
-    story.artifacts?.length && el('section', {}, el('h3', {}, 'Evidence'), el('ul', { class: 'evidence' }, story.artifacts.map(artifact => evidenceItem(story, artifact)))),
-    story.files?.length && el('section', {}, el('h3', {}, 'Files'), el('ul', {}, story.files.map(file => el('li', {}, el('code', {}, file.path), ' ', file.change)))),
+    story.artifacts?.length > 0 && el('section', {}, el('h3', {}, 'Evidence'), el('ul', { class: 'evidence' }, story.artifacts.map(artifact => evidenceItem(story, artifact)))),
+    story.files?.length > 0 && el('section', {}, el('h3', {}, 'Files'), el('ul', {}, story.files.map(file => el('li', {}, el('code', {}, file.path), ' ', file.change)))),
     el('section', {}, el('h3', {}, 'Timeline'), el('ol', { class: 'timeline' }, (story.events ?? []).map(event =>
       el('li', {}, el('time', {}, new Date(event.at).toLocaleString()), ' ', el('b', {}, event.type), ' ', event.detail ?? '')))),
   ].filter(Boolean));
