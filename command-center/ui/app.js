@@ -452,7 +452,14 @@ function questionBlock(story, question, index, total) {
   const draft = draftOf(story, question);
   const promptId = 'q-' + story.id + '-' + question.id;
   const area = el('textarea', { rows: 2, placeholder: 'Or answer in your own words. Paste screenshots here.',
-    oninput: event => { draft.text = event.target.value; event.target.closest('.decision')?.dispatchEvent(new Event('draft')); },
+    oninput: event => {
+      draft.text = event.target.value;
+      if (draft.text.trim() && draft.choice !== null) {
+        draft.choice = null;
+        for (const button of event.target.closest('.question').querySelectorAll('.choices button')) button.setAttribute('aria-pressed', 'false');
+      }
+      event.target.closest('.decision')?.dispatchEvent(new Event('draft'));
+    },
     onpaste: event => {
       const files = [...event.clipboardData.items].filter(item => item.type.startsWith('image/')).map(item => item.getAsFile());
       if (files.length) { event.preventDefault(); upload(story, files, draft.shots); }
@@ -462,8 +469,8 @@ function questionBlock(story, question, index, total) {
     el('small', { class: 'q-num' }, 'Question ' + (index + 1) + ' of ' + total + (answered(draft) ? ' · answered' : '')),
     el('p', { class: 'q-prompt', id: promptId }, question.prompt),
     el('div', { class: 'choices' }, question.options.map((option, index) =>
-      el('button', { type: 'button', 'aria-pressed': String(draft.choice === index), class: index === question.recommended ? 'rec-option' : '',
-        onclick: () => { draft.choice = draft.choice === index ? null : index; refreshInbox(); } },
+      el('button', { type: 'button', 'aria-pressed': String(draft.choice === index),
+        onclick: () => { draft.choice = draft.choice === index ? null : index; if (draft.choice !== null) draft.text = ''; refreshInbox(); } },
         option, index === question.recommended ? el('span', { class: 'rec' }, 'recommended') : null))),
     area,
     shotPicker(story, draft.shots, 'Screenshot'));
