@@ -42,12 +42,77 @@ function writer(store, story) {
   };
 }
 
+test('the wait across every story ends on the owner\'s decision when the story has no worker to receive it', async t => {
+  const store = fixture(t)();
+  start(store, 'one');
+  const record = writer(store, 'one');
+  const ask = { question: 'scope', prompt: 'Which rows?', options: ['All', 'Selected'], recommended: 0 };
+  const assigned = record('assign-worker', { session: 'session-one' });
+  record('release-worker', { assignment: 'one-' + (assigned.revision - 1), detail: 'Stopped at a blocker.' });
+  const question = record('question', ask);
+  const answer = record('answer', { question: 'scope', answer: 0 });
+  assert.deepEqual((await waitForAny(store, { after: question.seq, seconds: 0 })).map(event => [event.type, event.seq]), [['answer', answer.seq]]);
+
+  record('assign-worker', { session: 'session-two' });
+  assert.deepEqual(await waitForAny(store, { after: question.seq, seconds: 0 }), []);
+});
+
+test('each time a worker releases before its question, the wait ends on that answer alone', async t => {
+  const store = fixture(t)();
+  start(store, 'one');
+  const record = writer(store, 'one');
+  let heard = store.pending().at(-1).seq;
+  for (const blocker of ['bash', 'java']) {
+    record('assign-worker', { session: 'session-' + blocker });
+    assert.deepEqual(await waitForAny(store, { after: heard, seconds: 0 }), [], 'an earlier answer is the replacement\'s to take');
+    record('release-worker', { assignment: store.snapshot()[0].worker.id, detail: 'Stopped at the ' + blocker + ' blocker.' });
+    const question = record('question', { question: blocker, prompt: 'Repair ' + blocker + '?', options: ['Yes', 'Hold'], recommended: 0 });
+    const answer = record('answer', { question: blocker, answer: 0 });
+    assert.deepEqual((await waitForAny(store, { after: question.seq, seconds: 0 })).map(event => [event.type, event.seq]), [['answer', answer.seq]]);
+    heard = question.seq;
+  }
+});
+
+test('the wait across every story ends on an approval and a cleanup request, which no worker is assigned to take', async t => {
+  const store = fixture(t)();
+  start(store, 'one');
+  const record = writer(store, 'one');
+  const plan = record('plan', { detail: 'Export all eligible rows.' });
+  const approval = record('approve');
+  const cleanup = record('request-cleanup');
+  assert.deepEqual((await waitForAny(store, { after: plan.seq, seconds: 0 })).map(event => [event.type, event.seq]),
+    [['approve', approval.seq], ['request-cleanup', cleanup.seq]]);
+});
+
+test('a separate wait-any process reports the answer a released worker left behind, and nothing once the story is staffed', t => {
+  const directory = mkdtempSync(join(tmpdir(), 'jarvis-wait-any-'));
+  const file = join(directory, 'stories.db');
+  const waitAny = after => JSON.parse(execFileSync(process.execPath,
+    [fileURLToPath(new URL('jarvis.mjs', import.meta.url)), 'wait-any', file, String(after), '0'], { encoding: 'utf8' }));
+  const store = openStore(file);
+  t.after(() => {
+    store.close();
+    rmSync(directory, { recursive: true, force: true });
+  });
+  start(store, 'one');
+  const record = writer(store, 'one');
+  record('assign-worker', { session: 'session-one' });
+  record('release-worker', { assignment: store.snapshot()[0].worker.id, detail: 'Stopped at a blocker.' });
+  const question = record('question', { question: 'scope', prompt: 'Which rows?', options: ['All', 'Selected'], recommended: 0 });
+  const answer = record('answer', { question: 'scope', answer: 0 });
+  assert.deepEqual(waitAny(question.seq).map(event => [event.story, event.type, event.seq]), [['one', 'answer', answer.seq]]);
+
+  record('assign-worker', { session: 'session-two' });
+  assert.deepEqual(waitAny(question.seq), []);
+});
+
 test('the wait across every story ends on a worker\'s news, not on old events or the owner\'s own decision', async t => {
   const open = fixture(t);
   const store = open();
   start(store, 'one');
   start(store, 'two');
   const ask = { question: 'scope', prompt: 'Which rows?', options: ['All', 'Selected'], recommended: 0 };
+  writer(store, 'one')('assign-worker', { session: 'session-one' });
   const question = writer(store, 'one')('question', ask);
   assert.deepEqual(await waitForAny(store, { seconds: 0 }), []);
   assert.deepEqual((await waitForAny(store, { after: question.seq - 1, seconds: 0 })).map(event => event.seq), [question.seq]);

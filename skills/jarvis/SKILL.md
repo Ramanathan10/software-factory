@@ -51,8 +51,8 @@ The factory is event-driven, never scheduled. The owner decides in the console; 
 - Where the Command Center can message the worker itself, it does, and Jarvis forwards nothing.
 - Where it wakes Jarvis instead, forward the decision to that story's worker at once. Jarvis does not act on it.
 - When the owner decides in the Jarvis chat instead, record the decision in the console, then pass it to that story's worker with the harness's "Message a worker" call in the runbook. Jarvis talks to one session per story and does not act on the decision.
-- A decision that could not reach its worker stays pending, and step 2 finds it.
-- For a command-line story, plan approval automatically starts a separate Bruce Banner session when the planner has released its assignment. Verify the test worker's assignment and running process before saying tests are underway. A launch failure is a visible story blocker with the approval still pending; handle the reported cause without repeatedly retrying it.
+- A decision that could not reach its worker stays pending, and step 2 finds it. In a harness driven from the command line, a decision on a story with no worker assigned also ends the background `wait-any`: staff the story again and forward the decision.
+- For a command-line story, plan approval automatically starts a separate Bruce Banner session when the planner has released its assignment. The approval ends the background `wait-any` like any decision with no worker assigned, but the daemon is already starting that session: do not start one yourself. Verify the test worker's assignment and running process before saying tests are underway. A launch failure is a visible story blocker with the approval still pending; handle the reported cause without repeatedly retrying it.
 
 To hear when a worker ends its turn, use the harness's "Report an idle worker" call in the runbook. In a harness driven from the command line that is one background `wait-any` command, restarted after each time it ends.
 

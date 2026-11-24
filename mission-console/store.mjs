@@ -403,6 +403,10 @@ export function openStore(path) {
         .map(withHistory));
     },
     pending: () => wakeRecords(pending.all()),
+    hasWorker(id) {
+      const row = find.get(id);
+      return Boolean(row && JSON.parse(row.state).worker);
+    },
     history(id) {
       identifier(id, 'story ID');
       const row = find.get(id);
