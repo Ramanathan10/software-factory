@@ -28,6 +28,8 @@ const workItem = [
   '- node --test passes, with a test for farewell.',
   'Out of scope: other languages, and names that are not strings.',
 ].join('\n');
+const decided = 'Decisions the owner already made, quoted verbatim:\n- "Review this story with haiku alone. One model class is enough here: do not hold the review or ask about a second model."';
+const brief = workItem + '\n\n' + decided;
 const lifecycle = ['scout', 'planning', 'approval', 'testing', 'red', 'building', 'gates', 'mutation', 'review', 'comparison-choice', 'publishing', 'ci'];
 
 const files = {
@@ -95,6 +97,7 @@ function kickoff(rig, repo, replacing) {
     'This story is an automated end-to-end check of the software factory. Everything in it is real except two stand-ins: the repository\'s origin is a local bare repository, and `gh` on your PATH records pull requests instead of sending them to GitHub. Use both exactly as you would the real ones.',
     'Skills: read ' + slashes(join(skills, 'ai-sdlc', 'SKILL.md')) + ' and follow it. Read each skill it names from ' + slashes(skills) + '/<name>/SKILL.md, even where your harness has its own copy installed.',
     'Work item ' + story + ', quoted verbatim:\n' + workItem,
+    decided,
     'Repository: ' + slug + ', with its primary checkout at ' + slashes(repo.primary) + '. Your worktree is ' + slashes(repo.worktree) + ' on branch ' + branch + ', cut from origin/main at ' + repo.base + '. Jarvis recorded it on the story; work only there.',
     'Preflight: AI_SDLC_HOME is set for you. Run phase 0\'s check as node "' + slashes(preflight) + '" check "' + slashes(repo.worktree) + '"',
     'Console: node "' + slashes(rig.console) + '" handover|snapshot|record|ack "' + slashes(rig.db) + '". The Mission Console reference at ' + slashes(join(checkout, 'mission-console', 'README.md')) + ' lists every event and its fields. Record the events that the phase table in ' + slashes(join(skills, 'jarvis', 'SKILL.md')) + ' lists for each phase. Use the story\'s current revision and a fresh key for every write.',
@@ -155,7 +158,7 @@ export async function run(rig) {
     expect(checked.ok, 'Preflight reported: ' + checked.problems.join(' '));
     expect(checked.repo.slug === slug, 'Preflight named the repository ' + checked.repo.slug + '.');
   });
-  rig.create(story, { scouted: false, title: heading, detail: workItem, branch, worktree: repo.worktree, repo: slug });
+  rig.create(story, { scouted: false, title: heading, detail: brief, branch, worktree: repo.worktree, repo: slug });
   await rig.step(rig.harness + ' starts the story worker in scout', async () => {
     const started = await rig.start(story, kickoff(rig, repo, false));
     expect(rig.snapshot(story).worker?.session === started.session, 'The story is not assigned to the session the start call printed.');

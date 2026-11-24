@@ -89,7 +89,7 @@ function testingKickoff(story, seqs, dbPath) {
     'Console database: ' + dbPath,
     'Read this story handover and current snapshot. Use current revisions, fresh event keys and your active assignment on worker reports. The daemon assigns you; do not duplicate it.',
     'Repository: ' + (story.repo ?? '(read the worktree remote)') + '\nWorktree: ' + story.worktree + '\nBranch: ' + story.branch,
-    'Record progress immediately. Preserve existing story work. If missing, record and commit the approved spec with its context pack as the first story commit at the saved spec location.',
+    'Record progress immediately. Preserve existing story work. If the spec is not committed yet, write it from the approved plan below, which holds the whole spec, and commit it with its context pack as the first story commit at the saved spec location. Do not look for it in the planner\'s own files; another session cannot read them.',
     'Honor any approved before capture before production changes; reuse verified existing evidence rather than recapturing unnecessarily.',
     'Write tests and necessary fixtures only. No production implementation, PR, deployment, database mutation or unrelated edits. Run the focused tests against unchanged production behavior and record valid red, not an environment/import failure.',
     'You are a separate session from the planner. Do not implement production code in this test-author session. After authoring and verifying red, release your assignment when no longer writing, THEN record the test handoff with evidence; the store requires release before a phase transition. End the turn for Jarvis to staff the next phase.',

@@ -65,7 +65,7 @@ When a worker ends its turn, read the console and check the evidence it recorded
 | `ai-sdlc` phase | Console phases | Events to record |
 |---|---|---|
 | 0. Preflight | none | Done in step 1, before `create`. |
-| 1. Plan | `scout`, `planning`, `approval` | `create`; `handoff` with the context pack; `question` and `answer`; `draft-plan` after each round; `plan`; the owner's `approve` or `plan-feedback`. Register the context pack and the spec as `document` artifacts. After approval, `assign-worktree` with the branch, path, and base commit. |
+| 1. Plan | `scout`, `planning`, `approval` | `create`; `handoff` with the context pack; `question` and `answer`; `draft-plan` after each round; `plan`; the owner's `approve` or `plan-feedback`. Register the context pack and the spec as `document` artifacts. The `plan` itself holds the whole spec, because later sessions cannot read another session's own files. After approval, `assign-worktree` with the branch, path, and base commit. |
 | 2. Test-first | `testing`, `red` | `assign-worker`; `handoff` with the red command and what it demonstrated |
 | 3. Implement | `building` | `activity` for progress and changed files; `handoff` with the green command |
 | 4. Required gates and mutation | `gates`, `mutation` | `handoff` with each gate's command and result; `return-to-build` on a failing gate; `return-to-testing` for surviving mutants |

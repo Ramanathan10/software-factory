@@ -75,6 +75,8 @@ Stop and wait for the owner to approve the plan. Do not implement, edit the targ
 
 After approval, create the story worktree and branch. The spec holds the context pack, the problem (or bug reproduction and root cause), acceptance criteria, test level, out-of-scope items, settled decisions, and the run decisions above. When the profile gives a spec location, commit the spec there as `<branch-name>.md`, as the branch's first commit. When the spec location is `null`, keep the spec in the story's working notes outside the repository and put it in the pull request description. Later phases read the spec as the source of truth. When a later phase returns to phase 1, update the spec before continuing.
 
+Under Jarvis, a later phase often runs in a new session that cannot read files another session kept outside the worktree. So the `plan` recorded for approval holds the whole spec, context pack included, and the session that commits the spec writes it from `story.plan` in the console handover.
+
 ### Plan critique
 
 Adapted from [GitHub Lever's cross-model-review skill](https://github.com/github/lever/blob/f859d0aa2be96981157ee0480655c84877e3cd98/skills/cross-model-review/SKILL.md), reviewed at commit `f859d0a` under the MIT License. Give two or three reviewers from different providers the same neutral packet of requirements, constraints, and draft plan. Do not include the author's preferred solution or another reviewer's findings. Ask for concrete defects only, with a failure mechanism, testable case, and confidence. Exclude style preferences.
