@@ -62,7 +62,7 @@ export function createCoordinator({ service, launch, adapters, kickoff, busy = (
     const news = pending.filter(event => event.story === story.id && !['create', 'approve'].includes(event.type) && !held(story, event) &&
       (!story.worker || !decisions.has(event.type) || answered(story, event)));
     const forJarvis = event => (event.type === 'turn-ended' && event.worker?.id === story.worker.id) || answered(story, event);
-    if (story.worker && (story.worker.turn || !news.some(forJarvis))) return [];
+    if (story.worker && (story.worker.turn || !unhandled(story, news).some(forJarvis))) return [];
     return news;
   }
 
