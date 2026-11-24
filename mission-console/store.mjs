@@ -402,6 +402,10 @@ export function openStore(path) {
         .map(withHistory));
     },
     pending: () => wakeRecords(pending.all()),
+    hasWorker(id) {
+      const row = find.get(id);
+      return Boolean(row && JSON.parse(row.state).worker);
+    },
     artifact(id, artifactId) {
       identifier(id, 'story ID');
       identifier(artifactId, 'evidence ID');

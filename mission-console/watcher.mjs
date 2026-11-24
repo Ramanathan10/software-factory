@@ -94,7 +94,7 @@ export async function waitForAny(store, { after, seconds, pollMs = 1000 }) {
   const from = after ?? Math.max(0, ...store.pending().map(event => event.seq));
   const deadline = performance.now() + seconds * 1000;
   while (true) {
-    const news = store.pending().filter(event => event.seq > from && !forWorker.has(event.type));
+    const news = store.pending().filter(event => event.seq > from && (!forWorker.has(event.type) || !store.hasWorker(event.story)));
     if (news.length || performance.now() >= deadline) return news;
     await delay(Math.min(pollMs, Math.max(0, deadline - performance.now())));
   }
