@@ -3,7 +3,7 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync, readdirSync, realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, delimiter, isAbsolute, join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const assets = fileURLToPath(new URL('../assets/', import.meta.url));
 const schema = name => JSON.parse(readFileSync(join(assets, name), 'utf8'));
@@ -147,16 +147,55 @@ export function componentSeverity(part) {
   return part.name === 'git' ? 'problem' : 'warning';
 }
 
-export function nextSteps({ problems, warnings }) {
+const questions = {
+  machine: [
+    [1, 'Name', 'ownerName'], [2, 'Cross-model sharing', 'crossModelReviewAuthorized'], [3, 'Shared resources', 'sharedResources'],
+    [4, 'Verification environment', 'defaultVerificationEnvironment'], [5, 'Implementation level', 'implementationLevel'],
+    [6, 'Review round limit', 'reviewRoundLimit'], [7, 'Before and after', 'beforeAndAfter'], [8, 'Architecture diagram', 'architectureDiagram'],
+    [9, 'Worker permissions', 'workerPermissions'], [10, 'Models', 'models'],
+  ],
+  repository: [
+    ...['test', 'lint', 'typecheck', 'build', 'secrets', 'dependencies', 'staticAnalysis'].map(gate => [1, 'Gates', 'gates.' + gate]),
+    [3, 'Mutation testing', 'gates.mutation'], [4, 'Required pipelines', 'requiredPipelines'], [5, 'Review bot', 'reviewBot'],
+    [6, 'Spec location', 'specDir'], [8, 'Branch naming', 'branchPattern'], [9, 'Worktree folder', 'worktreeRoot'],
+    [10, 'Team rules', 'teamRules'], [11, 'Work tracker', 'readiness'],
+  ],
+};
+
+const answered = (section, field) => {
+  const keys = field.split('.');
+  const parent = keys.slice(0, -1).reduce((value, key) => value?.[key], section);
+  return typeOf(parent) === 'object' && keys.at(-1) in parent;
+};
+
+export function unanswered(machine, repoProfile) {
+  const missing = (scope, section) => (section ? questions[scope] : []).filter(([, , field]) => !answered(section, field))
+    .map(([question, name, field]) => ({ scope, question, name, field }));
+  return [...missing('machine', machine), ...missing('repository', repoProfile)];
+}
+
+const unansweredWarning = ({ scope, question, name, field }) =>
+  `The profile has no answer for the ${name} question (${field}). Ask ai-sdlc-setup ${scope} question ${question}.`;
+
+export function modelWarning(models, tierOf, harness) {
+  if (!harness?.model) return null;
+  const inUse = new Set(Object.values(tierOf));
+  const missing = ['deep', 'standard'].filter(tier => inUse.has(tier) && !answered(models, `${harness.id}.${tier}`));
+  if (!missing.length) return null;
+  return `${harness.name} has no model choice recorded for ${missing.join(' and ')}. Ask the owner the ai-sdlc-setup Models question for ${harness.name}; "keep the default" is saved as null.`;
+}
+
+export function nextSteps({ problems, warnings, asks = [] }) {
   if (problems.length) return ['Follow the ai-sdlc-setup skill to fix each problem, then run the check again.'];
   return [
-    ...(warnings.length ? ['Install each missing component with the owner\'s approval, or record it in declinedComponents so it is not raised again.'] : []),
+    ...(asks.length ? ['Ask the owner each ai-sdlc-setup question a warning names, such as the Models question, one at a time, and save each answer to the profile.'] : []),
+    ...(warnings.length > asks.length ? ['Install each missing component with the owner\'s approval, or record it in declinedComponents so it is not raised again.'] : []),
     'Name a feature or bug to start a story with the ai-sdlc skill.',
     'Say "Be Jarvis" to run several stories in parallel and follow them in the Command Center.',
   ];
 }
 
-export function check(repo = '.', env = process.env, found = findCommandCenter()) {
+export function check(repo = '.', env = process.env, found = findCommandCenter(), harness = null) {
   const { root, slug, machinePath, machine, repoProfile, source, problems } = loadProfiles(repo, env);
   if (!git(root, 'remote', 'get-url', 'origin')) {
     problems.push(`${root} has no "origin" remote. Push the repository to its host and add the remote (git remote add origin <url>) before starting a story.`);
@@ -193,11 +232,17 @@ export function check(repo = '.', env = process.env, found = findCommandCenter()
     else if (severity === 'warning') warnings.push(message);
   }
 
+  const tiers = { ...phaseTiers, ...machine?.phaseTiers };
+  const open = unanswered(machine, repoProfile);
+  const asks = [...open.map(unansweredWarning), machine && modelWarning(machine.models, tiers, harness)].filter(Boolean);
+  warnings.push(...asks);
+
   return {
     ok: problems.length === 0,
     problems,
     warnings,
-    nextSteps: nextSteps({ problems, warnings }),
+    nextSteps: nextSteps({ problems, warnings, asks }),
+    unanswered: open,
     components: parts,
     owner: machine?.ownerName ?? null,
     crossModelReviewAuthorized: machine?.crossModelReviewAuthorized === true && repoProfile?.crossModelReviewAuthorized !== false,
@@ -209,7 +254,7 @@ export function check(repo = '.', env = process.env, found = findCommandCenter()
     architectureDiagram: machine?.architectureDiagram ?? 'ask',
     workerPermissions: machine?.workerPermissions ?? 'restricted',
     models: machine?.models ?? {},
-    phaseTiers: { ...phaseTiers, ...machine?.phaseTiers },
+    phaseTiers: tiers,
     commandCenter: machine && !centerProblem
       ? { path: centerPath, ...Object.fromEntries(Object.entries(commandCenterFiles).map(([name, file]) => [name, join(centerPath, file)])) }
       : null,
@@ -255,12 +300,24 @@ export function detect(repo = '.', env = process.env) {
 }
 
 if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url))) {
-  const [mode, repo = '.'] = process.argv.slice(2);
+  const [mode, repo = '.', harnessName] = process.argv.slice(2);
   if (mode !== 'detect' && mode !== 'check') {
-    console.error('Usage: node preflight.mjs detect|check [repoDir]');
+    console.error('Usage: node preflight.mjs detect [repoDir] | check [repoDir] [harness]');
     process.exit(2);
   }
-  const result = mode === 'detect' ? detect(repo) : check(repo);
+  let result = mode === 'detect' ? detect(repo) : check(repo);
+  if (mode === 'check' && harnessName) {
+    const center = result.commandCenter?.path ?? findCommandCenter();
+    try {
+      if (!center) throw new Error('the Command Center was not found, so its harnesses cannot be read.');
+      const { row } = await import(pathToFileURL(join(center, commandCenterFiles.harnesses)).href);
+      result = check(repo, process.env, findCommandCenter(), row(harnessName));
+    } catch (error) {
+      result.problems.push(`Cannot judge harness "${harnessName}": ${error.message}`);
+      result.ok = false;
+      result.nextSteps = nextSteps(result);
+    }
+  }
   console.log(JSON.stringify(result, null, 2));
   if (result.ok === false) process.exit(1);
 }
