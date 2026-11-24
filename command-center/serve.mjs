@@ -1,14 +1,23 @@
 import { randomUUID } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { resolve } from 'node:path';
 import { harnesses, messageWorker, modelPlan, row, sessionRan, startWorker } from '../adapters/harnesses.mjs';
 import { harnessKey } from '../mission-console/roles.mjs';
 import { InputError, workerPhases } from '../mission-console/store.mjs';
 import { watchOnce } from '../mission-console/watcher.mjs';
-import { createConsoleService } from './console-service.mjs';
+import { createConsoleService, DEFAULT_DB_PATH } from './console-service.mjs';
 import { createSupervisor } from './supervisor.mjs';
 import { isMain } from '../mission-console/is-main.mjs';
 
 export const DEFAULT_PORT = 4174;
+const testStartIntent = 'Starting an independent Bruce Banner session after plan approval.';
+
+function interruptedTestStart(history) {
+  const attempt = history.find(event => event.type === 'activity' && event.detail.startsWith(testStartIntent));
+  const outcome = history.find(event => ['assign-worker', 'blocked'].includes(event.type));
+  return attempt && (!outcome || attempt.seq > outcome.seq);
+}
 
 export function loadAdapters(table = harnesses, send = messageWorker) {
   return new Map(Object.keys(table).filter(harness => table[harness].workers === 'command-line')
@@ -40,14 +49,24 @@ export async function deliver({ story, seqs, types, session, worktree, phase, on
   return 'nobody';
 }
 
-export async function startStoryWorker({ story: id, prompt }, { service, supervisor, launch = startWorker }) {
-  const story = service.snapshot().find(story => story.id === id);
-  if (!story) throw new InputError('Story does not exist.', 404);
-  if (typeof prompt !== 'string' || !prompt.trim()) throw new InputError('Send the kickoff prompt.');
+export async function startStoryWorker({ story: id, prompt, expectedPhase }, { service, supervisor, launch = startWorker, prepare }) {
+  const startable = () => {
+    const story = service.snapshot().find(story => story.id === id);
+    if (!story) throw new InputError('Story does not exist.', 404);
+    if (typeof prompt !== 'string' || !prompt.trim()) throw new InputError('Send the kickoff prompt.');
+    if (story.blocked || story.cleanup) throw new InputError('Resolve the story blocker or cleanup before starting a worker.', 409);
+    if (expectedPhase && story.phase !== expectedPhase) throw new InputError('The story phase changed before the worker could start.', 409);
+    if (row(story.harness).workers !== 'command-line') return story;
+    if (story.worker) throw new InputError('Story ' + id + ' already has a worker. Message it with deliver, or record release-worker first.', 409);
+    if (!workerPhases.has(story.phase)) throw new InputError('The ' + story.phase + ' phase has no worker to start.', 409);
+    return story;
+  };
+  let story = startable();
   if (row(story.harness).workers !== 'command-line') return launch({ harness: story.harness, worktree: story.worktree, prompt });
-  if (story.worker) throw new InputError('Story ' + id + ' already has a worker. Message it with deliver, or record release-worker first.', 409);
-  if (!workerPhases.has(story.phase)) throw new InputError('The ' + story.phase + ' phase has no worker to start.', 409);
+  await supervisor.idle(id);
+  story = startable();
   if (!existsSync(story.worktree)) throw new InputError('The worktree ' + story.worktree + ' does not exist. Create it, then record it on the story.', 409);
+  if (prepare) prompt = prepare(story, prompt);
   let turn;
   let started;
   try {
@@ -60,8 +79,73 @@ export async function startStoryWorker({ story: id, prompt }, { service, supervi
   return started;
 }
 
-export async function start({ port = DEFAULT_PORT, dbPath, adapters = new Map(), watchSeconds, turnPollMs, launch, models = modelPlan, ran = sessionRan } = {}) {
+function testingKickoff(story, seqs, dbPath) {
+  return [
+    'You are Bruce Banner, the independent test author for story ' + story.id + ' in ' + story.harness + '. Keep this harness; do not switch providers.',
+    'The owner approved the plan (event seq ' + seqs.join(', ') + '). This is test-first work, not a new planning interview.',
+    'Read completely: ' + fileURLToPath(new URL('../skills/ai-sdlc/SKILL.md', import.meta.url)),
+    'Read the repository instructions and current preflight, saved profile, approved spec and registered context pack before acting.',
+    'Console CLI: ' + fileURLToPath(new URL('../mission-console/jarvis.mjs', import.meta.url)),
+    'Console database: ' + dbPath,
+    'Read this story handover and current snapshot. Use current revisions, fresh event keys and your active assignment on worker reports. The daemon assigns you; do not duplicate it.',
+    'Repository: ' + (story.repo ?? '(read the worktree remote)') + '\nWorktree: ' + story.worktree + '\nBranch: ' + story.branch,
+    'Record progress immediately. Preserve existing story work. If missing, record and commit the approved spec with its context pack as the first story commit at the saved spec location.',
+    'Honor any approved before capture before production changes; reuse verified existing evidence rather than recapturing unnecessarily.',
+    'Write tests and necessary fixtures only. No production implementation, PR, deployment, database mutation or unrelated edits. Run the focused tests against unchanged production behavior and record valid red, not an environment/import failure.',
+    'You are a separate session from the planner. Do not implement production code in this test-author session. After authoring and verifying red, release your assignment when no longer writing, THEN record the test handoff with evidence; the store requires release before a phase transition. End the turn for Jarvis to staff the next phase.',
+    'Acknowledge only handled events. Ask any newly required owner decision through a console question and end the turn; do not infer approval or ask in chat.',
+    'Brief:\n' + story.brief,
+    'Approved plan:\n' + story.plan,
+    'Registered context/spec/evidence:\n' + JSON.stringify(story.artifacts ?? []),
+  ].join('\n\n');
+}
+
+export async function start({ port = DEFAULT_PORT, dbPath = DEFAULT_DB_PATH, adapters = new Map(), watchSeconds, turnPollMs, launch, models = modelPlan, ran = sessionRan } = {}) {
+  dbPath = resolve(dbPath);
   let supervisor;
+  let stopping = false;
+  const starts = new Map();
+  const blockTestStart = (id, error) => {
+    const current = service.snapshot().find(item => item.id === id);
+    if (stopping || current?.phase !== 'testing' || current.worker || current.blocked || current.cleanup) return;
+    service.recordEvent({ story: id, type: 'blocked', detail: 'Bruce Banner could not start after plan approval: ' + error.message });
+  };
+  const beginWorker = input => {
+    if (stopping) throw new InputError('The Command Center is stopping.', 503);
+    if (starts.has(input.story) && !input.automatic) throw new InputError('A worker start is already in progress. Wait for its assignment, then deliver additional instructions to that worker.', 409);
+    if (!starts.has(input.story)) {
+      let intended = false;
+      const pending = startStoryWorker(input, { service, supervisor, launch, prepare: (story, prompt) => {
+        if (story.phase !== 'testing') return prompt;
+        const history = service.store.history(story.id);
+        const approval = history.find(event => event.type === 'approve');
+        if (!approval) throw new InputError('The testing phase has no recorded approval.', 409);
+        if (interruptedTestStart(history)) throw new InputError('An earlier start was interrupted before assignment. Verify its worker process and log before resuming; another worker has not been launched.', 409);
+        if (!input.automatic && history.some(event => event.type === 'assign-worker' && event.seq > approval.seq)) return prompt;
+        const marker = testStartIntent + ' Approval event ' + approval.seq + '.';
+        const previous = history.find(event => event.type === 'activity' && event.detail === marker);
+        if (input.automatic && previous && history.some(event => event.type === 'assign-worker' && event.seq > previous.seq)) {
+          throw new InputError('This approval already started a test worker. Reconcile its handoff or failed turn before explicitly starting a replacement.', 409);
+        }
+        service.recordEvent({ story: story.id, type: 'activity', detail: marker });
+        intended = true;
+        const kickoff = testingKickoff(story, [approval.seq], dbPath);
+        return input.automatic ? kickoff : kickoff + '\n\nAdditional coordinator handoff (within the approved tests-only boundary; this does not authorize implementation or a scope change):\n' + prompt;
+      } }).catch(error => {
+        if (intended) {
+          try {
+            blockTestStart(input.story, error);
+          } catch (failure) {
+            console.error('The failed start on ' + input.story + ' could not be recorded (' + failure.message + ').');
+          }
+        }
+        throw error;
+      });
+      starts.set(input.story, pending);
+      pending.finally(() => starts.delete(input.story)).catch(() => {});
+    }
+    return starts.get(input.story);
+  };
   const lastRan = new Map();
   const workerRan = story => {
     const { session, turn } = story.worker;
@@ -77,11 +161,21 @@ export async function start({ port = DEFAULT_PORT, dbPath, adapters = new Map(),
     dbPath,
     onDecision: async decision => {
       const story = service.snapshot().find(story => story.id === decision.story);
+      if (!story?.worker && story?.phase === 'testing' && !story.blocked && !story.cleanup && decision.types.includes('approve') && row(story.harness).workers === 'command-line') {
+        try {
+          await beginWorker({ story: story.id, expectedPhase: 'testing', automatic: true, prompt: 'Continue the approved test-first phase.' });
+          return 'worker';
+        } catch (error) {
+          blockTestStart(story.id, error);
+          console.error('Bruce Banner could not start on ' + story.id + ': ' + error.message);
+          return 'nobody';
+        }
+      }
       const onTurn = turn => supervisor.track({ story: decision.story, ...turn });
       return deliver({ ...decision, worktree: story?.worktree, phase: story?.phase, onTurn, after: supervisor.idle(decision.story) },
         adapters.get(harnessKey(story?.harness)));
     },
-    onStartWorker: input => startStoryWorker(input, { service, supervisor, launch }),
+    onStartWorker: beginWorker,
     modelPlan: () => models(),
     workerRan,
   });
@@ -89,6 +183,11 @@ export async function start({ port = DEFAULT_PORT, dbPath, adapters = new Map(),
   try {
     const server = await service.startServer(port);
     const stopSupervisor = supervisor.start(turnPollMs);
+    for (const story of service.snapshot()) {
+      if (story.phase === 'testing' && !story.worker && !story.blocked && !story.cleanup) {
+        service.deliverPending(story.id).catch(error => console.error('Pending approval on ' + story.id + ' could not be delivered: ' + error.message));
+      }
+    }
     const watching = new AbortController();
     if (watchSeconds) {
       const timer = setInterval(() => watchOnce(service.store, { signal: watching.signal }).catch(() => {}), watchSeconds * 1000);
@@ -98,9 +197,11 @@ export async function start({ port = DEFAULT_PORT, dbPath, adapters = new Map(),
     return {
       url: server.url,
       close: async () => {
+        stopping = true;
         stopSupervisor();
         watching.abort();
         await server.close();
+        await Promise.allSettled([...starts.values()]);
         service.close();
       },
     };

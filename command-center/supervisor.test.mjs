@@ -129,6 +129,58 @@ test('a story with no turn left by an earlier daemon is idle at once', async t =
   await supervisor.idle('no-such-story');
 });
 
+test('a replacement waits for the released planner process even though the story has no assignment', async t => {
+  const { service, supervisor, story } = fixture(t, { alive: () => false });
+  const planner = turn(7100);
+  supervisor.track(planner);
+  service.recordEvent({ story: 'tl-1', type: 'release-worker', assignment: story().worker.id, detail: 'Plan submitted; turn finishing.' });
+  let idle = false;
+  const waiting = supervisor.idle('tl-1', 5).then(() => { idle = true; });
+  await new Promise(resolve => setTimeout(resolve, 20));
+  assert.equal(idle, false);
+  await planner.end(0);
+  await waiting;
+  assert.equal(idle, true);
+});
+
+test('an owned released process observed exiting cannot be adopted again after its PID is recycled', async t => {
+  const { service, supervisor, story } = fixture(t, { alive: () => true, bootedAt: 0 });
+  const planner = turn(7102);
+  supervisor.track(planner);
+  service.recordEvent({ story: 'tl-1', type: 'release-worker', assignment: story().worker.id, detail: 'Planner ending.' });
+  await planner.end(0);
+  await supervisor.idle('tl-1');
+});
+
+test('cleanup may purge a released story before its owned process exit is observed', async t => {
+  const { service, supervisor, story, logged } = fixture(t);
+  const planner = turn(7103);
+  supervisor.track(planner);
+  service.recordEvent({ story: 'tl-1', type: 'request-cleanup' });
+  service.recordEvent({ story: 'tl-1', type: 'release-worker', assignment: story().worker.id, detail: 'Stopped; exit observation pending.' });
+  service.recordEvent({ story: 'tl-1', type: 'complete-cleanup', detail: 'Verified dedicated assets removed.' });
+  await planner.end(0);
+  assert.equal(story(), undefined);
+  assert.deepEqual(logged, []);
+});
+
+test('after restart a replacement still waits for a released planner recorded in history', async t => {
+  const living = new Set([7101]);
+  const { service, supervisor, story } = fixture(t, { alive: pid => living.has(pid), bootedAt: 0 });
+  service.recordEvent({ story: 'tl-1', type: 'turn-started', assignment: story().worker.id, pid: 7101, log: '/logs/planner.log' });
+  service.recordEvent({ story: 'tl-1', type: 'release-worker', assignment: story().worker.id, detail: 'Plan submitted; process finishing.' });
+  for (let index = 0; index < 45; index += 1) service.recordEvent({ story: 'tl-1', type: 'activity', detail: 'Progress ' + index });
+  let idle = false;
+  const waiting = supervisor.idle('tl-1', 5).then(() => { idle = true; });
+  await new Promise(resolve => setTimeout(resolve, 20));
+  assert.equal(idle, false);
+  living.clear();
+  await waiting;
+  assert.equal(idle, true);
+  living.add(7101);
+  await supervisor.idle('tl-1');
+});
+
 test('a turn recorded before the machine last started is gone, whatever process has its ID now', t => {
   const { service, supervisor, story } = fixture(t, { alive: () => true, bootedAt: Date.now() + 60000 });
   service.recordEvent({ story: 'tl-1', type: 'turn-started', assignment: story().worker.id, pid: 7002, log: '/logs/old.log' });
