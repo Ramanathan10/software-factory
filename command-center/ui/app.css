@@ -180,7 +180,7 @@ h1 span { color: var(--muted); letter-spacing: .02em; font-weight: 500; margin-l
 .card .aside a, .card .links { color: var(--accent); }
 .card .links { display: none; gap: 8px; }
 .card:hover .links, .card:focus-within .links { display: inline-flex; }
-.card:hover .aside time, .card:focus-within .aside time { display: none; }
+.card:hover .aside:has(.links > a) time, .card:focus-within .aside:has(.links > a) time { display: none; }
 @media (hover: none) { .card .links { display: inline-flex; } }
 .meter { height: 3px; background: var(--line); border-radius: 3px; overflow: hidden; }
 .meter span { display: block; height: 100%; background: var(--role); transform-origin: left; transition: transform .6s; }

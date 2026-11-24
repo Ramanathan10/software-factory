@@ -8,8 +8,8 @@ On a busy story card the owner glyph stays still, though the same glyph animates
 ## The card after this change
 1. Header: story ID on the left; the agent glyph on the right, in place of the phase pill. Its tooltip and screen-reader label give the agent and the phase, for example "Bruce Banner · Writing tests".
 2. The story title in bold.
-3. The last-event line, only when the story waits on you or is blocked (unchanged).
-4. Bottom row: status words on the left only when the story is not busy ("Waiting on you", "Blocked", "Idle · no tester session active", "Done"); on the right the PR link and the time since the last update ("8s ago"), with Plan and Run links replacing the time on hover (unchanged behaviour). A busy card shows no status words: the moving glyph says the agent is working.
+3. The last-event line, only when the story waits on you or is blocked. Its text is unchanged; it moves from below the old owner row to above the bottom row, so the bottom row is the last text line.
+4. Bottom row: status words on the left only when the story is not busy ("Waiting on you", "Blocked", "Idle · no tester session active", "Done"); on the right the PR link and the time since the last update ("8s ago"), with Plan and Run links replacing the time on hover (unchanged behaviour); a card with neither link keeps its time on hover, so a busy card's bottom row never empties. A busy card shows no status words: the moving glyph says the agent is working.
 5. The progress meter as the last line (unchanged).
 
 ## Acceptance criteria
