@@ -358,7 +358,7 @@ export function openStore(path) {
   const save = db.prepare('INSERT INTO stories VALUES (?, ?) ON CONFLICT(id) DO UPDATE SET state = excluded.state');
   const receipt = db.prepare('SELECT seq, request FROM events WHERE key = ?');
   const insert = db.prepare('INSERT INTO events (key, story, request, event, pending) VALUES (?, ?, ?, ?, ?)');
-  const recent = db.prepare('SELECT seq, event FROM events WHERE story = ? ORDER BY seq DESC LIMIT 40');
+  const recent = db.prepare('SELECT seq, event FROM events WHERE story = ? ORDER BY seq DESC LIMIT ?');
   const history = db.prepare('SELECT seq, event FROM events WHERE story = ? ORDER BY seq DESC');
   const firstEvent = db.prepare('SELECT event FROM events WHERE story = ? ORDER BY seq LIMIT 1');
   const all = db.prepare('SELECT state FROM stories ORDER BY id');
@@ -386,8 +386,8 @@ export function openStore(path) {
     }
   }
 
-  function withHistory(story) {
-    const events = recent.all(story.id).map(({ seq, event }) => ({ seq, ...JSON.parse(event) }));
+  function withHistory(story, limit) {
+    const events = recent.all(story.id, limit).map(({ seq, event }) => ({ seq, ...JSON.parse(event) }));
     const decision = pendingDecision.get(story.id, story.phase, story.id, story.phase);
     const first = story.createdAt ? null : firstEvent.get(story.id);
     const createdAt = story.createdAt ?? (first ? JSON.parse(first.event).at : story.updatedAt);
@@ -400,7 +400,7 @@ export function openStore(path) {
       const selected = harness === undefined ? undefined : harnessKey(string(harness, 'harness', 100));
       return read(() => all.all().map(({ state }) => JSON.parse(state))
         .filter(story => !story.deleted && (selected === undefined || harnessKey(story.harness) === selected))
-        .map(withHistory));
+        .map(story => withHistory(story, 40)));
     },
     pending: () => wakeRecords(pending.all()),
     hasWorker(id) {
@@ -440,7 +440,7 @@ export function openStore(path) {
         requireThat(row, 'Story does not exist.', 404);
         const story = JSON.parse(row.state);
         requireThat(!story.deleted, 'Story does not exist.', 404);
-        return { story: withHistory(story), pending: wakeRecords(storyPending.all(id)) };
+        return { story: withHistory(story, 10), pending: wakeRecords(storyPending.all(id)) };
       });
     },
     ack(seq) {

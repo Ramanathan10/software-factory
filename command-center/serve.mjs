@@ -83,11 +83,11 @@ function testingKickoff(story, seqs, dbPath) {
   return [
     'You are Bruce Banner, the independent test author for story ' + story.id + ' in ' + story.harness + '. Keep this harness; do not switch providers.',
     'The owner approved the plan (event seq ' + seqs.join(', ') + '). This is test-first work, not a new planning interview.',
-    'Read completely: ' + fileURLToPath(new URL('../skills/ai-sdlc/SKILL.md', import.meta.url)),
-    'Read the repository instructions and current preflight, saved profile, approved spec and registered context pack before acting.',
+    'Read only the "2. Test-first handoff" and "Gates" sections of ' + fileURLToPath(new URL('../skills/ai-sdlc/SKILL.md', import.meta.url)),
+    'Read the repository instructions, current preflight, saved profile and the approved spec at its saved location before acting; the spec contains the context pack.',
     'Console CLI: ' + fileURLToPath(new URL('../mission-console/jarvis.mjs', import.meta.url)),
     'Console database: ' + dbPath,
-    'Read this story handover and current snapshot. Use current revisions, fresh event keys and your active assignment on worker reports. The daemon assigns you; do not duplicate it.',
+    "Read this story's handover. Use current revisions, fresh event keys and your active assignment on worker reports. The daemon assigns you; do not duplicate it.",
     'Repository: ' + (story.repo ?? '(read the worktree remote)') + '\nWorktree: ' + story.worktree + '\nBranch: ' + story.branch,
     'Record progress immediately. Preserve existing story work. If missing, record and commit the approved spec with its context pack as the first story commit at the saved spec location.',
     'Honor any approved before capture before production changes; reuse verified existing evidence rather than recapturing unnecessarily.',
@@ -95,8 +95,7 @@ function testingKickoff(story, seqs, dbPath) {
     'You are a separate session from the planner. Do not implement production code in this test-author session. After authoring and verifying red, release your assignment when no longer writing, THEN record the test handoff with evidence; the store requires release before a phase transition. End the turn for Jarvis to staff the next phase.',
     'Acknowledge only handled events. Ask any newly required owner decision through a console question and end the turn; do not infer approval or ask in chat.',
     'Brief:\n' + story.brief,
-    'Approved plan:\n' + story.plan,
-    'Registered context/spec/evidence:\n' + JSON.stringify(story.artifacts ?? []),
+    'Approved plan (use only if the spec file is missing):\n' + story.plan,
   ].join('\n\n');
 }
 
