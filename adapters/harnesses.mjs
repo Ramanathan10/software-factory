@@ -53,7 +53,7 @@ function codexModels({ env = process.env } = {}) {
   const configured = () => {
     let text = '';
     try { text = readFileSync(config, 'utf8'); } catch {}
-    return /^\s*model\s*=\s*"([^"]+)"/m.exec(text.split(/^\s*\[/m)[0])?.[1];
+    return /^\s*model\s*=\s*(["'])([^"'\n]+)\1/m.exec(text.split(/^\s*\[/m)[0])?.[2];
   };
   return {
     names: strings(Array.isArray(models) ? models.filter(model => model?.visibility !== 'hide').map(model => model?.slug) : []),

@@ -37,7 +37,7 @@ The script cannot see what the agent host can do. Check your own tool list for t
 - Computer use or a desktop screenshot tool, for a desktop app or a window the browser cannot reach.
 - Screen recording, for a before-and-after recording of a transition. `ffmpeg` provides this when the host has no recorder of its own, so count it as present when detection found `ffmpeg`.
 
-When a valid profile exists, ask only the questions it has no answer for: the check's `unanswered` list names each one with its number below, machine or repository. Ask every one of them, one at a time, and skip only the questions the profile already answers, unless the owner asked to redo setup.
+When a profile exists, also run `node <this skill>/scripts/preflight.mjs check <repository>` and ask only the questions it has no answer for: its `unanswered` list names each one with its number below, machine or repository. Ask every one of them, one at a time, and skip only the questions the profile already answers, unless the owner asked to redo setup.
 
 ## 2. Interview
 
