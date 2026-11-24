@@ -66,6 +66,15 @@ test('Claude Code starts with a chosen session id and resumes it, allowing only 
     ['-p', '--resume', 'S-1', '--permission-mode', 'bypassPermissions']);
 });
 
+test('a restricted Claude Code worker may read the factory folder, which holds the skills, the phase table and the console reference', () => {
+  const settings = { ...restricted, readable: [process.platform === 'win32' ? 'C:\\Tools\\factory\\' : '/tools/factory/'] };
+  const rule = process.platform === 'win32' ? 'Read(//c/Tools/factory/**)' : 'Read(//tools/factory/**)';
+  assert.deepEqual(commandFor('Claude Code', 'message', { session: 'S-1' }, settings).args,
+    ['-p', '--resume', 'S-1', '--permission-mode', 'acceptEdits', '--allowedTools', 'Bash(git *)', 'Bash(npm *)', rule]);
+  assert.ok(!commandFor('Claude Code', 'message', { session: 'S-1' }, { ...settings, permissions: 'unrestricted' }).args.includes(rule));
+  assert.ok(!commandFor('Codex', 'start', {}, settings).args.includes(rule));
+});
+
 test('Codex reads the prompt from stdin and resumes by session id', () => {
   assert.deepEqual(commandFor('Codex', 'start', {}, restricted).args,
     ['exec', '--json', '-c', 'sandbox_mode="workspace-write"', '-c', 'sandbox_workspace_write.network_access=true', '-']);
@@ -91,10 +100,10 @@ test('the start call answers for every harness, starting a program only for a co
 });
 
 test('worker settings come from the profile, and are restricted without one', t => {
-  assert.deepEqual(workerSettings(home(t)), { permissions: 'restricted', tools: ['git', 'gh', 'node'], models: {}, phaseTiers });
+  assert.deepEqual(workerSettings(home(t)), { permissions: 'restricted', tools: ['git', 'gh', 'node'], readable: [], models: {}, phaseTiers });
   const models = { codex: { deep: 'big' } };
-  const env = home(t, { workerPermissions: 'unrestricted', models, phaseTiers: { ci: 'fast' }, repos: { 'a/b': { gates: { test: 'npm test', lint: 'npx eslint .', build: null } }, 'c/d': { gates: { test: 'npm run t' } } } });
-  assert.deepEqual(workerSettings(env), { permissions: 'unrestricted', tools: ['git', 'gh', 'node', 'npm', 'npx'], models, phaseTiers: { ...phaseTiers, ci: 'fast' } });
+  const env = home(t, { workerPermissions: 'unrestricted', commandCenterPath: '/opt/factory', models, phaseTiers: { ci: 'fast' }, repos: { 'a/b': { gates: { test: 'npm test', lint: 'npx eslint .', build: null } }, 'c/d': { gates: { test: 'npm run t' } } } });
+  assert.deepEqual(workerSettings(env), { permissions: 'unrestricted', tools: ['git', 'gh', 'node', 'npm', 'npx'], readable: ['/opt/factory'], models, phaseTiers: { ...phaseTiers, ci: 'fast' } });
 });
 
 test('every phase with a tier is a real phase, and every tier is a known one', () => {

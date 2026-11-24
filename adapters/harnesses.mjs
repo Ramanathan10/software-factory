@@ -2,7 +2,7 @@ import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { closeSync, existsSync, fstatSync, mkdirSync, openSync, readFileSync, readSync, readdirSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { delimiter, join } from 'node:path';
+import { delimiter, join, resolve } from 'node:path';
 import { phaseTiers } from '../mission-console/roles.mjs';
 import { isMain } from '../mission-console/is-main.mjs';
 
@@ -31,7 +31,7 @@ export const harnesses = {
     ran: line => (line.type === 'assistant' && !line.isSidechain && /^[^<]/.test(line.message?.model ?? '')
       ? { model: line.message.model, effort: line.effort } : undefined),
     permissions: {
-      restricted: tools => ['--permission-mode', 'acceptEdits', '--allowedTools', ...tools.map(tool => `Bash(${tool} *)`)],
+      restricted: (tools, readable) => ['--permission-mode', 'acceptEdits', '--allowedTools', ...tools.map(tool => `Bash(${tool} *)`), ...readable.map(readRule)],
       unrestricted: () => ['--permission-mode', 'bypassPermissions'],
     },
   },
@@ -57,6 +57,8 @@ export const harnesses = {
   },
 };
 
+export const readRule = folder => 'Read(//' + resolve(folder).replaceAll('\\', '/').replace(/^\/+/, '').replace(/^([A-Za-z]):/, (_, drive) => drive.toLowerCase()) + '/**)';
+
 const home = (env = process.env) => env.AI_SDLC_HOME || join(homedir(), '.ai-sdlc');
 
 export function workerSettings(env = process.env) {
@@ -67,6 +69,7 @@ export function workerSettings(env = process.env) {
   return {
     permissions: profile.workerPermissions === 'unrestricted' ? 'unrestricted' : 'restricted',
     tools: [...new Set(['git', 'gh', 'node', ...gateTools])],
+    readable: typeof profile.commandCenterPath === 'string' && profile.commandCenterPath.trim() ? [profile.commandCenterPath] : [],
     models: profile.models ?? {},
     phaseTiers: { ...phaseTiers, ...profile.phaseTiers },
   };
@@ -125,9 +128,9 @@ export function sessionRan(harness, session, env = process.env) {
 export function commandFor(harness, kind, { session, phase }, settings = workerSettings()) {
   const entry = row(harness);
   if (entry.workers !== 'command-line') throw new Error(`${entry.name} workers are not started from the command line.`);
-  const { permissions, tools } = settings;
+  const { permissions, tools, readable = [] } = settings;
   const model = modelFor(harness, phase, settings);
-  const args = [...entry[kind]({ session }), ...entry.permissions[permissions](tools), ...(model ? entry.model(model) : [])];
+  const args = [...entry[kind]({ session }), ...entry.permissions[permissions](tools, readable), ...(model ? entry.model(model) : [])];
   return { command: entry.command, args: entry.promptArgument ? [...args, entry.promptArgument] : args };
 }
 

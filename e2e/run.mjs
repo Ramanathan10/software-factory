@@ -5,6 +5,7 @@ import { openRig } from './rig.mjs';
 
 const folder = new URL('./scenarios/', import.meta.url);
 const names = readdirSync(folder).filter(file => file.endsWith('.mjs')).map(file => file.slice(0, -4)).sort();
+const cheapest = { 'claude-code': 'haiku', codex: 'gpt-6-luna' };
 const load = name => import(new URL(name + '.mjs', folder));
 const usage = 'Usage: node e2e/run.mjs <harness> [scenario ...] [--model <name>] [--unrestricted] [--keep] [--turn-seconds <n>]\n' +
   '       node e2e/run.mjs --list\n' +
@@ -47,7 +48,7 @@ async function main() {
     const before = tally.failed;
     let rig;
     try {
-      rig = await openRig({ entry, model: values.model, unrestricted: values.unrestricted, turnMs: Number(values['turn-seconds']) * 1000, tally });
+      rig = await openRig({ entry, model: values.model ?? cheapest[entry.id], unrestricted: values.unrestricted, turnMs: Number(values['turn-seconds']) * 1000, tally });
       await scenario.run(rig);
       await rig.step('every turn started and ended in order, none failed or was lost, and no worker is left running', () => rig.checkTurns());
     } catch (error) {

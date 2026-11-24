@@ -17,7 +17,7 @@
     "beforeAndAfter": { "description": "Whether a story captures a before-and-after comparison: always, never, or ask during planning. Default: ask.", "enum": ["always", "never", "ask"] },
     "architectureDiagram": { "description": "Whether the pull request description gets an architecture diagram: always, never, or ask during planning. Default: ask.", "enum": ["always", "never", "ask"] },
     "commandCenterPath": { "description": "The folder that holds the Command Center files Jarvis runs: the software-factory checkout, or the extension folder for a harness that needs copies. Setup saves what detect reports; the check refuses a folder that no longer holds them.", "type": "string", "minLength": 1 },
-    "workerPermissions": { "description": "What a story worker started from the command line may do without asking. restricted: edit files in its worktree and run git, gh, node, and the programs the gates use. unrestricted: run anything. Default: restricted.", "enum": ["restricted", "unrestricted"] },
+    "workerPermissions": { "description": "What a story worker started from the command line may do without asking. restricted: edit files in its worktree, read the commandCenterPath folder, and run git, gh, node, and the programs the gates use. unrestricted: run anything. Default: restricted.", "enum": ["restricted", "unrestricted"] },
     "models": {
       "description": "The model each agent harness runs for each tier of work, keyed by the harness's install id (claude-code, codex). A value is a model name as that harness's own model option takes it. A harness or tier left out uses the harness's default model.",
       "type": "object",
