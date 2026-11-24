@@ -628,7 +628,9 @@ function modelOf(story) {
   if (ran) return ran.model + (ran.effort ? ' · ' + ran.effort + ' effort' : '');
   const tier = meta.phaseTiers?.[story.phase];
   if (!tier) return null;
-  const named = meta.models?.[story.harness?.trim().toLowerCase()]?.[tier];
+  const chosen = meta.models?.[story.harness?.trim().toLowerCase()] ?? {};
+  if (chosen[tier] === null) return story.harness + ' default · chosen in the profile';
+  const named = chosen[tier];
   return named ? named + ' · set in the profile, not run yet' : 'Not run yet · ' + story.harness + ' will choose';
 }
 
