@@ -38,7 +38,6 @@ export function createCoordinator({ service, launch, adapters, kickoff, busy = (
   bootedAt = Date.now() - uptime() * 1000, log = console.error }) {
   const waking = new Set();
   const owned = new Set();
-  const adopted = new Set();
   const wakes = new Set();
   let stopped = false;
   const find = id => service.snapshot().find(story => story.id === id);
@@ -60,11 +59,10 @@ export function createCoordinator({ service, launch, adapters, kickoff, busy = (
     if (story.phase === 'closed' || !commandLine(story)) return [];
     if (waking.has(story.id) || story.jarvis?.turn || story.jarvis?.waking || busy(story.id)) return [];
     if (story.questions.some(question => question.id.startsWith(notice) && !question.answer)) return [];
-    const mine = pending.filter(event => event.story === story.id);
-    if (story.phase === 'testing' && !story.worker && mine.some(event => event.type === 'approve')) return [];
-    const news = mine.filter(event => !['create', 'approve'].includes(event.type) && !held(story, event) &&
+    const news = pending.filter(event => event.story === story.id && !['create', 'approve'].includes(event.type) && !held(story, event) &&
       (!story.worker || !decisions.has(event.type) || answered(story, event)));
-    if (story.worker && (story.worker.turn || !news.some(event => event.type === 'turn-ended' && event.worker?.id === story.worker.id))) return [];
+    const forJarvis = event => (event.type === 'turn-ended' && event.worker?.id === story.worker.id) || answered(story, event);
+    if (story.worker && (story.worker.turn || !news.some(forJarvis))) return [];
     return news;
   }
 
@@ -97,11 +95,29 @@ export function createCoordinator({ service, launch, adapters, kickoff, busy = (
     if (outcome !== 'ended') ask(id, ended.seq, what);
   }
 
-  function finish(id, pid, code, wasAdopted = false) {
+  function worked(id) {
+    let recorded = false;
+    for (const event of service.store.history(id)) {
+      if (event.type === 'jarvis-turn-started') return recorded;
+      if (event.by === 'jarvis') recorded = true;
+    }
+    return false;
+  }
+
+  function finish(id, pid, code, gone = false) {
+    if (stopped) return;
+    try {
+      settle(id, pid, code, gone);
+    } catch (error) {
+      log('The end of a Jarvis turn on ' + id + ' could not be checked (' + error.message + ').');
+    }
+  }
+
+  function settle(id, pid, code, gone) {
     const story = find(id);
     const turn = story?.jarvis?.turn;
     if (!turn || turn.pid !== pid) return;
-    const outcome = code === 0 || wasAdopted ? 'ended' : code === null ? 'lost' : 'failed';
+    const outcome = code === 0 || (gone && worked(id)) ? 'ended' : code === null ? 'lost' : 'failed';
     const tail = lines(turn.log);
     const last = tail.at(-1);
     const detail = outcome === 'ended' ? 'Jarvis ended its turn.'
@@ -109,7 +125,7 @@ export function createCoordinator({ service, launch, adapters, kickoff, busy = (
     const fallback = outcome === 'failed'
       ? 'Jarvis stopped with an error' + (last ? ': ' + last : '') + '. See ' + turn.log
       : 'Jarvis stopped, and how its turn ended is not known. See ' + turn.log;
-    end(id, outcome, code, detail + (last && outcome !== 'ended' ? '\n' + last : '') + '\nSee ' + turn.log + '.', told(story, tail.join('\n'), fallback));
+    end(id, outcome, code, detail + (last && outcome !== 'ended' ? '\n' + last : '') + '\nSee ' + turn.log + '.', told(story, last ?? '', fallback));
   }
 
   function follow(id, pid, ended) {
@@ -139,7 +155,7 @@ export function createCoordinator({ service, launch, adapters, kickoff, busy = (
         follow(id, pid, ended);
       };
       try {
-        if (story.jarvis?.session) {
+        if (story.jarvis?.session && story.jarvis.lastTurn?.outcome === 'ended') {
           const adapter = adapters.get(harnessKey(story.harness));
           if (!adapter) throw new Error(story.harness + ' has no adapter to resume the Jarvis session.');
           await adapter.messageWorker({ session: story.jarvis.session, worktree: story.worktree, prompt, phase: 'coordinator' }, { onTurn });
@@ -169,14 +185,16 @@ export function createCoordinator({ service, launch, adapters, kickoff, busy = (
     const turn = jarvis?.turn;
     const key = story.id + ':' + turn?.pid;
     if (!turn || owned.has(key)) return;
-    if (alive(turn.pid) && Date.parse(turn.at) >= bootedAt) {
-      adopted.add(key);
-      return;
-    }
-    finish(story.id, turn.pid, null, adopted.delete(key));
+    if (alive(turn.pid) && Date.parse(turn.at) >= bootedAt) return;
+    finish(story.id, turn.pid, null, true);
   }
 
   const coordinator = {
+    notices(id, seqs) {
+      const story = find(id);
+      const history = service.store.history(id);
+      return seqs.filter(seq => answered(story, history.find(event => event.seq === seq) ?? {}));
+    },
     waiting(story) {
       let news;
       try {

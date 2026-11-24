@@ -188,9 +188,11 @@ export async function start({ port = DEFAULT_PORT, dbPath = DEFAULT_DB_PATH, ada
           return 'nobody';
         }
       }
-      if (story && !decision.session && row(story.harness).workers === 'command-line') {
-        coordinator.nudge();
-        return 'coordinator';
+      if (story && row(story.harness).workers === 'command-line') {
+        const notices = coordinator.notices(story.id, decision.seqs);
+        if (notices.length || !decision.session) coordinator.nudge();
+        if (!decision.session || notices.length === decision.seqs.length) return 'coordinator';
+        decision = { ...decision, seqs: decision.seqs.filter(seq => !notices.includes(seq)) };
       }
       const onTurn = turn => supervisor.track({ story: decision.story, ...turn });
       return deliver({ ...decision, worktree: story?.worktree, phase: story?.phase, onTurn, after: supervisor.idle(decision.story) },
@@ -208,13 +210,13 @@ export async function start({ port = DEFAULT_PORT, dbPath = DEFAULT_DB_PATH, ada
   try {
     const server = await service.startServer(port);
     const stopSupervisor = supervisor.start(turnPollMs);
+    coordinator = createCoordinator({ service, launch, adapters, quietMs, busy: id => starts.has(id),
+      kickoff: (story, news) => jarvisKickoff(story, news, dbPath, Number(new URL(server.url).port)) });
     for (const story of service.snapshot()) {
       if (story.phase === 'testing' && !story.worker && !story.blocked && !story.cleanup) {
         service.deliverPending(story.id).catch(error => console.error('Pending approval on ' + story.id + ' could not be delivered: ' + error.message));
       }
     }
-    coordinator = createCoordinator({ service, launch, adapters, quietMs, busy: id => starts.has(id),
-      kickoff: (story, news) => jarvisKickoff(story, news, dbPath, Number(new URL(server.url).port)) });
     const stopCoordinator = coordinator.start(turnPollMs);
     const watching = new AbortController();
     if (watchSeconds) {
