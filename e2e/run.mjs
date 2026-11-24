@@ -48,7 +48,7 @@ async function main() {
     const before = tally.failed;
     let rig;
     try {
-      rig = await openRig({ entry, model: values.model ?? cheapest[entry.id], unrestricted: values.unrestricted, turnMs: Number(values['turn-seconds']) * 1000, tally });
+      rig = await openRig({ entry, model: values.model ?? cheapest[entry.id], unrestricted: values.unrestricted, turnMs: Number(values['turn-seconds']) * 1000, tally, profile: scenario.profile?.(entry) });
       await scenario.run(rig);
       await rig.step('every turn started and ended in order, none failed or was lost, and no worker is left running', () => rig.checkTurns());
     } catch (error) {

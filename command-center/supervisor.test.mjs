@@ -284,3 +284,17 @@ test('a harness whose workers are not started from the command line gets the tab
     await center.close();
   }
 });
+
+test('what Jarvis records during a worker\'s turn does not count as the worker reporting', async t => {
+  const seen = [];
+  const { service, supervisor, story } = fixture(t, { verdict: input => { seen.push(input); return turnVerdict(input); } });
+  const running = turn();
+  supervisor.track(running);
+  service.recordEvent({ story: 'tl-1', type: 'jarvis-woken', handled: story().events[0].seq });
+  service.recordEvent({ story: 'tl-1', type: 'jarvis-turn-started', session: 'jarvis-1', pid: 4300, log: '/logs/jarvis-1.log' });
+  service.recordEvent({ story: 'tl-1', type: 'question', question: 'scope', prompt: 'Which rows?', options: ['All', 'Selected'], recommended: 0, by: 'jarvis' });
+  service.recordEvent({ story: 'tl-1', type: 'jarvis-turn-ended', outcome: 'ended', code: 0, detail: 'Jarvis ended its turn.' });
+  await running.end(0);
+  assert.deepEqual(seen, [{ code: 0, recorded: 0, adopted: false }]);
+  assert.ok(service.pending().some(event => event.type === 'turn-ended'), 'a silent worker turn still wakes Jarvis');
+});
