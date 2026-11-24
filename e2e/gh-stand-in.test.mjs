@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
@@ -59,6 +59,25 @@ test('the body can come from a file, and an edit replaces it', t => {
   assert.equal(JSON.parse(gh(state, ['pr', 'view', '--json', 'body'], { cwd: work })).body, 'From a file.');
   gh(state, ['pr', 'edit', '1', '--body', 'Edited.'], { cwd: work });
   assert.equal(JSON.parse(gh(state, ['pr', 'view', '1', '--json', 'body'], { cwd: work })).body, 'Edited.');
+});
+
+test('a body file given by absolute path is read from that path', t => {
+  const { state, work } = repository(t);
+  git(work, 'push', '-q', 'origin', 'story/one');
+  const outside = join(state, '..', 'pr-body.md');
+  writeFileSync(outside, 'From an absolute path.');
+  gh(state, ['pr', 'create', '--title', 'Add it', '--body-file', outside], { cwd: work });
+  assert.equal(JSON.parse(gh(state, ['pr', 'view', '--json', 'body'], { cwd: work })).body, 'From an absolute path.');
+});
+
+test('only a local origin is accepted, so the stand-in never contacts a remote host', t => {
+  const { state, work } = repository(t);
+  git(work, 'push', '-q', 'origin', 'story/one');
+  for (const remote of ['https://github.com/acme/tools.git', 'git@github.com:acme/tools.git', '//host/share/acme/tools.git']) {
+    git(work, 'remote', 'set-url', 'origin', remote);
+    assert.throws(() => gh(state, ['pr', 'create', '--title', 'Add it', '--body', 'Body'], { cwd: work }), /works only with a local origin/, remote);
+  }
+  assert.ok(!existsSync(join(state, 'pulls.json')), 'No pull request was recorded.');
 });
 
 test('anything it cannot stand in for is refused rather than sent to GitHub', t => {

@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { isAbsolute, join } from 'node:path';
+import { isAbsolute, join, resolve } from 'node:path';
 import { isMain } from '../mission-console/is-main.mjs';
 
 const booleans = new Set(['draft', 'fill', 'fill-first', 'fill-verbose', 'web', 'dry-run', 'no-maintainer-edit']);
@@ -31,6 +31,8 @@ function git(cwd, ...args) {
 
 class Refusal extends Error {}
 
+export const localPath = path => typeof path === 'string' && isAbsolute(path) && !/^[\\/]{2}/.test(path);
+
 export function gh(state, args, { cwd = process.cwd(), stdin = () => readFileSync(0, 'utf8') } = {}) {
   mkdirSync(state, { recursive: true });
   appendFileSync(join(state, 'calls.log'), JSON.stringify({ at: new Date().toISOString(), cwd, args }) + '\n');
@@ -42,7 +44,7 @@ export function gh(state, args, { cwd = process.cwd(), stdin = () => readFileSyn
   const origin = git(cwd, 'remote', 'get-url', 'origin');
   const slug = /[/:]([^/:]+\/[^/]+?)(?:\.git)?$/.exec(origin)?.[1];
   const branch = () => git(cwd, 'rev-parse', '--abbrev-ref', 'HEAD');
-  const headOf = pull => git(cwd, 'ls-remote', pull.origin, 'refs/heads/' + pull.head).split(/\s/)[0] || pull.headAtOpen;
+  const headOf = pull => (localPath(pull.origin) && git(cwd, 'ls-remote', pull.origin, 'refs/heads/' + pull.head).split(/\s/)[0]) || pull.headAtOpen;
   const find = target => {
     const wanted = String(target ?? branch()).replace(/\/$/, '').replace(/^#/, '');
     const pull = pulls.find(item => item.url === wanted || String(item.number) === wanted || item.head === wanted);
@@ -58,9 +60,10 @@ export function gh(state, args, { cwd = process.cwd(), stdin = () => readFileSyn
     const all = fields(pull);
     return Object.fromEntries(String(values.json).split(',').map(name => [name, all[name] ?? null]));
   };
-  const bodyFrom = () => (values['body-file'] === undefined ? values.body : values['body-file'] === '-' ? stdin() : readFileSync(join(cwd, values['body-file']), 'utf8'));
+  const bodyFrom = () => (values['body-file'] === undefined ? values.body : values['body-file'] === '-' ? stdin() : readFileSync(resolve(cwd, values['body-file']), 'utf8'));
   const needsRepository = () => {
     if (!slug) throw new Refusal('none of the git remotes configured for this repository point to a known GitHub host.');
+    if (!localPath(origin)) throw new Refusal('The end-to-end gh stand-in works only with a local origin, and this repository\'s origin is ' + origin + '. It never contacts a remote host.');
   };
 
   if (args[0] === '--version') return 'gh version 0.0.0-e2e (stand-in for an end-to-end check)';

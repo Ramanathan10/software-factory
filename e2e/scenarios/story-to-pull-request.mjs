@@ -3,6 +3,7 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
+import { workerPhases } from '../../mission-console/store.mjs';
 import { expect } from '../rig.mjs';
 
 export const title = 'A feature story runs from scout to an open pull request, with the lifecycle skills driving every phase and the owner deciding only in the console';
@@ -90,7 +91,7 @@ function writeProfile(rig, repo) {
 function kickoff(rig, repo, replacing) {
   return [
     'You are the dedicated worker for console story ' + story + '. Jarvis directs; you do every phase of the work through the ai-sdlc skill and the persona skills it names.',
-    replacing ? 'An earlier worker on this story stopped. Read the handover, continue from the phase the story is in, and act on its pending events.' : '',
+    replacing ? 'An earlier worker on this story finished its phase or stopped. Read the handover, continue from the phase the story is in, and act on its pending events.' : '',
     'This story is an automated end-to-end check of the software factory. Everything in it is real except two stand-ins: the repository\'s origin is a local bare repository, and `gh` on your PATH records pull requests instead of sending them to GitHub. Use both exactly as you would the real ones.',
     'Skills: read ' + slashes(join(skills, 'ai-sdlc', 'SKILL.md')) + ' and follow it. Read each skill it names from ' + slashes(skills) + '/<name>/SKILL.md, even where your harness has its own copy installed.',
     'Work item ' + story + ', quoted verbatim:\n' + workItem,
@@ -112,25 +113,33 @@ async function drive(rig, repo, done, limit, tally) {
     await rig.until('the worker to end its turn', () => idle(rig), limit);
     const current = rig.snapshot(story);
     if (done(current)) return;
-    expect(tally.decisions < 20, 'The owner has made ' + tally.decisions + ' decisions and the story is still in ' + current.phase + '.');
+    expect(tally.rounds < 25, 'The owner and Jarvis have acted ' + tally.rounds + ' times and the story is still in ' + current.phase + '.');
+    tally.rounds += 1;
+    expect(!current.blocked, 'The story is blocked in ' + current.phase + ': ' + current.blocked);
     const open = current.questions.filter(item => !item.answer);
     const action = open.find(item => item.id.startsWith('action-'));
     expect(!action, 'The worker needs the owner to act outside the console: ' + action?.prompt);
-    let last;
+    let last = rig.history(story).at(-1);
+    let waiting = 'a worker turn to take the decision';
     if (open.length) {
       for (const item of open) last = await rig.decide({ story, type: 'answer', question: item.id, answer: item.recommended });
+      if (!rig.snapshot(story).worker) {
+        await rig.start(story, kickoff(rig, repo, true));
+        await rig.deliver(story);
+      }
     } else if (current.phase === 'approval') {
       last = await rig.decide({ story, type: 'approve' });
-    } else {
-      throw new Error('The worker ended its turn in ' + current.phase + ' with nothing for the owner to decide' +
-        (current.blocked ? ' (blocked: ' + current.blocked + ')' : '') + '. Its log ends:\n' + rig.lastLog());
-    }
-    tally.decisions += open.length || 1;
-    if (!rig.snapshot(story).worker) {
+      waiting = 'the Command Center to start the test author after approval';
+    } else if (!current.worker && workerPhases.has(current.phase)) {
       await rig.start(story, kickoff(rig, repo, true));
-      await rig.deliver(story);
+      waiting = 'the worker Jarvis started for ' + current.phase;
+    } else {
+      throw new Error('The worker ended its turn in ' + current.phase + ' with nothing for the owner or Jarvis to do. Its log ends:\n' + rig.lastLog());
     }
-    await rig.until('a worker turn to take the decision', () => turnsStarted(rig).some(item => item.seq > last.seq), 120000);
+    await rig.until(waiting, () => {
+      expect(!rig.snapshot(story).blocked, 'The story was blocked while waiting for ' + waiting + ': ' + rig.snapshot(story).blocked);
+      return turnsStarted(rig).some(item => item.seq > last.seq);
+    }, 120000);
   }
 }
 
@@ -138,7 +147,7 @@ export async function run(rig) {
   const repo = await makeRepository(rig);
   writeProfile(rig, repo);
   const limit = Math.max(rig.turnMs, 90 * 60 * 1000);
-  const tally = { decisions: 0 };
+  const tally = { rounds: 0 };
 
   await rig.step('the target repository passes the AI SDLC preflight check', async () => {
     const { stdout } = await exec(process.execPath, [preflight, 'check', repo.primary], { env: rig.env }).catch(error => error);

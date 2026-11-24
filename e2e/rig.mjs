@@ -101,7 +101,7 @@ export async function openRig({ entry, model, unrestricted, turnMs, tally }) {
     lastLog,
     brief: story => brief(story, db),
     snapshot: story => store.snapshot().find(item => item.id === story),
-    history: story => (rig.snapshot(story)?.events ?? []).toReversed(),
+    history: story => (rig.snapshot(story) ? store.history(story).toReversed() : []),
     event: (story, type, match = () => true) => rig.history(story).find(item => item.type === type && match(item)),
     turnsEnded: (story, count) => rig.history(story).filter(item => item.type === 'turn-ended').length >= count && !rig.snapshot(story).worker?.turn,
     acknowledged: (story, seq) => !store.pendingFor(story).some(item => item.seq === seq),
