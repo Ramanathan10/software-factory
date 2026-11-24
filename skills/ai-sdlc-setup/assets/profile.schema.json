@@ -32,7 +32,7 @@
       }
     },
     "phaseTiers": {
-      "description": "Changes the tier of a console phase from the factory's own. A phase left out keeps it: deep for scout, planning, review, and retro; standard for the rest.",
+      "description": "Changes the tier of a console phase, or of the background Jarvis (coordinator), from the factory's own. One left out keeps it: deep for scout, planning, review, and retro; standard for the rest and for the coordinator.",
       "type": "object",
       "additionalProperties": false,
       "properties": {
@@ -48,7 +48,8 @@
         "diagram": { "enum": ["deep", "standard", "fast"] },
         "publishing": { "enum": ["deep", "standard", "fast"] },
         "ci": { "enum": ["deep", "standard", "fast"] },
-        "retro": { "enum": ["deep", "standard", "fast"] }
+        "retro": { "enum": ["deep", "standard", "fast"] },
+        "coordinator": { "enum": ["deep", "standard", "fast"] }
       }
     },
     "adapters": {

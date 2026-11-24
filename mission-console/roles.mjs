@@ -84,4 +84,5 @@ export const phaseTiers = {
   publishing: 'standard',
   ci: 'standard',
   retro: 'deep',
+  coordinator: 'standard',
 };
