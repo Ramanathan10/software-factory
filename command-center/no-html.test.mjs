@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 
-const files = ['command-center/ui/app.js', 'command-center/ui/markdown.js', 'command-center/ui/attention.js', 'command-center/ui/badge.js', 'mission-console/console.mjs'];
+const files = ['command-center/ui/app.js', 'command-center/ui/markdown.js', 'command-center/ui/attention.js', 'command-center/ui/badge.js', 'command-center/ui/jarvis.js', 'mission-console/console.mjs'];
 
 test('the dashboards never parse text as HTML', () => {
   const found = [];

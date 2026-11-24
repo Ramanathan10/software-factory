@@ -105,9 +105,12 @@ function observePr(story, input, now) {
     Boolean(previous && ['failed', 'passed', 'closed'].includes(previous.status)) };
 }
 
+const jarvisTurnEvents = ['jarvis-woken', 'jarvis-turn-started', 'jarvis-turn-ended'];
+const jarvisNotice = input => input.type === 'question' && typeof input.question === 'string' && input.question.startsWith('action-jarvis-');
+
 function apply(story, input, now) {
   requireThat(story.harness || ['select-harness', 'release-worker'].includes(input.type), 'Select the story harness first.', 409);
-  requireThat(!story.blocked || ['resume', 'answer', 'replan', 'assign-worktree', 'release-worker', 'select-harness', 'merged', 'turn-started', 'turn-ended'].includes(input.type),
+  requireThat(!story.blocked || jarvisNotice(input) || ['resume', 'answer', 'replan', 'assign-worktree', 'release-worker', 'select-harness', 'merged', 'turn-started', 'turn-ended', ...jarvisTurnEvents].includes(input.type),
     'Resume or replan the blocked story first.', 409);
   switch (input.type) {
     case 'select-harness':
@@ -226,6 +229,26 @@ function apply(story, input, now) {
       requireThat(input.code === undefined || input.code === null || Number.isSafeInteger(input.code), 'Invalid exit code.');
       delete story.worker.turn;
       story.worker.lastTurn = { outcome: input.outcome, at: now, ...(Number.isSafeInteger(input.code) ? { code: input.code } : {}) };
+      return string(input.detail, 'turn outcome');
+    case 'jarvis-woken':
+      requireThat(!story.jarvis?.turn && !story.jarvis?.waking, 'Jarvis is already checking this story.', 409);
+      requireThat(Number.isSafeInteger(input.handled) && input.handled >= 0, 'Supply the highest news seq handed to Jarvis.');
+      story.jarvis = { ...story.jarvis, handled: input.handled, waking: now };
+      return 'Jarvis woken for news up to event ' + input.handled + '.';
+    case 'jarvis-turn-started':
+      requireThat(!story.jarvis?.turn, 'A Jarvis turn is already running.', 409);
+      requireThat(Number.isSafeInteger(input.pid) && input.pid > 0, 'Supply the process ID of the turn.');
+      story.jarvis = { ...story.jarvis, session: string(input.session, 'session reference', 400),
+        turn: { pid: input.pid, log: string(input.log, 'turn log', 1000), at: now } };
+      delete story.jarvis.waking;
+      return 'Jarvis turn started.';
+    case 'jarvis-turn-ended':
+      requireThat(story.jarvis?.turn || story.jarvis?.waking, 'No Jarvis turn is running.', 409);
+      requireThat(['ended', 'failed', 'lost'].includes(input.outcome), 'Supply how the turn ended.');
+      requireThat(input.code === undefined || input.code === null || Number.isSafeInteger(input.code), 'Invalid exit code.');
+      delete story.jarvis.turn;
+      delete story.jarvis.waking;
+      story.jarvis.lastTurn = { outcome: input.outcome, at: now, ...(Number.isSafeInteger(input.code) ? { code: input.code } : {}) };
       return string(input.detail, 'turn outcome');
     case 'handoff':
       if (story.phase === 'diagram') {
@@ -469,7 +492,8 @@ export function openStore(path) {
         let story;
         let detail;
         let worker;
-        let wake = wakes.has(input.type);
+        requireThat(input.by === undefined || input.by === 'jarvis', 'by can only be jarvis.');
+        let wake = wakes.has(input.type) && !input.by;
         if (input.type === 'create') {
           requireThat(!current, 'Story already exists.', 409);
           const title = string(input.title, 'title', 200);
@@ -490,7 +514,8 @@ export function openStore(path) {
             'Use the harness selected for this story.', 409);
           const from = story.phase;
           worker = story.worker;
-          requireThat(!story.cleanup || ['release-worker', 'cleanup-blocked', 'complete-cleanup', 'turn-started', 'turn-ended'].includes(input.type),
+          requireThat(!story.cleanup || jarvisNotice(input) || ['release-worker', 'cleanup-blocked', 'complete-cleanup', 'turn-started', 'turn-ended', ...jarvisTurnEvents].includes(input.type) ||
+            (input.type === 'answer' && String(input.question).startsWith('action-jarvis-')),
             'Story is awaiting cleanup.', 409);
           if (input.type === 'request-cleanup') {
             story.cleanup = { requestedAt: now };
@@ -522,7 +547,7 @@ export function openStore(path) {
               delete story.worker;
             } else {
               detail = apply(story, input, now);
-              if (input.type === 'turn-ended') wake = input.wake === true;
+              if (input.type === 'turn-ended') wake = input.wake === true && !input.by;
             }
           }
           if (from !== story.phase) {
@@ -537,6 +562,7 @@ export function openStore(path) {
         else if (story.worker || worker) event.worker = story.worker ?? worker;
         if (input.type === 'pr-ready' && story.readyHead) event.head = story.readyHead;
         if (input.command) event.command = input.command;
+        if (input.by) event.by = input.by;
         if (input.file) event.file = input.file;
         save.run(id, JSON.stringify(story));
         const result = insert.run(key, id, request, JSON.stringify(event), Number(wake));

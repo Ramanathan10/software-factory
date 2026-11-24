@@ -142,7 +142,10 @@ async function main() {
       return;
     }
     let result;
-    if (command === 'record') result = store.record(JSON.parse(readFileSync(0, 'utf8').replace(/^\uFEFF/, '')));
+    if (command === 'record') {
+      const event = JSON.parse(readFileSync(0, 'utf8').replace(/^\uFEFF/, ''));
+      result = store.record(process.env.AI_SDLC_ACTOR === 'jarvis' ? { ...event, by: 'jarvis' } : event);
+    }
     if (command === 'snapshot') result = store.snapshot(argument);
     if (command === 'pending') result = store.pending();
     if (command === 'handover') result = store.handover(argument);

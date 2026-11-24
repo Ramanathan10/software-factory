@@ -9,7 +9,7 @@ const WORKER = 'W';
 const PR = 'https://github.com/acme/widgets/pull/1';
 const HEADS = ['a'.repeat(40), 'b'.repeat(40)];
 
-export const guarded = ['phase', 'harness', 'branch', 'questions', 'worker', 'blocked', 'cleanup', 'pr', 'prObservation', 'readyHead', 'diagram', 'retro', 'deleted'];
+export const guarded = ['phase', 'harness', 'branch', 'questions', 'worker', 'blocked', 'cleanup', 'pr', 'prObservation', 'readyHead', 'diagram', 'retro', 'jarvis', 'deleted'];
 export const unguarded = ['id', 'title', 'brief', 'worktree', 'revision', 'createdAt', 'updatedAt', 'activity', 'draftPlan', 'plan',
   'feedback', 'reviewRounds', 'comparisonRequested', 'files', 'artifacts', 'pipeline', 'repo'];
 
@@ -25,6 +25,8 @@ export function abstract(story) {
   if (story.readyHead) state.readyHead = story.readyHead;
   if (story.diagram) state.diagram = { returnPhase: story.diagram.returnPhase };
   if (story.retro) state.retro = { returnPhase: story.retro.returnPhase };
+  if (story.jarvis?.turn) state.jarvis = { turn: { pid: story.jarvis.turn.pid } };
+  else if (story.jarvis?.waking) state.jarvis = { waking: true };
   return state;
 }
 
@@ -35,6 +37,7 @@ function concrete(state) {
   if (state.worker) story.worker = { ...state.worker, role: 'scout', session: 'session-1', ...(state.worker.turn ? { turn: { ...state.worker.turn, log: 'turn.log' } } : {}) };
   if (state.blocked) story.blocked = 'Blocked.';
   if (state.cleanup) story.cleanup = {};
+  if (state.jarvis) story.jarvis = { session: 'jarvis-1', handled: 1, ...(state.jarvis.turn ? { turn: { ...state.jarvis.turn, log: 'jarvis.log' } } : { waking: 'now' }) };
   if (state.prObservation) story.prObservation = { ...state.prObservation, failedCount: state.prObservation.status === 'failed' ? 1 : 0,
     failures: state.prObservation.status === 'failed' ? ['test'] : [] };
   return story;
@@ -47,6 +50,8 @@ export function eventInputs(evidence) {
     ['select-harness', { harness: 'Codex' }],
     ['question', { question: 'q1', prompt: 'Which rows?', options: ['All', 'Selected'], recommended: 0 }],
     ['answer', { question: 'q1', answer: 0 }],
+    ['question', { question: 'action-jarvis-1', prompt: 'Action for you: Jarvis could not run.', options: ['Done', 'Hold'], recommended: 0 }],
+    ['answer', { question: 'action-jarvis-1', answer: 1 }],
     ['draft-plan', { ...worker, detail: 'Draft.' }],
     ['plan', { detail: 'Plan.' }],
     ['approve', {}],
@@ -58,6 +63,9 @@ export function eventInputs(evidence) {
     ['release-worker', { ...worker, ...detail }],
     ['turn-started', { ...worker, pid: 4242, log: 'turn.log' }],
     ['turn-ended', { ...worker, outcome: 'ended', ...detail }],
+    ['jarvis-woken', { handled: 1 }],
+    ['jarvis-turn-started', { session: 'jarvis-1', pid: 4343, log: 'jarvis.log' }],
+    ['jarvis-turn-ended', { outcome: 'failed', code: 1, ...detail }],
     ['handoff', { ...detail, command: 'node --test' }],
     ['diagram-start', detail],
     ['retro-start', detail],

@@ -1,5 +1,6 @@
 import { newlyWaiting, titleFor } from './attention.js';
 import { badgeSvg } from './badge.js';
+import { jarvisStatus } from './jarvis.js';
 import { renderMarkdown } from './markdown.js';
 
 const $ = id => document.getElementById(id);
@@ -263,7 +264,7 @@ function storyCard(story) {
     el('h3', {}, story.title),
     last && (waiting || story.blocked) && el('p', { class: 'last' }, last.detail),
     el('div', { class: 'owner' },
-      !busy && el('span', { class: 'who' }, story.blocked ? 'Blocked' : waiting ? 'Waiting on you' : story.phase === 'closed' ? 'Done' : 'Idle · ' + idleReason(story)),
+      !busy && el('span', { class: 'who' }, story.blocked ? 'Blocked' : waiting ? 'Waiting on you' : story.phase === 'closed' ? 'Done' : jarvisStatus(story) ?? 'Idle · ' + idleReason(story)),
       el('span', { class: 'aside' },
         el('span', { class: 'links' },
           hasDesign(story) && el('a', { href: '#', onclick: event => { event.preventDefault(); event.stopPropagation(); openDesign(story.id); } }, 'Plan'),
@@ -341,7 +342,7 @@ function renderTrack(items) {
             }, elapsed(story.createdAt, story.phase === 'closed' ? story.updatedAt : undefined))),
           el('h3', {}, story.title),
           el('div', { class: 'owner' },
-            el('span', {}, (meta.phases[story.phase]?.[1] ?? columns[at]?.name ?? story.phase) + (story.blocked ? ' · blocked' : waiting ? ' · waiting on you' : idle ? ' · idle, ' + idleReason(story) : '')),
+            el('span', {}, (meta.phases[story.phase]?.[1] ?? columns[at]?.name ?? story.phase) + (story.blocked ? ' · blocked' : waiting ? ' · waiting on you' : idle ? ' · ' + (jarvisStatus(story) ?? 'idle, ' + idleReason(story)) : '')),
             busy && el('span', { class: 'dots' }, el('i'), el('i'), el('i')))),
         el('div', { class: 'track-run' },
           el('ol', { class: 'steps' }, columns.map((column, index) =>
@@ -644,6 +645,8 @@ function openDetail(id) {
       row('Owner', alias(ownerOf(story)) + ' · ' + (meta.roles[ownerOf(story)]?.job ?? '')),
       row('Worker session', story.worker?.session),
       row('Worker turn', turnOf(story.worker)),
+      row('Jarvis', jarvisStatus(story)),
+      row('Jarvis turn', turnOf(story.jarvis)),
       row('Repository', story.repo), row('Harness', story.harness), row('Model', modelOf(story)), row('Branch', story.branch), row('Worktree', story.worktree),
       row('Pipeline run', story.pipeline && el('a', { href: story.pipeline, target: '_blank', rel: 'noopener' }, story.pipeline)),
       row('Pull request', story.pr && el('a', { href: story.pr, target: '_blank', rel: 'noopener' }, story.pr)),
