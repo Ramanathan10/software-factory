@@ -33,7 +33,7 @@ It spends the harness's model usage, so `node --test` and CI do not run it. Run 
 
 After every scenario the runner also checks that each turn started and ended in order, that none failed or was lost, and that no worker process is left running.
 
-The throwaway profile names one model for every tier and does not authorize cross-model sharing, while review needs two reviewer seats of distinct model classes. A reviewer may work around that with a subagent on another model, or it may stop and ask the owner for a profile edit the scenario cannot make, which fails `story-to-pull-request` at its fourth step. A branch run has stopped there while a run of the unchanged default branch passed, so a stop at review alone does not show that a change broke the lifecycle: compare with a run on the unchanged default branch.
+The throwaway profile names one model for every tier and does not authorize cross-model sharing, while review needs two reviewer seats of distinct model classes. A reviewer may work around that with a subagent on another model, or it may stop and ask the owner for a profile edit the scenario cannot make, which fails `story-to-pull-request` at its fourth step. Whether the reviewer stops depends on how the model chooses to staff the review, not only on the code, so one stop at review does not by itself show that a change broke the lifecycle. Read the reviewer's question for its reason, and run the branch again before blaming the change.
 
 
 ## A bug becomes a scenario
