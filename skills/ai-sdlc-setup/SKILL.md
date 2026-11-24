@@ -80,10 +80,10 @@ The profile holds names, commands, and settings. Never write a password, token, 
 ## 4. Verify
 
 ```
-node <this skill>/scripts/preflight.mjs check <repository>
+node <this skill>/scripts/preflight.mjs check <repository> <harness>
 ```
 
-It validates the profile against the schema, confirms each gate's tool exists, and reports each component as found or missing. `problems` stop a story; `warnings` do not. A repository with no `origin` remote, a missing tool that a required gate names, or missing `git`, is a problem. A missing pull request CLI or optional component is a warning. Fix every reported problem with the owner. A warning that names a question, such as "The profile has no answer for ..." or "<harness> has no model choice recorded", is answered by asking that one question and saving the answer, not by the missing-components question; return to the missing-components question for each other warning.
+`<harness>` is the harness this session runs in, so the check also reports a missing model choice for it. It validates the profile against the schema, confirms each gate's tool exists, and reports each component as found or missing. `problems` stop a story; `warnings` do not. A repository with no `origin` remote, a missing tool that a required gate names, or missing `git`, is a problem. A missing pull request CLI or optional component is a warning. Fix every reported problem with the owner. A warning that names a question, such as "The profile has no answer for ..." or "<harness> has no model choice recorded", is answered by asking that one question and saving the answer, not by the missing-components question; return to the missing-components question for each other warning.
 
 The check confirms each gate's tool exists, not that the gate passes. After a repository interview, run each required gate once on the unchanged remote default branch, in a temporary worktree or a clean checkout of it, so the result does not depend on local edits. Skip `mutation`, which needs changed files. A gate that fails there would fail every story before the story changes anything. Show the owner the output and ask whether to correct the command, fix the repository first, or save the gate as `null`; do not save a gate that fails on the default branch without their decision.
 
