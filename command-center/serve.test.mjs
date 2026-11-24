@@ -6,7 +6,7 @@ import { join, relative } from 'node:path';
 import { test } from 'node:test';
 import { waitForAny } from '../mission-console/watcher.mjs';
 import { createConsoleService } from './console-service.mjs';
-import { deliver, loadAdapters, requestDelivery, requestStart, start } from './serve.mjs';
+import { deliver, loadAdapters, requestDelivery, requestStart, start, testAuthorSections } from './serve.mjs';
 
 const decision = { story: 'TL-1', seqs: [4, 5], types: ['answer'], session: 'worker-1' };
 
@@ -213,6 +213,23 @@ test('the ai-sdlc skill keeps the two sections the test author is sent to, as wh
   const lines = readFileSync(new URL('../skills/ai-sdlc/SKILL.md', import.meta.url), 'utf8').split(/\r?\n/);
   assert.ok(lines.includes('## 2. Test-first handoff'), 'heading "## 2. Test-first handoff" is missing');
   assert.ok(lines.includes('## Gates'), 'heading "## Gates" is missing');
+});
+
+test('every section the test author is sent to is a whole heading in the ai-sdlc skill and is quoted in its kickoff', async t => {
+  const lines = readFileSync(new URL('../skills/ai-sdlc/SKILL.md', import.meta.url), 'utf8').split(/\r?\n/);
+  const { start: open, story } = approvedFixture(t);
+  const launched = [];
+  const center = await open({ launch: async input => { launched.push(input); return { session: 'test-author' }; } });
+  await fetch(center.url + 'api/decision', {
+    method: 'POST', headers: { 'Content-Type': 'application/json', Origin: center.url.slice(0, -1) },
+    body: JSON.stringify({ story: 'tl-1', type: 'approve', revision: story().revision }),
+  });
+  await requestDelivery('tl-1', Number(new URL(center.url).port));
+  assert.ok(testAuthorSections.length > 0);
+  for (const name of testAuthorSections) {
+    assert.ok(lines.includes('## ' + name), 'heading "## ' + name + '" is missing');
+    assert.ok(launched[0].prompt.includes('"' + name + '"'), 'the kickoff does not name "' + name + '"');
+  }
 });
 
 test('an approval already pending when the daemon restarts starts its missing test worker', async t => {

@@ -11,6 +11,7 @@ import { createSupervisor } from './supervisor.mjs';
 import { isMain } from '../mission-console/is-main.mjs';
 
 export const DEFAULT_PORT = 4174;
+export const testAuthorSections = ['2. Test-first handoff', 'Gates'];
 const testStartIntent = 'Starting an independent Bruce Banner session after plan approval.';
 
 function interruptedTestStart(history) {
@@ -83,7 +84,7 @@ function testingKickoff(story, seqs, dbPath) {
   return [
     'You are Bruce Banner, the independent test author for story ' + story.id + ' in ' + story.harness + '. Keep this harness; do not switch providers.',
     'The owner approved the plan (event seq ' + seqs.join(', ') + '). This is test-first work, not a new planning interview.',
-    'Read only the "2. Test-first handoff" and "Gates" sections of ' + fileURLToPath(new URL('../skills/ai-sdlc/SKILL.md', import.meta.url)),
+    'Read only the "' + testAuthorSections.join('" and "') + '" sections of ' + fileURLToPath(new URL('../skills/ai-sdlc/SKILL.md', import.meta.url)),
     'Read the repository instructions, current preflight, saved profile and the approved spec at its saved location before acting; the spec contains the context pack.',
     'Console CLI: ' + fileURLToPath(new URL('../mission-console/jarvis.mjs', import.meta.url)),
     'Console database: ' + dbPath,
