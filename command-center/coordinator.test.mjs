@@ -511,3 +511,21 @@ test('a failed Jarvis turn is described by its last log line, not by an earlier 
   assert.match(notice.prompt, /Jarvis stopped with an error: TypeError: boom/);
   assert.doesNotMatch(notice.prompt, /usage limit/i);
 });
+
+test('a Done a finished Jarvis turn was given does not open the gate for later ordinary worker news', async t => {
+  const rig = coordinated(t);
+  const { center, notice } = await failedWorkerStory(rig);
+  assert.equal((await answerThroughDashboard(center, rig, notice.id, 0)).status, 200);
+  await until('the Jarvis turn for Done', () => rig.jarvisTurns() === 2);
+  const [turn] = [...rig.jarvis.slice(1), ...rig.jarvisMessages()];
+  turn.end(0);
+  await until('the Jarvis turn to end', () => !rig.story().jarvis?.turn);
+  await pause(2000);
+  for (const entry of rig.messages.filter(entry => entry.input.phase !== 'coordinator')) entry.end(0);
+  await until('no worker turn running', () => rig.story().worker && !rig.story().worker.turn);
+  await settle();
+  const before = rig.jarvisTurns();
+  rig.recorder.recordEvent({ story: 'tl-1', type: 'question', question: 'scope', prompt: 'Which rows?', options: ['All', 'Selected'], recommended: 0 });
+  await settle();
+  assert.equal(rig.jarvisTurns(), before, 'no further Jarvis turn');
+});
