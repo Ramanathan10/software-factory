@@ -14,12 +14,12 @@ node e2e/run.mjs --list
 |---|---|
 | `<harness>` | A harness whose workers start from the command line, spelled as in `adapters/harnesses.mjs`. |
 | `[scenario ...]` | Run only these scenarios. Without any, every scenario runs. |
-| `--model <name>` | The model every worker turn runs on. Without it, the harness's own default. |
+| `--model <name>` | The model every worker turn and subagent runs on. Without it, the harness's cheapest model: `haiku` for Claude Code, `gpt-6-luna` for Codex. These checks test the Command Center's mechanics, not the quality of the code a worker writes. |
 | `--unrestricted` | Start workers with the harness's unrestricted permissions. The default is restricted. |
 | `--keep` | Keep the throwaway folder and worker logs after a pass. A failure always keeps them. |
 | `--turn-seconds <n>` | How long to wait for one worker turn. The default is 300. |
 
-Each scenario gets its own throwaway folder under the system's temporary directory: a git worktree, a profile, a story database and the worker logs. Nothing touches the owner's AI SDLC home. The run prints one line per step and exits 0 only when every scenario passed.
+Each scenario gets its own throwaway folder under the system's temporary directory: a git worktree, a profile, a story database and the worker logs. Nothing touches the owner's AI SDLC home. Workers find a `gh` stand-in first on their PATH: it records pull requests in the folder's `github` subfolder and refuses anything else, and the real GitHub CLI is left signed out, so no scenario reaches the owner's GitHub account. The run prints one line per step and exits 0 only when every scenario passed.
 
 It spends the harness's model usage, so `node --test` and CI do not run it. Run it for each harness you can before merging a change to how workers start, how decisions reach them, or how Jarvis is woken.
 
@@ -29,10 +29,10 @@ It spends the harness's model usage, so `node --test` and CI do not run it. Run 
 |---|---|
 | `worker-keeps-assignment` | A worker asks a question and ends its turn. The owner's answer resumes that same session, which acts on it and acknowledges it. |
 | `worker-releases-before-asking` | A worker releases, then asks. The owner's answer has nobody to take it, the background `wait-any` ends with it, and a replacement worker receives it after its kickoff turn. |
+| `story-to-pull-request` | A feature story in a throwaway repository, whose origin is a local bare repository, runs from scout to an open pull request with the real lifecycle skills from this checkout. The scenario plays the owner, answering each question with its recommended option and approving the plan, and plays Jarvis, starting a worker whenever a decision has none to take it. It then checks that every phase ran in order, that the pull request carries the spec and gate results, and that the pushed branch starts with the spec and passes its tests. On `haiku` it takes about ten minutes. Each turn may run for 90 minutes, or `--turn-seconds` if longer. |
 
 After every scenario the runner also checks that each turn started and ended in order, that none failed or was lost, and that no worker process is left running.
 
-Next to add: one story from scout to an open pull request, with the lifecycle skills driving every phase.
 
 ## A bug becomes a scenario
 

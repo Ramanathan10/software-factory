@@ -2,7 +2,7 @@ import { execFile, spawn } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { delimiter, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { isAlive } from '../command-center/supervisor.mjs';
@@ -12,6 +12,7 @@ const run = promisify(execFile);
 const slashes = path => path.replaceAll('\\', '/');
 const consoleCli = fileURLToPath(new URL('../mission-console/jarvis.mjs', import.meta.url));
 const launcher = fileURLToPath(new URL('../command-center/serve.mjs', import.meta.url));
+const standIn = fileURLToPath(new URL('./gh-stand-in.mjs', import.meta.url));
 
 export function expect(condition, message) {
   if (!condition) throw new Error(message);
@@ -52,12 +53,22 @@ export async function openRig({ entry, model, unrestricted, turnMs, tally }) {
   const home = join(worktree, '.factory-e2e');
   const db = join(home, 'console.sqlite');
   mkdirSync(home, { recursive: true });
+  const bin = join(root, 'bin');
+  const github = join(root, 'github');
+  mkdirSync(bin);
+  mkdirSync(join(root, 'gh-config'));
+  writeFileSync(join(bin, 'gh'), '#!/bin/sh\nexec "' + slashes(process.execPath) + '" "' + slashes(standIn) + '" "' + slashes(github) + '" "$@"\n', { mode: 0o755 });
+  writeFileSync(join(bin, 'gh.cmd'), '@"' + process.execPath + '" "' + standIn + '" "' + github + '" %*\r\n');
   await run('git', ['init', '-q'], { cwd: worktree });
-  writeFileSync(join(home, 'profile.json'), JSON.stringify({
+  const profile = {
     workerPermissions: unrestricted ? 'unrestricted' : 'restricted',
-    models: model ? { [entry.id]: { deep: model, standard: model } } : {},
-  }));
-  const env = { ...process.env, AI_SDLC_HOME: home, AI_SDLC_CONSOLE_DB: db };
+    models: model ? { [entry.id]: { deep: model, standard: model, fast: model } } : {},
+  };
+  writeFileSync(join(home, 'profile.json'), JSON.stringify(profile));
+  const pathKey = Object.keys(process.env).find(key => key.toUpperCase() === 'PATH') ?? 'PATH';
+  const env = { ...process.env, [pathKey]: bin + delimiter + process.env[pathKey], GH_CONFIG_DIR: join(root, 'gh-config'), AI_SDLC_HOME: home, AI_SDLC_CONSOLE_DB: db };
+  if (model) env.CLAUDE_CODE_SUBAGENT_MODEL = model;
+  for (const key of ['GH_TOKEN', 'GITHUB_TOKEN', 'GH_ENTERPRISE_TOKEN', 'GITHUB_ENTERPRISE_TOKEN']) delete env[key];
   const port = await freePort();
   const origin = 'http://127.0.0.1:' + port;
   const store = openStore(db);
@@ -85,6 +96,9 @@ export async function openRig({ entry, model, unrestricted, turnMs, tally }) {
 
   const rig = {
     harness: entry.name,
+    root, home, db, env, profile, github, turnMs,
+    console: consoleCli,
+    lastLog,
     brief: story => brief(story, db),
     snapshot: story => store.snapshot().find(item => item.id === story),
     history: story => (rig.snapshot(story)?.events ?? []).toReversed(),
@@ -93,9 +107,9 @@ export async function openRig({ entry, model, unrestricted, turnMs, tally }) {
     acknowledged: (story, seq) => !store.pendingFor(story).some(item => item.seq === seq),
     daemonSaid: pattern => pattern.test(daemonOutput),
     processEnded: pid => !isAlive(pid),
-    create(story) {
-      const created = store.record({ story, key: story + '-create', type: 'create', title: 'End-to-end check ' + story, detail: 'Exercise the factory with real workers.', branch: 'e2e', worktree, harness: entry.name });
-      store.record({ story, key: story + '-scout', type: 'handoff', revision: created.revision, detail: 'Context pack ready.' });
+    create(story, { scouted = true, ...fields } = {}) {
+      const created = store.record({ story, key: story + '-create', type: 'create', title: 'End-to-end check ' + story, detail: 'Exercise the factory with real workers.', branch: 'e2e', worktree, harness: entry.name, ...fields });
+      if (scouted) store.record({ story, key: story + '-scout', type: 'handoff', revision: created.revision, detail: 'Context pack ready.' });
     },
     start: (story, kickoff) => launch('start', story, kickoff),
     deliver: story => launch('deliver', story),
