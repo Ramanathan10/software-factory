@@ -1,11 +1,20 @@
 import { expect, onAnswer } from '../rig.mjs';
 
-export const title = 'A worker that releases before it asks leaves an answer nobody can take; Jarvis hears it and a replacement handles it';
+export const title = 'A worker that releases before it asks leaves an answer nobody can take; a background Jarvis staffs a replacement that handles it';
 
 const story = 'E2E-RELEASES';
 
 export async function run(rig) {
   rig.create(story);
+  rig.script({ deliver: true, next: [
+    rig.brief(story),
+    'You replace a worker that stopped.',
+    'Steps for this turn:',
+    '1. Read the story.',
+    '2. Record {"story":"' + story + '","type":"activity","assignment":"<story.worker.id>","detail":"E2E replacement ready"} with key and revision filled in.',
+    '3. End your turn now. Do not act on any pending event yet.',
+    onAnswer(story, 'runtime'),
+  ].join('\n\n') });
   const gone = await rig.step(rig.harness + ' starts a worker', () => rig.start(story, [
     rig.brief(story),
     'Steps for this turn:',
@@ -22,34 +31,20 @@ export async function run(rig) {
     await rig.until('the worker process to end', () => rig.processEnded(rig.event(story, 'turn-started').worker.turn.pid));
     return asked;
   });
-  const answer = await rig.step('the owner answers, nobody can take it, and the background wait ends with that answer', async () => {
-    const waiting = rig.waitAny(question.seq, 60);
+  const answer = await rig.step('the owner answers, nobody can take it, and it is handed to the background Jarvis rather than only logged', async () => {
     const recorded = await rig.decide({ story, type: 'answer', question: 'runtime', answer: 0 });
-    const news = await waiting;
-    expect(news.length === 1 && news[0].type === 'answer' && news[0].seq === recorded.seq, 'The wait ended with ' + JSON.stringify(news.map(item => item.type)) + ' instead of the answer.');
-    await rig.until('the daemon to report the decision undelivered', () => rig.daemonSaid(new RegExp(story + '.*no worker is assigned')), 10000);
-    expect(!rig.acknowledged(story, recorded.seq), 'The answer did not stay pending.');
+    const woken = await rig.until('a background Jarvis turn for the answer', () => rig.jarvisWakes(story).find(item => item.seq > recorded.seq), 60000);
+    expect(woken, 'No background Jarvis turn was recorded.');
+    expect(!rig.daemonSaid(new RegExp(story + '.*no worker is assigned')), 'The daemon only logged the answer as undelivered.');
+    expect(question.seq < recorded.seq, 'The answer was recorded before the question.');
     return recorded;
   });
-  const replacement = await rig.step('a replacement is started, as the runbook tells Jarvis to', async () => {
-    const started = await rig.start(story, [
-      rig.brief(story),
-      'You replace a worker that stopped.',
-      'Steps for this turn:',
-      '1. Read the story.',
-      '2. Record {"story":"' + story + '","type":"activity","assignment":"<story.worker.id>","detail":"E2E replacement ready"} with key and revision filled in.',
-      '3. End your turn now. Do not act on any pending event yet.',
-      onAnswer(story, 'runtime'),
-    ].join('\n\n'));
-    expect(started.session !== gone.session, 'The replacement reused the released session.');
-    return started;
-  });
-  await rig.step('the pending answer is delivered to the replacement after its kickoff turn', async () => {
-    const handed = await rig.deliver(story);
-    expect(handed.told === 'worker' && handed.seqs.includes(answer.seq), 'Delivery reported ' + JSON.stringify(handed) + '.');
+  await rig.step('the background Jarvis staffs a replacement, which handles the answer after its kickoff', async () => {
+    const assigned = await rig.until('the replacement to be assigned', () => rig.event(story, 'assign-worker', item => item.seq > answer.seq), 120000);
+    expect(assigned.worker.session !== gone.session, 'The replacement reused the released session.');
     const ready = await rig.worker(story, 1, 'reporting ready', () => rig.event(story, 'activity', item => /E2E replacement ready/i.test(item.detail)));
     const acted = await rig.worker(story, 2, 'acting on the answer', () => rig.event(story, 'activity', item => /E2E answer received: install/i.test(item.detail)));
-    expect(acted.worker.session === replacement.session && ready.seq < acted.seq, 'The answer was not handled by the replacement after its kickoff.');
+    expect(acted.worker.session === assigned.worker.session && ready.seq < acted.seq, 'The answer was not handled by the replacement after its kickoff.');
     await rig.until('the acknowledgement', () => rig.acknowledged(story, answer.seq));
     await rig.until('the end of the replacement\'s turns', () => rig.turnsEnded(story, 2));
   });

@@ -22,6 +22,7 @@ A worker can stop without saying anything: its program crashes, the machine slee
 
 ## Where
 - `command-center/supervisor.mjs` — `isAlive`, `turnVerdict`, `notTheWorker`, `record`, `finish`, `adopted`, `sweep`, `idle`, `start`
+- `command-center/coordinator.mjs` — the same watch for background Jarvis turns (ADR 0019)
 - `command-center/serve.mjs` — `startStoryWorker`
 - `mission-console/store.mjs` — `turn-started`, the `wake` handling of `turn-ended`
 - `command-center/ui/app.js` — `isBusy`, `turnOf`

@@ -9,7 +9,7 @@ const WORKER = 'W';
 const PR = 'https://github.com/acme/widgets/pull/1';
 const HEADS = ['a'.repeat(40), 'b'.repeat(40)];
 
-export const guarded = ['phase', 'harness', 'branch', 'questions', 'worker', 'blocked', 'cleanup', 'pr', 'prObservation', 'readyHead', 'diagram', 'retro', 'deleted'];
+export const guarded = ['phase', 'harness', 'branch', 'questions', 'worker', 'blocked', 'cleanup', 'pr', 'prObservation', 'readyHead', 'diagram', 'retro', 'jarvis', 'deleted'];
 export const unguarded = ['id', 'title', 'brief', 'worktree', 'revision', 'createdAt', 'updatedAt', 'activity', 'draftPlan', 'plan',
   'feedback', 'reviewRounds', 'comparisonRequested', 'files', 'artifacts', 'pipeline', 'repo'];
 
@@ -25,6 +25,8 @@ export function abstract(story) {
   if (story.readyHead) state.readyHead = story.readyHead;
   if (story.diagram) state.diagram = { returnPhase: story.diagram.returnPhase };
   if (story.retro) state.retro = { returnPhase: story.retro.returnPhase };
+  if (story.jarvis?.turn) state.jarvis = { turn: { pid: story.jarvis.turn.pid } };
+  else if (story.jarvis?.waking) state.jarvis = { waking: true };
   return state;
 }
 
@@ -35,6 +37,7 @@ function concrete(state) {
   if (state.worker) story.worker = { ...state.worker, role: 'scout', session: 'session-1', ...(state.worker.turn ? { turn: { ...state.worker.turn, log: 'turn.log' } } : {}) };
   if (state.blocked) story.blocked = 'Blocked.';
   if (state.cleanup) story.cleanup = {};
+  if (state.jarvis) story.jarvis = { session: 'jarvis-1', handled: 1, ...(state.jarvis.turn ? { turn: { ...state.jarvis.turn, log: 'jarvis.log' } } : { waking: 'now' }) };
   if (state.prObservation) story.prObservation = { ...state.prObservation, failedCount: state.prObservation.status === 'failed' ? 1 : 0,
     failures: state.prObservation.status === 'failed' ? ['test'] : [] };
   return story;
@@ -83,7 +86,21 @@ export function eventInputs(evidence) {
   ];
 }
 
-export function explore({ open = openStore, limit = 200000 } = {}) {
+export const jarvisEvents = ['jarvis-woken', 'jarvis-turn-started', 'jarvis-turn-ended'];
+
+export function jarvisInputs(evidence) {
+  const around = new Set(['question', 'answer', 'assign-worker', 'release-worker', 'turn-started', 'turn-ended', 'blocked', 'resume', 'request-cleanup', 'cleanup-blocked', 'complete-cleanup']);
+  return [
+    ...eventInputs(evidence).filter(([type]) => around.has(type)),
+    ['question', { question: 'action-jarvis-1', prompt: 'Action for you: Jarvis could not run.', options: ['Done', 'Hold'], recommended: 0 }],
+    ['answer', { question: 'action-jarvis-1', answer: 1 }],
+    ['jarvis-woken', { handled: 1 }],
+    ['jarvis-turn-started', { session: 'jarvis-1', pid: 4343, log: 'jarvis.log' }],
+    ['jarvis-turn-ended', { outcome: 'failed', code: 1, detail: 'Evidence.' }],
+  ];
+}
+
+export function explore({ open = openStore, limit = 200000, inputs: choose = eventInputs } = {}) {
   const folder = mkdtempSync(join(tmpdir(), 'lifecycle-model-'));
   const evidence = join(folder, 'after.png');
   writeFileSync(evidence, 'png');
@@ -92,7 +109,7 @@ export function explore({ open = openStore, limit = 200000 } = {}) {
   const store = open(path);
   const put = raw.prepare('INSERT INTO stories VALUES (?, ?) ON CONFLICT(id) DO UPDATE SET state = excluded.state');
   const get = raw.prepare('SELECT state FROM stories WHERE id = ?');
-  const inputs = eventInputs(evidence);
+  const inputs = choose(evidence);
   let key = 0;
   try {
     store.record({ story: ID, key: 'k' + key++, type: 'create', title: 'Story', detail: 'Brief.', branch: 'story', worktree: '/worktrees/story', harness: 'Codex' });

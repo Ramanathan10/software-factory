@@ -7,6 +7,7 @@ import { harnessKey } from '../mission-console/roles.mjs';
 import { InputError, workerPhases } from '../mission-console/store.mjs';
 import { watchOnce } from '../mission-console/watcher.mjs';
 import { createConsoleService, DEFAULT_DB_PATH } from './console-service.mjs';
+import { createCoordinator } from './coordinator.mjs';
 import { createSupervisor } from './supervisor.mjs';
 import { isMain } from '../mission-console/is-main.mjs';
 
@@ -100,9 +101,25 @@ function testingKickoff(story, seqs, dbPath) {
   ].join('\n\n');
 }
 
-export async function start({ port = DEFAULT_PORT, dbPath = DEFAULT_DB_PATH, adapters = new Map(), watchSeconds, turnPollMs, launch, models = modelPlan, ran = sessionRan } = {}) {
+const factoryFile = path => fileURLToPath(new URL('../' + path, import.meta.url));
+
+function jarvisKickoff(story, news, dbPath, port) {
+  const serve = factoryFile('command-center/serve.mjs');
+  return [
+    'You are the background Jarvis for story ' + story.id + ' in ' + story.harness + '. The Command Center woke you because the story needs its coordinator. This is one turn: act on the news, then end the turn.',
+    'News (event seq: type): ' + news.map(event => event.seq + ': ' + event.type).join(', ') + '.',
+    'Read first, completely, and follow: ' + factoryFile('skills/jarvis/BACKGROUND.md'),
+    'Factory runbook: ' + factoryFile('skills/jarvis/RUNBOOK.md') + '\nAI SDLC skill: ' + factoryFile('skills/ai-sdlc/SKILL.md'),
+    'Console CLI: node ' + factoryFile('mission-console/jarvis.mjs') + '\nConsole database: ' + dbPath,
+    'Command Center port: ' + port + '. Start the next worker: node ' + serve + ' start ' + story.id + ' ' + port + ' with its kickoff on stdin. Hand pending decisions to the assigned worker: node ' + serve + ' deliver ' + story.id + ' ' + port + '.',
+    'Worktree (read only for you): ' + story.worktree + '\nBranch: ' + story.branch,
+  ].join('\n\n');
+}
+
+export async function start({ port = DEFAULT_PORT, dbPath = DEFAULT_DB_PATH, adapters = new Map(), watchSeconds, turnPollMs, quietMs, launch = startWorker, models = modelPlan, ran = sessionRan } = {}) {
   dbPath = resolve(dbPath);
   let supervisor;
+  let coordinator;
   let stopping = false;
   const starts = new Map();
   const blockTestStart = (id, error) => {
@@ -171,6 +188,12 @@ export async function start({ port = DEFAULT_PORT, dbPath = DEFAULT_DB_PATH, ada
           return 'nobody';
         }
       }
+      if (story && row(story.harness).workers === 'command-line') {
+        const notices = coordinator.notices(story.id, decision.seqs);
+        if (notices.length || !decision.session) coordinator.nudge();
+        if (!decision.session || notices.length === decision.seqs.length) return 'coordinator';
+        decision = { ...decision, seqs: decision.seqs.filter(seq => !notices.includes(seq)) };
+      }
       const onTurn = turn => supervisor.track({ story: decision.story, ...turn });
       return deliver({ ...decision, worktree: story?.worktree, phase: story?.phase, onTurn, after: supervisor.idle(decision.story) },
         adapters.get(harnessKey(story?.harness)));
@@ -178,16 +201,23 @@ export async function start({ port = DEFAULT_PORT, dbPath = DEFAULT_DB_PATH, ada
     onStartWorker: beginWorker,
     modelPlan: () => models(),
     workerRan,
+    annotate: story => {
+      const waiting = coordinator?.waiting(story);
+      return waiting ? { waitingOnJarvis: waiting } : {};
+    },
   });
   supervisor = createSupervisor({ service });
   try {
     const server = await service.startServer(port);
     const stopSupervisor = supervisor.start(turnPollMs);
+    coordinator = createCoordinator({ service, launch, adapters, quietMs, busy: id => starts.has(id),
+      kickoff: (story, news) => jarvisKickoff(story, news, dbPath, Number(new URL(server.url).port)) });
     for (const story of service.snapshot()) {
       if (story.phase === 'testing' && !story.worker && !story.blocked && !story.cleanup) {
         service.deliverPending(story.id).catch(error => console.error('Pending approval on ' + story.id + ' could not be delivered: ' + error.message));
       }
     }
+    const stopCoordinator = coordinator.start(turnPollMs);
     const watching = new AbortController();
     if (watchSeconds) {
       const timer = setInterval(() => watchOnce(service.store, { signal: watching.signal }).catch(() => {}), watchSeconds * 1000);
@@ -200,6 +230,7 @@ export async function start({ port = DEFAULT_PORT, dbPath = DEFAULT_DB_PATH, ada
         stopping = true;
         stopSupervisor();
         watching.abort();
+        await stopCoordinator();
         await server.close();
         await Promise.allSettled([...starts.values()]);
         service.close();

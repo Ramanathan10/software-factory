@@ -6,6 +6,8 @@ import { delimiter, join, resolve } from 'node:path';
 import { phaseTiers } from '../mission-console/roles.mjs';
 import { isMain } from '../mission-console/is-main.mjs';
 
+const until = (text, pattern) => pattern.exec(text)?.[1]?.trim().replace(/\.$/, '');
+
 function list(folder, recursive = false) {
   try { return readdirSync(folder, { recursive }); } catch { return []; }
 }
@@ -83,6 +85,18 @@ export const harnesses = {
     },
     ran: line => (line.type === 'assistant' && !line.isSidechain && /^[^<]/.test(line.message?.model ?? '')
       ? { model: line.message.model, effort: line.effort } : undefined),
+    explain: log => {
+      if (/usage limit reached|hit your limit/i.test(log)) {
+        const epoch = /usage limit reached\|(\d{9,})/i.exec(log)?.[1];
+        const resets = epoch ? new Date(Number(epoch) * 1000).toLocaleString() : until(log, /resets ([^\n]+)/i);
+        return { reason: 'Claude Code reached its usage limit' + (resets ? ' (it resets ' + resets + ')' : ''),
+          next: 'Wait for the limit to reset, or raise the limit on your Claude plan' };
+      }
+      if (/failed to authenticate|oauth session expired|invalid api key|please run \/login|not logged in/i.test(log)) {
+        return { reason: 'Claude Code is not signed in, or its sign-in has expired', next: 'Run claude in a terminal and sign in again with /login' };
+      }
+      return undefined;
+    },
     permissions: {
       restricted: (tools, readable) => ['--permission-mode', 'acceptEdits', '--allowedTools', ...tools.map(tool => `Bash(${tool} *)`), ...readable.map(readRule)],
       unrestricted: () => ['--permission-mode', 'bypassPermissions'],
@@ -102,6 +116,17 @@ export const harnesses = {
       return file && join(sessions, file);
     },
     ran: line => (line.type === 'turn_context' && line.payload?.model ? { model: line.payload.model, effort: line.payload.effort } : undefined),
+    explain: log => {
+      if (/usage limit/i.test(log)) {
+        const lifts = until(log, /try again at ([^\n]+)/i);
+        return { reason: 'Codex reached its usage limit' + (lifts ? ' until ' + lifts : ''),
+          next: lifts ? 'Wait until ' + lifts + ', or add Codex credits' : 'Wait for the limit to lift, or add Codex credits' };
+      }
+      if (/refresh token|sign in again|not logged in|codex login/i.test(log)) {
+        return { reason: 'Codex is not signed in, or its sign-in has expired', next: 'Run codex login in a terminal to sign in again' };
+      }
+      return undefined;
+    },
     promptArgument: '-',
     sessionFrom: output => /"thread_id":\s*"([^"]+)"/.exec(output)?.[1],
     permissions: {
@@ -200,9 +225,14 @@ export function launchProblem(harness, env = process.env, platform = process.pla
 
 const explained = (harness, error, env) => (error.code === 'ENOENT' && launchProblem(harness, env) ? new Error(launchProblem(harness, env)) : error);
 
-function run({ command, args }, { worktree, prompt, log, spawnProcess = spawn }) {
+function environment(phase) {
+  const { AI_SDLC_ACTOR, ...env } = process.env;
+  return phase === 'coordinator' ? { ...env, AI_SDLC_ACTOR: 'jarvis' } : env;
+}
+
+function run({ command, args }, { worktree, prompt, log, phase, spawnProcess = spawn }) {
   const output = openSync(log, 'a');
-  const child = spawnProcess(command, args, { cwd: worktree, detached: true, windowsHide: true, stdio: ['pipe', output, output] });
+  const child = spawnProcess(command, args, { cwd: worktree, env: environment(phase), detached: true, windowsHide: true, stdio: ['pipe', output, output] });
   closeSync(output);
   child.stdin?.on('error', () => {}).end(prompt);
   return child;
@@ -244,7 +274,7 @@ export async function messageWorker({ harness, session, worktree, prompt, phase 
   try {
     await previous;
     const log = logFor(session, options.env);
-    const child = run(invocation, { worktree, prompt, log, spawnProcess: options.spawnProcess });
+    const child = run(invocation, { worktree, prompt, log, phase, spawnProcess: options.spawnProcess });
     child.once('close', finish).once('error', finish);
     const ended = exit(child);
     if (child.pid) options.onTurn?.({ session, pid: child.pid, log, ended });
@@ -267,7 +297,7 @@ export async function startWorker({ harness, worktree, prompt, phase }, options 
   }
   const session = randomUUID();
   const log = logFor(session, options.env);
-  const child = run(commandFor(harness, 'start', { session, phase }, options.settings), { worktree, prompt, log, spawnProcess: options.spawnProcess });
+  const child = run(commandFor(harness, 'start', { session, phase }, options.settings), { worktree, prompt, log, phase, spawnProcess: options.spawnProcess });
   const ended = exit(child);
   const running = found => {
     turns.set(found, ended.then(() => {}));

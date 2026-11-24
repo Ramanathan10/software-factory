@@ -1,6 +1,6 @@
 # 0012. Jarvis is woken only for news, by a background wait that ends
 
-Status: Accepted
+Status: Superseded in part by [0019](0019-a-background-jarvis-session-is-woken-for-news.md): in command-line harnesses a background Jarvis session, not this wait, is how Jarvis hears news. What counts as news still stands.
 Date: 2026-11-23
 
 ## Context

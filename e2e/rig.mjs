@@ -26,7 +26,7 @@ function brief(story, db) {
     '- Read the story: node "' + slashes(consoleCli) + '" handover "' + slashes(db) + '" ' + story + '\n  It prints JSON with story.revision, story.worker.id (your assignment), story.questions, and pending (events not yet acknowledged, each with seq and type).',
     '- Record an event: send one JSON object on standard input to: node "' + slashes(consoleCli) + '" record "' + slashes(db) + '"\n  Pipe it however your shell allows; writing it to a file first is fine. Every event needs "story", "type", "key" (any new unique string) and "revision" (the story\'s current revision). It prints the new revision.',
     '- Acknowledge an event: node "' + slashes(consoleCli) + '" ack "' + slashes(db) + '" <seq>',
-    '- If story.worker is missing when you read the story, wait two seconds and read it again until it appears.',
+    '- The Command Center records your assignment about ten seconds after you start. If story.worker is missing, wait five seconds and read the story again. Keep doing so for a full minute before you decide it is not there.',
   ].join('\n');
 }
 
@@ -47,7 +47,7 @@ function freePort() {
   });
 }
 
-export async function openRig({ entry, model, unrestricted, turnMs, tally }) {
+export async function openRig({ entry, model, unrestricted, turnMs, tally, profile: overrides = {} }) {
   const root = mkdtempSync(join(realpathSync.native(tmpdir()), 'factory-e2e-'));
   const worktree = join(root, 'work');
   const home = join(worktree, '.factory-e2e');
@@ -60,9 +60,11 @@ export async function openRig({ entry, model, unrestricted, turnMs, tally }) {
   writeFileSync(join(bin, 'gh'), '#!/bin/sh\nexec "' + slashes(process.execPath) + '" "' + slashes(standIn) + '" "' + slashes(github) + '" "$@"\n', { mode: 0o755 });
   writeFileSync(join(bin, 'gh.cmd'), '@"' + process.execPath + '" "' + standIn + '" "' + github + '" %*\r\n');
   await run('git', ['init', '-q'], { cwd: worktree });
+  const models = model ? { [entry.id]: { deep: model, standard: model, fast: model } } : {};
   const profile = {
     workerPermissions: unrestricted ? 'unrestricted' : 'restricted',
-    models: model ? { [entry.id]: { deep: model, standard: model, fast: model } } : {},
+    ...overrides,
+    models: { ...models, ...overrides.models, [entry.id]: { ...models[entry.id], ...overrides.models?.[entry.id] } },
   };
   writeFileSync(join(home, 'profile.json'), JSON.stringify(profile));
   const pathKey = Object.keys(process.env).find(key => key.toUpperCase() === 'PATH') ?? 'PATH';
@@ -77,7 +79,11 @@ export async function openRig({ entry, model, unrestricted, turnMs, tally }) {
   for (const stream of [daemon.stdout, daemon.stderr]) stream.on('data', chunk => { daemonOutput += chunk; });
 
   const everyEvent = () => store.snapshot().flatMap(story => story.events);
-  const turnPids = () => everyEvent().filter(event => event.type === 'turn-started').map(event => event.worker.turn.pid);
+  const jarvisPids = new Set();
+  const turnPids = () => {
+    for (const story of store.snapshot()) if (story.jarvis?.turn?.pid) jarvisPids.add(story.jarvis.turn.pid);
+    return [...everyEvent().filter(event => event.type === 'turn-started').map(event => event.worker.turn.pid), ...jarvisPids];
+  };
   const lastLog = () => {
     const turn = everyEvent().filter(event => event.type === 'turn-started').sort((a, b) => b.seq - a.seq)[0];
     try { return readFileSync(turn.worker.turn.log, 'utf8').trim().slice(-800); } catch { return '(no log)'; }
@@ -99,6 +105,23 @@ export async function openRig({ entry, model, unrestricted, turnMs, tally }) {
     root, home, db, env, profile, github, turnMs,
     console: consoleCli,
     lastLog,
+    worktree,
+    port,
+    launcher,
+    jarvisWakes: story => rig.history(story).filter(item => item.type === 'jarvis-woken'),
+    script({ next, deliver }) {
+      const kickoff = join(worktree, 'next-kickoff.txt');
+      writeFileSync(kickoff, next);
+      const text = [
+        '# End-to-end check',
+        'This folder is a throwaway workspace for an automated end-to-end check of the story console. Nothing here is real work.',
+        'If you are the background Jarvis for a story here, do not plan, write code or read other repositories. Do exactly this, then end your turn:',
+        '1. Start the next worker for the story with: node "' + slashes(launcher) + '" start <story> ' + port + ' < next-kickoff.txt',
+        ...(deliver ? ['2. Then hand it the pending decisions with: node "' + slashes(launcher) + '" deliver <story> ' + port] : []),
+        'Acknowledge the news you were given, record nothing else, and never ask anything in chat.',
+      ].join('\n\n');
+      for (const name of ['AGENTS.md', 'CLAUDE.md']) writeFileSync(join(worktree, name), text + '\n');
+    },
     brief: story => brief(story, db),
     snapshot: story => store.snapshot().find(item => item.id === story),
     history: story => (rig.snapshot(story) ? store.history(story).toReversed() : []),

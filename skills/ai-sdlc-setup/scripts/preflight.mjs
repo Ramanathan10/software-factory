@@ -11,7 +11,7 @@ const schema = name => JSON.parse(readFileSync(join(assets, name), 'utf8'));
 export const phaseTiers = {
   scout: 'deep', planning: 'deep', testing: 'standard', red: 'standard', building: 'standard', gates: 'standard',
   mutation: 'standard', review: 'deep', comparison: 'standard', diagram: 'standard', publishing: 'standard',
-  ci: 'standard', retro: 'deep',
+  ci: 'standard', retro: 'deep', coordinator: 'standard',
 };
 
 export const profileHome = (env = process.env) => env.AI_SDLC_HOME || join(homedir(), '.ai-sdlc');

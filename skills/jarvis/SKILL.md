@@ -29,7 +29,9 @@ Jarvis lives in one chat. On "Be Jarvis", when the host can list and rename its 
 
 ## 2. Catch up
 
-Read `pending` and the story snapshot. Tell the owner about every decision still waiting and every story in progress, and handle each undelivered decision as the runbook's "Undelivered decisions" describes. Do this at the start of every later turn as well: a decision nobody announced is found here.
+Read `pending` and the story snapshot. Tell the owner about every decision still waiting and every story in progress, and handle each undelivered decision as the runbook's "Undelivered decisions" describes. Do this at the start of every later turn as well: a decision nobody announced is found here. In a harness driven from the command line, also read the console feed since the last seq you read and tell the owner what the background Jarvis did; leave a story it is already handling to it.
+
+Mark everything you record with `"by": "jarvis"`, so your own events never wake the background Jarvis.
 
 ## 3. Intake
 
@@ -40,7 +42,7 @@ Jarvis does not scout, plan, write tests, implement, review, or verify. For each
 3. Use the harness in which the owner started the request: a Codex request stays in Codex, a Claude Code request stays in Claude Code, and a GitHub Copilot app request stays there. Record that harness at creation and keep it. Use another only when the owner explicitly requests the switch; an unavailable login, model, or quota is a blocker to report, not permission to switch. Independent review seats may still use other authorized models as their review skill requires.
 4. Record `create`, with `repo` set to the check's `repo.slug` and the branch named from that repository's branch pattern.
 5. Start the story's worker in its own worktree with the kickoff prompt, and record `assign-worker` so decisions route to it.
-6. Tell the owner which workers started and which decisions are waiting on them, make sure the "Report an idle worker" call is in place, and then stop.
+6. Tell the owner which workers started and which decisions are waiting on them, and then stop. In a harness driven from the command line the daemon's background Jarvis hears the worker's next handoff; elsewhere, make sure the "Report an idle worker" call is in place.
 
 The runbook's "Intake" and "Story worker kickoff template" give each of these in full. If the harness cannot run workers, tell the owner before doing the story's work in the Jarvis chat.
 
@@ -51,10 +53,10 @@ The factory is event-driven, never scheduled. The owner decides in the console; 
 - Where the Command Center can message the worker itself, it does, and Jarvis forwards nothing.
 - Where it wakes Jarvis instead, forward the decision to that story's worker at once. Jarvis does not act on it.
 - When the owner decides in the Jarvis chat instead, record the decision in the console, then pass it to that story's worker with the harness's "Message a worker" call in the runbook. Jarvis talks to one session per story and does not act on the decision.
-- A decision that could not reach its worker stays pending, and step 2 finds it. In a harness driven from the command line, a decision on a story with no worker assigned also ends the background `wait-any`: staff the story again and forward the decision.
-- For a command-line story, plan approval automatically starts a separate Bruce Banner session when the planner has released its assignment. The approval ends the background `wait-any` like any decision with no worker assigned, but the daemon is already starting that session: do not start one yourself. Verify the test worker's assignment and running process before saying tests are underway. A launch failure is a visible story blocker with the approval still pending; handle the reported cause without repeatedly retrying it.
+- A decision that could not reach its worker stays pending, and step 2 finds it. In a harness driven from the command line, a decision on a story with no worker assigned wakes the story's background Jarvis, which staffs the story again and forwards the decision.
+- For a command-line story, plan approval automatically starts a separate Bruce Banner session when the planner has released its assignment. No Jarvis turn is needed for it: do not start one yourself. Verify the test worker's assignment and running process before saying tests are underway. A launch failure is a visible story blocker with the approval still pending; handle the reported cause without repeatedly retrying it.
 
-To hear when a worker ends its turn, use the harness's "Report an idle worker" call in the runbook. In a harness driven from the command line that is one background `wait-any` command, restarted after each time it ends.
+To hear when a worker ends its turn, use the harness's "Report an idle worker" call in the runbook. In a harness driven from the command line the daemon wakes a background Jarvis session for the story, as the runbook's "Background Jarvis" describes; the Jarvis chat runs no background `wait-any` there.
 
 Do not attach recurring schedules to workers or to the Jarvis chat. Hawkeye's PR watcher, described in the Mission Console reference, observes CI and merge status.
 

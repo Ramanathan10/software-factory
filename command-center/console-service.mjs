@@ -21,6 +21,7 @@ const assets = new Map([
   ['/markdown.js', ['markdown.js', 'text/javascript; charset=utf-8']],
   ['/attention.js', ['attention.js', 'text/javascript; charset=utf-8']],
   ['/badge.js', ['badge.js', 'text/javascript; charset=utf-8']],
+  ['/jarvis.js', ['jarvis.js', 'text/javascript; charset=utf-8']],
 ].map(([route, [file, type]]) => [route, [readFileSync(new URL('./ui/' + file, import.meta.url)), type]]));
 const security = {
   'Cache-Control': 'no-store',
@@ -61,7 +62,7 @@ const images = {
 const folderFor = story => String(story).replace(/[^\w-]/g, '_');
 const imageOf = bytes => Object.entries(images).find(([, { magic }]) => magic.every((byte, index) => bytes[index] === byte))?.[0];
 
-export function createConsoleService({ dbPath = DEFAULT_DB_PATH, onDecision, onStartWorker, modelPlan, workerRan, decisionDelayMs = 1500 } = {}) {
+export function createConsoleService({ dbPath = DEFAULT_DB_PATH, onDecision, onStartWorker, modelPlan, workerRan, annotate, decisionDelayMs = 1500 } = {}) {
   mkdirSync(dirname(dbPath), { recursive: true });
   const store = openStore(dbPath);
   const currentRevision = story => store.snapshot().find(item => item.id === story)?.revision;
@@ -140,7 +141,7 @@ export function createConsoleService({ dbPath = DEFAULT_DB_PATH, onDecision, onS
       let last = '';
       const shown = () => store.snapshot().map(story => {
         const ran = story.worker && workerRan?.(story);
-        return ran ? { ...story, worker: { ...story.worker, ran } } : story;
+        return { ...(ran ? { ...story, worker: { ...story.worker, ran } } : story), ...annotate?.(story) };
       });
       const frame = () => JSON.stringify({ at: new Date().toISOString(), stories: shown() });
       const tick = setInterval(() => {

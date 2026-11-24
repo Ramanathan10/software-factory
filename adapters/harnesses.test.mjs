@@ -108,7 +108,7 @@ test('worker settings come from the profile, and are restricted without one', t 
 
 test('every phase with a tier is a real phase, and every tier is a known one', () => {
   for (const [phase, tier] of Object.entries(phaseTiers)) {
-    assert.ok(phases[phase], phase);
+    assert.ok(phases[phase] || phase === 'coordinator', phase);
     assert.ok(tiers.includes(tier), `${phase} -> ${tier}`);
   }
 });
@@ -306,4 +306,72 @@ test('the model and effort a session last ran on are read from the harness\'s ow
   assert.equal(sessionRan('Codex', 'never', env), undefined);
   assert.equal(sessionRan('Cursor', 'c-1', env), undefined);
   assert.equal(sessionRan('GitHub Copilot app', undefined, env), undefined);
+});
+
+test('the background Jarvis has its own tier, standard unless the profile moves it', t => {
+  assert.equal(phaseTiers.coordinator, 'standard');
+  const models = { codex: { deep: 'big', standard: 'middle', fast: 'small' } };
+  assert.equal(modelFor('Codex', 'coordinator', workerSettings(home(t, { models }))), 'middle');
+  const moved = workerSettings(home(t, { models, phaseTiers: { coordinator: 'fast' } }));
+  assert.equal(modelFor('Codex', 'coordinator', moved), 'small');
+  assert.deepEqual(commandFor('Codex', 'start', { phase: 'coordinator' }, moved).args.slice(-3), ['--model', 'small', '-']);
+});
+
+function programWithEnvironment() {
+  const calls = [];
+  const spawnProcess = (command, args, options) => {
+    const child = new EventEmitter();
+    child.pid = 6000 + calls.length;
+    child.stdin = { on: () => child.stdin, end: () => {} };
+    calls.push({ command, env: options.env ?? process.env });
+    setImmediate(() => child.emit('spawn'));
+    setTimeout(() => child.emit('close', 0), 10);
+    return child;
+  };
+  return { calls, spawnProcess };
+}
+
+test('a background Jarvis program is marked as Jarvis in its environment, and a worker program is not', async () => {
+  const { calls, spawnProcess } = programWithEnvironment();
+  const options = { spawnProcess, settings: restricted, settleMs: 0 };
+  const jarvis = await startWorker({ harness: 'Claude Code', worktree: '/work/tl-1', prompt: 'Check tl-1.', phase: 'coordinator' }, options);
+  await startWorker({ harness: 'Claude Code', worktree: '/work/tl-1', prompt: 'Write the tests.', phase: 'testing' }, options);
+  await messageWorker({ harness: 'Claude Code', session: jarvis.session, worktree: '/work/tl-1', prompt: 'More news on tl-1.', phase: 'coordinator' }, options);
+  assert.deepEqual(calls.map(call => call.env.AI_SDLC_ACTOR), ['jarvis', undefined, 'jarvis']);
+  assert.ok(calls[0].env.PATH || calls[0].env.Path, 'the marked program still sees the rest of the environment');
+});
+
+const failures = {
+  'Claude Code': {
+    usage: 'Claude AI usage limit reached|1795543200',
+    usageNow: 'You’ve hit your limit · resets 3am (Europe/Dublin)',
+    signIn: 'Failed to authenticate: OAuth session expired and could not be refreshed',
+    signInMissing: 'Invalid API key · Please run /login',
+  },
+  Codex: {
+    usage: 'ERROR: You’ve hit your usage limit. Upgrade to Pro (https://chatgpt.com/explore/pro), visit https://chatgpt.com/codex/settings/usage to purchase more credits or try again at Nov 24th, 2026 2:12 AM.',
+    signIn: 'Your access token could not be refreshed because your refresh token has expired. Please log out and sign in again.',
+  },
+};
+
+test('each command-line harness explains a usage limit and a lapsed sign-in in plain words, with what to do', () => {
+  for (const [harness, samples] of Object.entries(failures)) {
+    const { explain } = row(harness);
+    assert.equal(typeof explain, 'function', harness + ' explains its failures');
+    for (const [kind, sample] of Object.entries(samples)) {
+      const told = explain('2026-11-24T03:38:25Z starting\n' + sample + '\ntokens used\n12');
+      assert.ok(told?.reason && told?.next, `${harness} ${kind}: ${JSON.stringify(told)}`);
+      assert.match(told.reason, kind.startsWith('usage') ? /usage limit/i : /sign(ed)?[ -]?in/i, `${harness} ${kind}`);
+    }
+  }
+  assert.match(row('Claude Code').explain(failures['Claude Code'].signIn).next, /\/login/);
+  assert.match(row('Codex').explain(failures.Codex.signIn).next, /codex login/);
+  assert.match(JSON.stringify(row('Codex').explain(failures.Codex.usage)), /2:12 AM/, 'the owner is told when the limit lifts');
+});
+
+test('a failure a harness does not recognise is left for the daemon to describe', () => {
+  for (const harness of Object.keys(failures)) {
+    assert.equal(row(harness).explain('TypeError: something odd happened\n    at main (index.js:1:1)'), undefined, harness);
+    assert.equal(row(harness).explain(''), undefined, harness);
+  }
 });

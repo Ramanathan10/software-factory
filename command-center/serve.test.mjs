@@ -102,11 +102,12 @@ test('a decision recorded outside the dashboard reaches the worker when delivery
   }
 });
 
-test('an answer to a worker that released before asking reaches Jarvis, then the replacement Jarvis staffs', async t => {
+test('an answer to a worker that released before asking is handed to the background Jarvis, then reaches the replacement it staffs', async t => {
   const dbPath = join(folder(t), 'stories.sqlite');
   const sent = [];
   const logged = t.mock.method(console, 'log', () => {});
-  const center = await start({ port: 0, dbPath, adapters: loadAdapters({ Codex: { workers: 'command-line' } }, message => sent.push(message)) });
+  const launched = [];
+  const center = await start({ port: 0, dbPath, launch: async input => { launched.push(input); return { session: 'jarvis-1' }; }, adapters: loadAdapters({ Codex: { workers: 'command-line' } }, message => sent.push(message)) });
   const jarvisConnection = createConsoleService({ dbPath });
   const port = Number(new URL(center.url).port);
   const heard = after => waitForAny(jarvisConnection.store, { after, seconds: 0 });
@@ -118,9 +119,9 @@ test('an answer to a worker that released before asking reaches Jarvis, then the
     const question = jarvisConnection.recordEvent({ story: 'tl-1', type: 'question', question: 'bash', prompt: 'Repair Bash?', options: ['Yes', 'Hold'], recommended: 0 });
     const answer = jarvisConnection.recordEvent({ story: 'tl-1', type: 'answer', question: 'bash', answer: 0 });
 
-    assert.deepEqual(await requestDelivery('tl-1', port), { story: 'tl-1', seqs: [answer.seq], told: 'nobody' });
+    assert.deepEqual(await requestDelivery('tl-1', port), { story: 'tl-1', seqs: [answer.seq], told: 'coordinator' });
     assert.equal(sent.length, 0);
-    assert.match(logged.mock.calls.at(-1).arguments[0], /no worker is assigned/);
+    assert.ok(!logged.mock.calls.some(call => /no worker is assigned/.test(call.arguments[0])), 'an answer with no worker is no longer only logged');
     assert.deepEqual((await heard(question.seq)).map(event => [event.type, event.seq]), [['answer', answer.seq]], 'Jarvis hears the answer nobody could take');
 
     jarvisConnection.recordEvent({ story: 'tl-1', type: 'assign-worker', session: 'worker-2' });
@@ -258,8 +259,8 @@ test('ordinary answers without a worker cannot start tests without plan approval
   recorder.recordEvent({ story: 'tl-1', type: 'question', question: 'scope', prompt: 'Which rows?', options: ['All', 'Selected'], recommended: 1 });
   recorder.recordEvent({ story: 'tl-1', type: 'answer', question: 'scope', answer: 1 });
   let launched = 0;
-  const center = await open({ launch: async () => { launched += 1; return { session: 'wrong' }; } });
-  assert.equal((await requestDelivery('tl-1', Number(new URL(center.url).port))).told, 'nobody');
+  const center = await open({ launch: async input => { if (input.phase === 'testing') launched += 1; return { session: 'wrong' }; } });
+  assert.equal((await requestDelivery('tl-1', Number(new URL(center.url).port))).told, 'coordinator', 'the answer is handed to the background Jarvis');
   assert.equal(launched, 0);
 });
 

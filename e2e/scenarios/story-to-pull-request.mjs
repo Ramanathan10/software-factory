@@ -104,6 +104,10 @@ function kickoff(rig, repo, replacing) {
   ].filter(Boolean).join('\n\n');
 }
 
+const staff = (rig, repo) => rig.start(story, kickoff(rig, repo, true)).catch(error => {
+  if (!/already has a worker|already in progress/.test(error.message)) throw error;
+});
+
 const turnsStarted = rig => rig.history(story).filter(item => item.type === 'turn-started');
 const idle = rig => turnsStarted(rig).every(item => rig.processEnded(item.worker.turn.pid));
 
@@ -124,14 +128,14 @@ async function drive(rig, repo, done, limit, tally) {
     if (open.length) {
       for (const item of open) last = await rig.decide({ story, type: 'answer', question: item.id, answer: item.recommended });
       if (!rig.snapshot(story).worker) {
-        await rig.start(story, kickoff(rig, repo, true));
+        await staff(rig, repo);
         await rig.deliver(story);
       }
     } else if (current.phase === 'approval') {
       last = await rig.decide({ story, type: 'approve' });
       waiting = 'the Command Center to start the test author after approval';
     } else if (!current.worker && workerPhases.has(current.phase)) {
-      await rig.start(story, kickoff(rig, repo, true));
+      await staff(rig, repo);
       waiting = 'the worker Jarvis started for ' + current.phase;
     } else {
       throw new Error('The worker ended its turn in ' + current.phase + ' with nothing for the owner or Jarvis to do. Its log ends:\n' + rig.lastLog());
@@ -163,7 +167,10 @@ export async function run(rig) {
   await rig.step('the worker scouts and plans, and the owner answers every question with its recommendation and approves the plan', () =>
     drive(rig, repo, current => !['scout', 'planning', 'approval'].includes(current.phase), limit, tally));
   await rig.step('the story runs from tests to an open pull request', () => drive(rig, repo, current => Boolean(current.pr), limit, tally));
-  await rig.step('the worker ends its turn after opening the pull request', () => rig.until('the worker to end its turn', () => idle(rig), limit));
+  await rig.step('the worker and any background Jarvis turn end after the pull request opens', () => rig.until('the worker and Jarvis to end their turns', () => {
+    const current = rig.snapshot(story);
+    return idle(rig) && !current.jarvis?.turn && !current.jarvis?.waking && Date.now() - Date.parse(current.updatedAt) > 20000;
+  }, limit));
 
   await rig.step('the console records every lifecycle phase in order, and every owner decision was acknowledged', () => {
     const visited = [];

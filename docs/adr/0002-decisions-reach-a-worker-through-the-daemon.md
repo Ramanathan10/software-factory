@@ -24,7 +24,7 @@ The owner answers questions, approves plans and asks for changes in the Command 
 
 ## Where
 - `command-center/console-service.mjs` — `notify`, `sent`, `hand`, `deliverPending`, the store poll in `startServer`
-- `command-center/serve.mjs` — `deliver`, `requestStart`, `requestDelivery`, `onDecision` in `start`
+- `command-center/serve.mjs` — `deliver`, `requestStart`, `requestDelivery`, `onDecision` in `start` (a story with no worker goes to the background Jarvis, ADR 0019)
 - `adapters/harnesses.mjs` — `turns`, `messageWorker`, `startWorker`
 - `command-center/supervisor.mjs` — `idle`
 - `adapters/copilot/extension.mjs` — `onDecision`

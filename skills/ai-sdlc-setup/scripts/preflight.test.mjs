@@ -283,3 +283,11 @@ test('check rejects a tracker or a readiness check that does not exist', t => {
   assert.match(problems, /readiness\.checklist\[0\] must be one of/);
   assert.match(problems, /teamRules\[0\] must not be empty/);
 });
+
+test('the background Jarvis has a tier of its own, standard by default, which the owner can move', t => {
+  assert.equal(phaseTiers.coordinator, 'standard');
+  const moved = workspace(t, { machineProfile: { ...machine, phaseTiers: { coordinator: 'fast' } }, repoEntry: repoProfile({}) });
+  const result = check(moved.repo, moved.env);
+  assert.deepEqual(result.problems, []);
+  assert.equal(result.phaseTiers.coordinator, 'fast');
+});

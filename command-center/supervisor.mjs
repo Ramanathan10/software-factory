@@ -22,7 +22,7 @@ function recordedSince(story) {
   let count = 0;
   for (const event of story.events) {
     if (event.type === 'turn-started') break;
-    if (!notTheWorker.has(event.type)) count += 1;
+    if (!notTheWorker.has(event.type) && !event.type.startsWith('jarvis-') && event.by !== 'jarvis') count += 1;
   }
   return count;
 }

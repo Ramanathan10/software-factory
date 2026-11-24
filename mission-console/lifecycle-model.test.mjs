@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { canReach, explore, follow, guarded, jarvisTable, unguarded } from './lifecycle-model.mjs';
+import { canReach, explore, follow, guarded, jarvisEvents, jarvisInputs, jarvisTable, unguarded } from './lifecycle-model.mjs';
 import { phases } from './roles.mjs';
 import { workerPhases } from './store.mjs';
 
@@ -67,4 +67,25 @@ test('the store accepts every event the Jarvis phase table records, in or into i
     }
   }
   assert.deepEqual(missing, [], 'skills/jarvis/SKILL.md tells Jarvis to record events the store refuses in those phases');
+});
+
+test('a background Jarvis turn changes nothing but its own record, is never refused by a blocker or cleanup, and never runs twice', () => {
+  const around = explore({ inputs: jarvisInputs });
+  const others = state => JSON.stringify({ ...state, jarvis: undefined });
+  const wrong = [];
+  for (const [, node] of around) {
+    if (node.state.deleted) continue;
+    const accepted = new Set(node.edges.map(edge => edge.type));
+    const jarvis = node.state.jarvis;
+    const expected = { 'jarvis-woken': !jarvis, 'jarvis-turn-started': !jarvis?.turn, 'jarvis-turn-ended': Boolean(jarvis) };
+    for (const type of jarvisEvents) if (accepted.has(type) !== expected[type]) wrong.push(type + (expected[type] ? ' refused' : ' accepted') + ' after ' + story(node));
+    for (const edge of node.edges.filter(edge => jarvisEvents.includes(edge.type))) {
+      if (others(around.get(edge.to).state) !== others(node.state)) wrong.push(edge.type + ' changed the story after ' + story(node));
+    }
+    const asked = node.state.questions.some(question => question.id === 'action-jarvis-1');
+    if (!asked && !node.edges.some(edge => edge.type === 'question' && edge.input.question === 'action-jarvis-1')) wrong.push('the Jarvis failure question was refused after ' + story(node));
+  }
+  assert.ok([...around.values()].some(node => node.state.blocked && node.state.jarvis?.turn), 'no blocked story with a Jarvis turn was reached');
+  assert.ok([...around.values()].some(node => node.state.cleanup && node.state.jarvis?.turn), 'no story awaiting cleanup with a Jarvis turn was reached');
+  assert.deepEqual(wrong, []);
 });
