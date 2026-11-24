@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
+import { waitForAny } from '../mission-console/watcher.mjs';
 import { createConsoleService } from './console-service.mjs';
 import { deliver, loadAdapters, requestDelivery, start } from './serve.mjs';
 
@@ -94,6 +95,38 @@ test('a decision recorded outside the dashboard reaches the worker when delivery
     jarvisConnection.ack(answer.seq);
     assert.deepEqual((await requestDelivery('tl-1', port)).seqs, [], 'an acknowledged decision is finished');
     await assert.rejects(requestDelivery('missing', port), /does not exist/);
+  } finally {
+    jarvisConnection.close();
+    await center.close();
+  }
+});
+
+test('an answer to a worker that released before asking reaches Jarvis, then the replacement Jarvis staffs', async t => {
+  const dbPath = join(folder(t), 'stories.sqlite');
+  const sent = [];
+  const logged = t.mock.method(console, 'log', () => {});
+  const center = await start({ port: 0, dbPath, adapters: loadAdapters({ Codex: { workers: 'command-line' } }, message => sent.push(message)) });
+  const jarvisConnection = createConsoleService({ dbPath });
+  const port = Number(new URL(center.url).port);
+  const heard = after => waitForAny(jarvisConnection.store, { after, seconds: 0 });
+  try {
+    jarvisConnection.createStory({ story: 'tl-1', title: 'Add export', detail: 'Export rows.', branch: 'tl-1', harness: 'Codex', worktree: '/work/tl-1' });
+    jarvisConnection.recordEvent({ story: 'tl-1', type: 'assign-worker', session: 'worker-1' });
+    const assignment = jarvisConnection.snapshot()[0].worker.id;
+    jarvisConnection.recordEvent({ story: 'tl-1', type: 'release-worker', assignment, detail: 'Stopped at a blocker.' });
+    const question = jarvisConnection.recordEvent({ story: 'tl-1', type: 'question', question: 'bash', prompt: 'Repair Bash?', options: ['Yes', 'Hold'], recommended: 0 });
+    const answer = jarvisConnection.recordEvent({ story: 'tl-1', type: 'answer', question: 'bash', answer: 0 });
+
+    assert.deepEqual(await requestDelivery('tl-1', port), { story: 'tl-1', seqs: [answer.seq], told: 'nobody' });
+    assert.equal(sent.length, 0);
+    assert.match(logged.mock.calls.at(-1).arguments[0], /no worker is assigned/);
+    assert.deepEqual((await heard(question.seq)).map(event => [event.type, event.seq]), [['answer', answer.seq]], 'Jarvis hears the answer nobody could take');
+
+    jarvisConnection.recordEvent({ story: 'tl-1', type: 'assign-worker', session: 'worker-2' });
+    assert.deepEqual(await requestDelivery('tl-1', port), { story: 'tl-1', seqs: [answer.seq], told: 'worker' });
+    assert.deepEqual([sent.length, sent[0].harness, sent[0].session], [1, 'Codex', 'worker-2']);
+    assert.match(sent[0].prompt, new RegExp('answer on story tl-1 \\(event seq ' + answer.seq + '\\)'));
+    assert.deepEqual(await heard(question.seq), [], 'the replacement has the answer, so it is no longer news for Jarvis');
   } finally {
     jarvisConnection.close();
     await center.close();
