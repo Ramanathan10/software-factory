@@ -167,7 +167,10 @@ export async function run(rig) {
   await rig.step('the worker scouts and plans, and the owner answers every question with its recommendation and approves the plan', () =>
     drive(rig, repo, current => !['scout', 'planning', 'approval'].includes(current.phase), limit, tally));
   await rig.step('the story runs from tests to an open pull request', () => drive(rig, repo, current => Boolean(current.pr), limit, tally));
-  await rig.step('the worker and any background Jarvis turn end after the pull request opens', () => rig.until('the worker and Jarvis to end their turns', () => idle(rig) && !rig.snapshot(story).jarvis?.turn, limit));
+  await rig.step('the worker and any background Jarvis turn end after the pull request opens', () => rig.until('the worker and Jarvis to end their turns', () => {
+    const current = rig.snapshot(story);
+    return idle(rig) && !current.jarvis?.turn && !current.jarvis?.waking && Date.now() - Date.parse(current.updatedAt) > 20000;
+  }, limit));
 
   await rig.step('the console records every lifecycle phase in order, and every owner decision was acknowledged', () => {
     const visited = [];
