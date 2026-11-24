@@ -1,0 +1,178 @@
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { test } from 'node:test';
+import { lanes, phases, roles } from '../mission-console/roles.mjs';
+
+const read = file => readFileSync(new URL(file, import.meta.url), 'utf8');
+
+const loose = new Proxy(function () {}, {
+  get: (target, key) => key === Symbol.iterator ? [][Symbol.iterator].bind([]) : key === Symbol.toPrimitive ? () => '' : loose,
+  apply: () => loose,
+  set: () => true,
+});
+
+class Node {
+  constructor(tag) {
+    Object.assign(this, { tag: String(tag).toLowerCase(), attributes: {}, children: [], className: '', style: {}, listeners: {} });
+    this.classList = {
+      contains: name => this.classes().includes(name),
+      toggle: (name, on = !this.classes().includes(name)) => { this.className = [...this.classes().filter(each => each !== name), ...(on ? [name] : [])].join(' '); return on; },
+      add: (...names) => names.forEach(name => this.classList.toggle(name, true)),
+      remove: (...names) => names.forEach(name => this.classList.toggle(name, false)),
+    };
+    return new Proxy(this, { get: (target, key) => key in target ? target[key] : typeof key === 'symbol' ? undefined : loose });
+  }
+  classes() { return this.className.split(/\s+/).filter(Boolean); }
+  setAttribute(key, value) { this.attributes[key] = String(value); }
+  getAttribute(key) { return this.attributes[key] ?? null; }
+  addEventListener(type, listener) { (this.listeners[type] ??= []).push(listener); }
+  append(...nodes) { this.children.push(...nodes); }
+  replaceChildren(...nodes) { this.children = nodes.flat(); }
+  get dataset() { return Object.fromEntries(Object.entries(this.attributes).filter(([key]) => key.startsWith('data-')).map(([key, value]) => [key.slice(5), value])); }
+  matches(selector) { const [, tag, name] = selector.match(/^([a-z0-9]*)(?:\.([\w-]+))?$/) ?? []; return (!tag || this.tag === tag) && (!name || this.classes().includes(name)); }
+  querySelectorAll(selector) { return this.children.filter(child => child instanceof Object).flatMap(child => [...(child.matches(selector) ? [child] : []), ...child.querySelectorAll(selector)]); }
+  querySelector(selector) { return this.querySelectorAll(selector)[0] ?? null; }
+  get textContent() { return this.children.map(child => typeof child === 'string' || typeof child === 'number' ? String(child) : child.textContent).join(''); }
+  set textContent(value) { this.children = [String(value)]; }
+}
+
+const ids = new Map();
+const sources = [];
+const meta = { roles, phases, columns: lanes(phases, 2) };
+Object.assign(globalThis, {
+  document: {
+    body: new Node('body'),
+    createElement: tag => new Node(tag),
+    createElementNS: (space, tag) => new Node(tag),
+    getElementById: id => ids.get(id) ?? ids.set(id, new Node('div')).get(id),
+    querySelectorAll: () => [],
+    querySelector: () => null,
+    addEventListener() {},
+  },
+  localStorage: { getItem: () => null, setItem() {}, removeItem() {} },
+  fetch: async () => ({ ok: true, json: async () => meta }),
+  EventSource: class { constructor() { this.listeners = {}; sources.push(this); } addEventListener(type, listener) { this.listeners[type] = listener; } close() {} },
+  setInterval: () => 0,
+  window: globalThis,
+});
+await import('./ui/app.js');
+
+const now = () => new Date().toISOString();
+const base = { title: 'A story', branch: 'story/x', worktree: 'C:/w/x', harness: 'Claude Code', questions: [], artifacts: [], files: [], createdAt: now(), updatedAt: now() };
+const turn = { pid: 1, log: 'x.log', at: now() };
+const fixtures = {
+  busy: { ...base, id: 'BUSY-1', repo: 'acme/one', phase: 'testing', worker: { id: 'w1', role: 'tester', session: 's1', turn } },
+  idle: { ...base, id: 'IDLE-1', repo: 'acme/two', phase: 'testing', worker: { id: 'w2', role: 'tester', session: 's2', lastTurn: { outcome: 'ended', at: now(), code: 0 } } },
+  waiting: { ...base, id: 'WAIT-1', repo: 'acme/one', phase: 'approval', events: [{ seq: 1, at: now(), type: 'plan', detail: 'Plan ready.' }] },
+  blocked: { ...base, id: 'BLOCK-1', repo: 'acme/two', phase: 'building', blocked: true, worker: { id: 'w3', role: 'implementer', session: 's3', turn }, events: [{ seq: 2, at: now(), type: 'blocked', detail: 'Stuck.' }] },
+  closed: { ...base, id: 'DONE-1', repo: 'acme/one', phase: 'closed' },
+};
+sources.at(-1).listeners.stories({ data: JSON.stringify({ stories: Object.values(fixtures) }) });
+
+const walk = node => node && typeof node === 'object' ? [node, ...node.children.flatMap(walk)] : [];
+const cards = new Map(walk(ids.get('board')).filter(node => node.tag === 'article' && node.classes().includes('card')).map(card => [card.children.find(child => child?.tag === 'header')?.textContent.match(/[A-Z]+-\d+/)?.[0], card]));
+const card = state => {
+  const found = cards.get(fixtures[state].id);
+  assert.ok(found, 'the board rendered no card for the ' + state + ' story ' + fixtures[state].id);
+  return found;
+};
+const headerOf = state => card(state).children.find(child => child?.tag === 'header');
+const glyphOf = state => walk(headerOf(state)).find(node => node.classes?.().includes('avatar'));
+const has = (state, name) => walk(card(state)).some(node => node.classes?.().includes(name));
+const phaseLabel = phase => phases[phase][1];
+
+test('the board renders a card for every story state the tests use', () => {
+  for (const state of Object.keys(fixtures)) card(state);
+});
+
+test('a busy card shows its agent glyph in the header and the glyph moves', () => {
+  const glyph = glyphOf('busy');
+  assert.ok(glyph, 'the busy card has no glyph (.avatar) in its header');
+  assert.ok(glyph.classes().includes('moving'), 'the busy card header glyph is built without "moving", so it stays still');
+  assert.ok(walk(glyph).some(node => node.tag === 'svg'), 'the busy card header glyph is not the role badge');
+});
+
+test('the glyph stays still on idle, waiting, blocked and closed cards', () => {
+  for (const state of ['idle', 'waiting', 'blocked', 'closed']) {
+    const glyph = glyphOf(state);
+    assert.ok(glyph, 'the ' + state + ' card has no glyph (.avatar) in its header');
+    assert.ok(!glyph.classes().includes('moving'), 'the ' + state + ' card header glyph moves');
+  }
+});
+
+test('the header has the story id on the left, the glyph on the right and no phase pill', () => {
+  for (const state of Object.keys(fixtures)) {
+    const header = headerOf(state);
+    const first = header.children.find(child => child && typeof child === 'object');
+    assert.ok(first?.classes().includes('id') && first.textContent === fixtures[state].id, 'the ' + state + ' card header does not open with the story id');
+    const last = header.children.findLast(child => child && typeof child === 'object');
+    assert.ok(walk(last).some(node => node.classes?.().includes('avatar')), 'the ' + state + ' card header does not end with the glyph');
+    assert.ok(!walk(header).some(node => node.classes?.().includes('phase')), 'the ' + state + ' card header still has the phase pill');
+    assert.ok(!header.textContent.includes(phaseLabel(fixtures[state].phase)), 'the ' + state + ' card header still shows the phase "' + phaseLabel(fixtures[state].phase) + '" as text');
+  }
+});
+
+test('the glyph tooltip and accessible label name the agent and the phase', () => {
+  const expected = roles.tester.alias + ' · ' + phaseLabel('testing');
+  const nodes = walk(headerOf('busy'));
+  assert.equal(nodes.find(node => node.getAttribute?.('title'))?.getAttribute('title'), expected, 'the busy card glyph tooltip should read "' + expected + '"');
+  assert.equal(nodes.find(node => node.getAttribute?.('aria-label'))?.getAttribute('aria-label'), expected, 'the busy card glyph accessible label should read "' + expected + '"');
+  for (const state of ['idle', 'waiting', 'blocked']) {
+    const title = walk(headerOf(state)).find(node => node.getAttribute?.('title'))?.getAttribute('title') ?? '';
+    assert.ok(title.endsWith(' · ' + phaseLabel(fixtures[state].phase)), 'the ' + state + ' card glyph tooltip "' + title + '" does not name the agent and the phase');
+  }
+});
+
+test('cards show no repository line, even with stories in two repositories', () => {
+  for (const state of Object.keys(fixtures)) {
+    assert.ok(!has(state, 'repo'), 'the ' + state + ' card still has a .repo element');
+    assert.ok(!card(state).textContent.includes(fixtures[state].repo), 'the ' + state + ' card still shows its repository ' + fixtures[state].repo);
+  }
+});
+
+test('cards show one glyph, no agent name and no pulse dot', () => {
+  for (const state of Object.keys(fixtures)) {
+    const glyphs = walk(card(state)).filter(node => node.classes?.().includes('avatar'));
+    assert.equal(glyphs.length, 1, 'the ' + state + ' card shows ' + glyphs.length + ' glyphs');
+    assert.ok(!has(state, 'pulse'), 'the ' + state + ' card still has the pulse dot');
+  }
+  const body = card('busy').textContent;
+  assert.ok(!body.includes(roles.tester.alias), 'the busy card still shows the agent name "' + roles.tester.alias + '" as text');
+  assert.ok(!card('blocked').textContent.includes(roles.implementer.alias), 'the blocked card shows the agent name "' + roles.implementer.alias + '" as text');
+});
+
+test('the bottom row shows status words only when the story is not busy, and the time on the right', () => {
+  const words = { idle: 'Idle · no tester session active', waiting: 'Waiting on you', blocked: 'Blocked', closed: 'Done' };
+  for (const [state, text] of Object.entries(words)) assert.ok(card(state).textContent.includes(text), 'the ' + state + ' card does not say "' + text + '"');
+  for (const text of Object.values(words)) assert.ok(!card('busy').textContent.includes(text), 'the busy card says "' + text + '"');
+  assert.ok(!has('busy', 'who'), 'the busy card still renders a status-words element');
+  for (const state of Object.keys(fixtures)) {
+    const rows = card(state).children.filter(child => child && typeof child === 'object');
+    const time = walk(card(state)).find(node => node.tag === 'time');
+    assert.ok(time, 'the ' + state + ' card shows no time since the last update');
+    const row = rows.find(child => walk(child).includes(time));
+    assert.ok(row && rows.indexOf(row) > rows.findIndex(child => child.tag === 'h3'), 'the ' + state + ' card time is not below the title');
+    assert.equal(walk(row).at(-1), time, 'the ' + state + ' card time is not at the right of its row');
+  }
+});
+
+test('app.css keeps no rule for the repository line, the phase pill or the pulse dot', () => {
+  const css = read('./ui/app.css');
+  for (const selector of ['.card .repo', '.card header .phase', '.pulse']) {
+    assert.ok(!css.includes(selector), 'app.css still has a "' + selector + '" rule');
+  }
+  assert.doesNotMatch(css, /\.card[\w.]* \.owner \.avatar/, 'app.css still styles a glyph in the card owner row');
+});
+
+test('the toolbar repository filter and the story detail Repository row remain', () => {
+  assert.match(read('./ui/index.html'), /id="repo-filter"/);
+  const app = read('./ui/app.js');
+  assert.match(app, /\$\('repo-filter'\)/);
+  assert.match(app, /row\('Repository', story\.repo\)/);
+});
+
+test('reduced motion stops every animation, the card glyph included', () => {
+  const block = read('./ui/app.css').match(/@media \(prefers-reduced-motion: reduce\) \{([\s\S]*?)\n\}/)?.[1];
+  assert.ok(block, 'app.css has no prefers-reduced-motion block');
+  assert.match(block, /\*, \*::before, \*::after \{[^}]*animation: none !important/);
+});

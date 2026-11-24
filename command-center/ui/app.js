@@ -118,9 +118,9 @@ function openPlan(story) {
 
 const initials = alias => (alias || '?').split(/\s+/).map(word => word[0]).join('').slice(0, 2).toUpperCase();
 const alias = role => role === 'approver' ? 'You' : meta.roles[role]?.alias ?? role;
-const avatar = (role, { small = false, moving = false } = {}) => {
+const avatar = (role, { small = false, moving = false, label } = {}) => {
   const badge = meta.roles[role]?.badge;
-  return el('span', { class: ['avatar', small && 'sm', moving && 'moving', !badge && 'initials'].filter(Boolean).join(' ') },
+  return el('span', { class: ['avatar', small && 'sm', moving && 'moving', !badge && 'initials'].filter(Boolean).join(' '), title: label, 'aria-label': label, role: label && 'img' },
     badge ? badgeSvg(badge) : initials(alias(role)));
 };
 const ago = iso => {
@@ -247,6 +247,7 @@ function storyCard(story) {
   const waiting = waitingOnYou(story);
   const last = story.events?.[0];
   const idle = !busy && !waiting && !story.blocked && story.phase !== 'closed';
+  const label = alias(role) + ' · ' + (meta.phases[story.phase]?.[1] ?? story.phase);
   const placement = story.id + ':' + story.phase;
   const arriving = !seenCards.has(placement);
   seenCards.add(placement);
@@ -258,20 +259,17 @@ function storyCard(story) {
   },
     el('header', {},
       el('span', { class: 'id' }, story.id),
-      el('span', { class: 'phase' }, meta.phases[story.phase]?.[1] ?? story.phase)),
+      idle ? el('span', { class: 'avatar sm', title: label, 'aria-label': label, role: 'img' }, '··') : avatar(role, { small: true, moving: busy, label })),
     el('h3', {}, story.title),
-    story.repo && repos().length > 1 && el('p', { class: 'repo' }, story.repo),
+    last && (waiting || story.blocked) && el('p', { class: 'last' }, last.detail),
     el('div', { class: 'owner' },
-      idle ? el('span', { class: 'avatar sm' }, '··') : avatar(role, { small: true }),
-      el('span', { class: 'who' }, story.blocked ? 'Blocked' : waiting ? 'Waiting on you' : busy ? alias(role) : story.phase === 'closed' ? 'Done' : 'Idle · ' + idleReason(story)),
-      busy && el('i', { class: 'pulse' }),
+      !busy && el('span', { class: 'who' }, story.blocked ? 'Blocked' : waiting ? 'Waiting on you' : story.phase === 'closed' ? 'Done' : 'Idle · ' + idleReason(story)),
       el('span', { class: 'aside' },
         el('span', { class: 'links' },
           hasDesign(story) && el('a', { href: '#', onclick: event => { event.preventDefault(); event.stopPropagation(); openDesign(story.id); } }, 'Plan'),
           story.pipeline && el('a', { href: story.pipeline, target: '_blank', rel: 'noopener', onclick: event => event.stopPropagation() }, 'Run')),
         story.pr && el('a', { href: story.pr, target: '_blank', rel: 'noopener', onclick: event => event.stopPropagation() }, 'PR'),
         el('time', { 'data-at': story.updatedAt }, ago(story.updatedAt)))),
-    last && (waiting || story.blocked) && el('p', { class: 'last' }, last.detail),
     el('div', { class: 'meter' }, el('span', { style: 'transform:scaleX(' + progress(story) / 100 + ')' })));
 }
 
