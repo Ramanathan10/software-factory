@@ -23,7 +23,7 @@ function brief(story, db) {
     'You are a test worker in an automated end-to-end check of a story console. Your story is ' + story + '.',
     'Do only the numbered steps below. Run no other commands, read no skills or repository instructions, and change no files except scratch JSON files in the current directory.',
     'How the console works:',
-    '- Read the story: node "' + slashes(consoleCli) + '" handover "' + slashes(db) + '" ' + story + '\n  It prints JSON with story.revision, story.worker.id (your assignment), story.questions, and pending (events not yet acknowledged, each with seq and type).',
+    '- Read the story: node "' + slashes(consoleCli) + '" handover "' + slashes(db) + '" ' + story + '\n  It prints JSON with story.revision, story.worker.id (your assignment), story.questions, and pending (events not yet acknowledged, each with seq and type).\n  The Command Center records your assignment about ten seconds after you start. If story.worker is missing, or its session is not yours, wait five seconds and read the story again, up to six times, before deciding it is not there.',
     '- Record an event: send one JSON object on standard input to: node "' + slashes(consoleCli) + '" record "' + slashes(db) + '"\n  Pipe it however your shell allows; writing it to a file first is fine. Every event needs "story", "type", "key" (any new unique string) and "revision" (the story\'s current revision). It prints the new revision.',
     '- Acknowledge an event: node "' + slashes(consoleCli) + '" ack "' + slashes(db) + '" <seq>',
     '- If story.worker is missing when you read the story, wait two seconds and read it again until it appears.',
