@@ -10,6 +10,58 @@ function list(folder, recursive = false) {
   try { return readdirSync(folder, { recursive }); } catch { return []; }
 }
 
+function readJson(file) {
+  try { return JSON.parse(readFileSync(file, 'utf8')); } catch { return undefined; }
+}
+
+const strings = values => [...new Set(values.filter(value => typeof value === 'string' && value))];
+
+function firstDefault(sources, fallback) {
+  for (const [from, read] of sources) {
+    const model = read();
+    if (typeof model === 'string' && model) return { default: model, defaultFrom: from };
+  }
+  return { default: null, defaultFrom: fallback };
+}
+
+function claudeModels({ env = process.env, repository } = {}) {
+  const config = env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude');
+  const catalogs = join(config, 'cache', 'model-catalog');
+  const names = list(catalogs).filter(file => file.endsWith('-cc.json')).flatMap(file => {
+    const catalog = readJson(join(catalogs, file))?.catalog?.config;
+    return [...(Array.isArray(catalog?.models) ? catalog.models.map(model => model?.id) : []), ...Object.keys(catalog?.provider_alias_targets ?? {})];
+  });
+  const settings = [
+    ...(repository ? [join(repository, '.claude', 'settings.local.json'), join(repository, '.claude', 'settings.json')] : []),
+    join(config, 'settings.json'),
+  ];
+  return {
+    names: strings(names),
+    namesFrom: join(catalogs, '*-cc.json'),
+    ...firstDefault([
+      ['the ANTHROPIC_MODEL environment variable', () => env.ANTHROPIC_MODEL],
+      ...settings.map(file => [file, () => readJson(file)?.model]),
+    ], "the account's default"),
+  };
+}
+
+function codexModels({ env = process.env } = {}) {
+  const folder = env.CODEX_HOME || join(homedir(), '.codex');
+  const cache = join(folder, 'models_cache.json');
+  const config = join(folder, 'config.toml');
+  const models = readJson(cache)?.models;
+  const configured = () => {
+    let text = '';
+    try { text = readFileSync(config, 'utf8'); } catch {}
+    return /^\s*model\s*=\s*"([^"]+)"/m.exec(text.split(/^\s*\[/m)[0])?.[1];
+  };
+  return {
+    names: strings(Array.isArray(models) ? models.filter(model => model?.visibility !== 'hide').map(model => model?.slug) : []),
+    namesFrom: cache,
+    ...firstDefault([[config, configured]], "the program's built-in default"),
+  };
+}
+
 export const harnesses = {
   'GitHub Copilot app': {
     id: 'copilot', marker: '.copilot', skills: join('.copilot', 'skills'), install: 'copy',
@@ -24,6 +76,7 @@ export const harnesses = {
     start: ({ session }) => ['-p', '--session-id', session],
     message: ({ session }) => ['-p', '--resume', session],
     model: name => ['--model', name],
+    models: claudeModels,
     record: ({ session, env }) => {
       const projects = join(env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude'), 'projects');
       return list(projects).map(project => join(projects, project, session + '.jsonl')).find(file => existsSync(file));
@@ -42,6 +95,7 @@ export const harnesses = {
     start: () => ['exec', '--json'],
     message: ({ session }) => ['exec', 'resume', session],
     model: name => ['--model', name],
+    models: codexModels,
     record: ({ session, env }) => {
       const sessions = join(env.CODEX_HOME || join(homedir(), '.codex'), 'sessions');
       const file = list(sessions, true).find(name => name.endsWith(session + '.jsonl'));
@@ -234,9 +288,20 @@ export async function startWorker({ harness, worktree, prompt, phase }, options 
 
 if (isMain(import.meta.url)) {
   const [mode, harness, worktree] = process.argv.slice(2);
-  if (mode !== 'start' || !harness || !worktree) {
-    console.error('Usage: node harnesses.mjs start <harness> <worktree>   (kickoff prompt on stdin)\nHarnesses: ' + Object.keys(harnesses).join(', '));
+  if (!((mode === 'start' && harness && worktree) || (mode === 'models' && harness))) {
+    console.error('Usage: node harnesses.mjs start <harness> <worktree>   (kickoff prompt on stdin)\n       node harnesses.mjs models <harness> [repository]   (model names and default the harness offers)\nHarnesses: ' + Object.keys(harnesses).join(', '));
     process.exit(2);
+  }
+  if (mode === 'models') {
+    try {
+      const entry = row(harness);
+      if (!entry.models) throw new Error(`${entry.name} takes no model option.`);
+      console.log(JSON.stringify(entry.models({ env: process.env, repository: worktree && resolve(worktree) }), null, 2));
+      process.exit(0);
+    } catch (error) {
+      console.error(error.message);
+      process.exit(1);
+    }
   }
   try {
     const result = await startWorker({ harness, worktree, prompt: readFileSync(0, 'utf8') });
