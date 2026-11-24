@@ -672,3 +672,19 @@ test('document evidence accepts markdown, json, and text only', t => {
   assert.throws(() => record('artifact', { path: design, kind: 'before', detail: 'No.' }), /PNG/);
   assert.equal(store.handover('docs').story.artifacts[0].kind, 'document');
 });
+
+test('the handover carries the 10 most recent events while the snapshot keeps 40 and the history keeps all', t => {
+  const store = fixture(t)();
+  start(store, 'long');
+  const record = writer(store, 'long');
+  record('question', { question: 'scope', prompt: 'Which rows?', options: ['All', 'Selected'], recommended: 1 });
+  const answer = record('answer', { question: 'scope', answer: 1 });
+  for (let step = 0; step < 50; step += 1) record('activity', { detail: 'Step ' + step + '.' });
+  const all = store.history('long');
+  assert.equal(all.length, 54);
+  const packet = store.handover('long');
+  assert.deepEqual(packet.story.events.map(event => event.seq), all.slice(0, 10).map(event => event.seq));
+  assert.deepEqual(store.snapshot()[0].events.map(event => event.seq), all.slice(0, 40).map(event => event.seq));
+  assert.ok(packet.pending.some(event => event.seq === answer.seq), 'unacknowledged news is not capped');
+  assert.equal(packet.story.questions[0].answer, 'Selected');
+});
