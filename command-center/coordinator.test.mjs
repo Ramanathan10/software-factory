@@ -414,3 +414,100 @@ test('the board is told a story is waiting on Jarvis, since when and why, and th
   assert.ok(checking.jarvis?.turn, 'the story frame carries the running Jarvis turn');
   assert.equal(checking.waitingOnJarvis, undefined);
 });
+
+async function failedWorkerStory(rig) {
+  rig.recorder.recordEvent({ story: 'tl-1', type: 'assign-worker', session: 'scout-1' });
+  const assignment = rig.story().worker.id;
+  rig.recorder.recordEvent({ story: 'tl-1', type: 'turn-started', assignment, pid: 999999, log: join(rig.directory, 'scout.log') });
+  rig.ackAll();
+  rig.recorder.recordEvent({ story: 'tl-1', type: 'turn-ended', assignment, outcome: 'failed', code: 1, wake: true, detail: 'Worker turn failed (exit code 1).' });
+  const { center } = await rig.open();
+  await until('a background Jarvis turn', () => rig.jarvis.length);
+  rig.jarvis[0].end(1);
+  const notice = await until('the action question', () => rig.story().questions.find(question => question.id.startsWith('action-jarvis-')));
+  return { center, notice };
+}
+
+const answerThroughDashboard = (center, rig, question, answer) => fetch(center.url + 'api/decision', {
+  method: 'POST', headers: { 'Content-Type': 'application/json', Origin: center.url.slice(0, -1) },
+  body: JSON.stringify({ story: 'tl-1', type: 'answer', question, answer, revision: rig.story().revision }),
+});
+
+test('Done to a Jarvis failure on a story whose worker is idle after a failed turn gives Jarvis a new turn and tells the worker nothing', async t => {
+  const rig = coordinated(t);
+  const { center, notice } = await failedWorkerStory(rig);
+  assert.equal((await answerThroughDashboard(center, rig, notice.id, 0)).status, 200);
+  await pause(2500);
+  await settle();
+  assert.equal(rig.messages.filter(entry => entry.input.phase !== 'coordinator').length, 0, 'the answer is not delivered to the worker');
+  assert.equal(rig.jarvisTurns(), 2, 'exactly one new Jarvis turn');
+});
+
+test('Done to a Jarvis failure gives Jarvis a new turn even when no worker turn-ended is pending', async t => {
+  const rig = coordinated(t);
+  const { center, notice } = await failedWorkerStory(rig);
+  rig.ackAll();
+  assert.equal((await answerThroughDashboard(center, rig, notice.id, 0)).status, 200);
+  await pause(2500);
+  await settle();
+  assert.equal(rig.messages.filter(entry => entry.input.phase !== 'coordinator').length, 0, 'the answer is not delivered to the worker');
+  assert.equal(rig.jarvisTurns(), 2, 'exactly one new Jarvis turn');
+});
+
+test('a testing story with no worker and a pending approval wakes Jarvis once the story is blocked', async t => {
+  const rig = coordinated(t);
+  scoutHandedOff(rig);
+  rig.recorder.recordEvent({ story: 'tl-1', type: 'plan', detail: 'Export selected rows.' });
+  rig.ackAll();
+  rig.recorder.recordEvent({ story: 'tl-1', type: 'approve' });
+  rig.recorder.recordEvent({ story: 'tl-1', type: 'blocked', detail: 'Bruce Banner could not start after plan approval: boom' });
+  assert.equal(rig.story().phase, 'testing');
+  assert.ok(rig.story().blocked);
+  await rig.open();
+  await settle();
+  assert.equal(rig.workers.length, 0);
+  assert.equal(rig.jarvisTurns(), 1, 'the blocked story is handed to Jarvis');
+});
+
+test('a Jarvis turn an earlier daemon left, whose process is gone but which recorded its own work, is recorded as ended', async t => {
+  const rig = coordinated(t);
+  const handoff = scoutHandedOff(rig);
+  const gone = spawn(process.execPath, ['-e', ''], { stdio: 'ignore' });
+  await new Promise(resolve => gone.once('close', resolve));
+  rig.recorder.recordEvent({ story: 'tl-1', type: 'jarvis-woken', handled: handoff.seq });
+  rig.recorder.recordEvent({ story: 'tl-1', type: 'jarvis-turn-started', session: 'jarvis-old', pid: gone.pid, log: join(rig.directory, 'old.log') });
+  rig.recorder.recordEvent({ story: 'tl-1', type: 'activity', detail: 'Jarvis checked the story.', by: 'jarvis' });
+  await rig.open();
+  await until('the finished turn', () => rig.story().jarvis?.lastTurn);
+  assert.equal(rig.story().jarvis.lastTurn.outcome, 'ended');
+  assert.ok(!rig.story().questions.some(question => question.id.startsWith('action-jarvis-')));
+  await settle();
+  assert.equal(rig.jarvisTurns(), 0);
+});
+
+test('the turn after a failed Jarvis turn starts a fresh session rather than resuming the failed one', async t => {
+  const rig = coordinated(t);
+  scoutHandedOff(rig);
+  await rig.open();
+  await until('a background Jarvis turn', () => rig.story().jarvis?.turn);
+  assert.ok(rig.story().jarvis.session);
+  rig.jarvis[0].end(1);
+  const notice = await until('the action question', () => rig.story().questions.find(question => question.id.startsWith('action-jarvis-')));
+  rig.recorder.recordEvent({ story: 'tl-1', type: 'answer', question: notice.id, answer: 0 });
+  await until('one new Jarvis turn', () => rig.jarvisTurns() === 2);
+  await settle();
+  assert.equal(rig.jarvis.length, 2, 'the new turn is launched');
+  assert.equal(rig.jarvisMessages().length, 0, 'the failed session is not resumed');
+});
+
+test('a failed Jarvis turn is described by its last log line, not by an earlier usage limit line', async t => {
+  const rig = coordinated(t);
+  scoutHandedOff(rig);
+  await rig.open();
+  await until('a background Jarvis turn', () => rig.story().jarvis?.turn);
+  writeFileSync(rig.jarvis[0].log, 'ERROR: You’ve hit your usage limit. Try again at 9:12 PM.\nretrying\nTypeError: boom\n');
+  rig.jarvis[0].end(1);
+  const notice = await until('the action question', () => rig.story().questions.find(question => question.id.startsWith('action-jarvis-')));
+  assert.match(notice.prompt, /Jarvis stopped with an error: TypeError: boom/);
+  assert.doesNotMatch(notice.prompt, /usage limit/i);
+});
