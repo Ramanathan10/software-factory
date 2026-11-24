@@ -104,6 +104,10 @@ function kickoff(rig, repo, replacing) {
   ].filter(Boolean).join('\n\n');
 }
 
+const staff = (rig, repo) => rig.start(story, kickoff(rig, repo, true)).catch(error => {
+  if (!/already has a worker|already in progress/.test(error.message)) throw error;
+});
+
 const turnsStarted = rig => rig.history(story).filter(item => item.type === 'turn-started');
 const idle = rig => turnsStarted(rig).every(item => rig.processEnded(item.worker.turn.pid));
 
@@ -124,14 +128,14 @@ async function drive(rig, repo, done, limit, tally) {
     if (open.length) {
       for (const item of open) last = await rig.decide({ story, type: 'answer', question: item.id, answer: item.recommended });
       if (!rig.snapshot(story).worker) {
-        await rig.start(story, kickoff(rig, repo, true));
+        await staff(rig, repo);
         await rig.deliver(story);
       }
     } else if (current.phase === 'approval') {
       last = await rig.decide({ story, type: 'approve' });
       waiting = 'the Command Center to start the test author after approval';
     } else if (!current.worker && workerPhases.has(current.phase)) {
-      await rig.start(story, kickoff(rig, repo, true));
+      await staff(rig, repo);
       waiting = 'the worker Jarvis started for ' + current.phase;
     } else {
       throw new Error('The worker ended its turn in ' + current.phase + ' with nothing for the owner or Jarvis to do. Its log ends:\n' + rig.lastLog());
