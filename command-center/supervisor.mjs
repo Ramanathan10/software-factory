@@ -72,6 +72,19 @@ export function createSupervisor({ service, verdict = turnVerdict, alive = isAli
   }
 
   const adopted = (id, turn) => turn && !owned.has(id + ':' + turn.pid) && Date.parse(turn.at) >= bootedAt && alive(turn.pid);
+  const finishedReleased = new Set();
+  const running = id => {
+    if ([...owned].some(key => key.startsWith(id + ':'))) return true;
+    const story = find(id);
+    if (story?.worker) return adopted(id, story.worker.turn);
+    const release = story && service.store.history(id).find(event => event.type === 'release-worker');
+    const turn = release?.worker?.turn;
+    const key = id + ':' + release?.seq;
+    if (!turn || finishedReleased.has(key)) return false;
+    if (adopted(id, turn)) return true;
+    finishedReleased.add(key);
+    return false;
+  };
 
   const waits = new Map();
 
@@ -89,6 +102,12 @@ export function createSupervisor({ service, verdict = turnVerdict, alive = isAli
       owned.add(key);
       ended.then(code => {
         owned.delete(key);
+        try {
+          const release = service.store.history(story).find(event => event.type === 'release-worker' && event.worker?.id === assignment);
+          if (release) finishedReleased.add(story + ':' + release.seq);
+        } catch (error) {
+          if (error.status !== 404) log('The released turn on ' + story + ' could not be retired (' + error.message + ').');
+        }
         finish(story, pid, code, false);
       });
     },
@@ -103,7 +122,7 @@ export function createSupervisor({ service, verdict = turnVerdict, alive = isAli
       return new Promise((resolve, reject) => {
         const check = () => {
           waits.delete(check);
-          if (!adopted(id, find(id)?.worker?.turn)) return resolve();
+          if (!running(id)) return resolve();
           waits.set(check, { timer: setTimeout(check, pollMs), reject });
         };
         check();
