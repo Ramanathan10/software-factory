@@ -25,18 +25,20 @@ The owner's approval of the plan is the last planned stop. After it, run through
 From the target repository, run the local `ai-sdlc-setup` skill's check:
 
 ```
-node <ai-sdlc-setup skill>/scripts/preflight.mjs check <repository>
+node <ai-sdlc-setup skill>/scripts/preflight.mjs check <repository> <harness>
 ```
+
+`<harness>` is the harness this session runs in, by name or install id, such as `"Claude Code"` or `codex`.
 
 If it reports problems, read and follow `ai-sdlc-setup` to fix them, then check again. Do not start a story on a failing check.
 
-Warnings do not stop a story. Each names a missing component, such as Stryker or the video tools. Tell the owner once, with the suggested install, and offer the missing-components question from `ai-sdlc-setup`. Do not offer evidence in phase 1 that a missing component or host ability rules out: no recording without the host's screen recorder or `ffmpeg`, no explainer video without `hyperframes` and `ffmpeg`.
+Warnings do not stop a story. A warning that names an `ai-sdlc-setup` question, such as an unanswered one or the Models question for a harness with no model choice recorded, is answered by asking that one question in a chat with the owner and saving the answer. A story worker under the Command Center cannot write the profile: it records the warning as `activity` and continues on what is recorded, and Jarvis asks the question. Every other warning names a missing component, such as Stryker or the video tools. Tell the owner once, with the suggested install, and offer the missing-components question from `ai-sdlc-setup`. Do not offer evidence in phase 1 that a missing component or host ability rules out: no recording without the host's screen recorder or `ffmpeg`, no explainer video without `hyperframes` and `ffmpeg`.
 
 The check's output is the configuration for this run: the owner's name, whether cross-model sharing is authorized, the machine's shared resources and default verification environment, the implementation level, the review round limit, the before-and-after and architecture diagram settings, the worker permissions, the model of each tier and the tier of each phase, the full paths of the Command Center files under `commandCenter`, and for the repository its required gates, the gates the owner declined, branch pattern, worktree folder, team rules, work tracker, required pipelines, review bot, and spec location. Use these values as given; do not substitute a default of your own. When a later phase needs an answer the profile lacks, ask that one question through `ai-sdlc-setup` and continue.
 
 ### Models
 
-The check's `models` names a model for each tier of work, by harness, and `phaseTiers` gives the tier of each console phase. The Command Center starts each worker turn on the model for the phase the turn starts in. When a phase is handed to a subagent, such as the test author or a review seat, and the host lets you choose a subagent's model, choose the one `models` names for this session's harness at that phase's tier. Where `models` names none, or the host offers no choice, use the host's default. In review this picks one seat's model; `adversarial-code-review` still needs its seats to be of distinct model classes.
+The check's `models` names a model for each tier of work, by harness, and `phaseTiers` gives the tier of each console phase. The Command Center starts each worker turn on the model for the phase the turn starts in. When a phase is handed to a subagent, such as the test author or a review seat, and the host lets you choose a subagent's model, choose the one `models` names for this session's harness at that phase's tier. Where `models` names none or saves `null` (the owner chose the harness's default), or the host offers no choice, use the host's default. In review this picks one seat's model; `adversarial-code-review` still needs its seats to be of distinct model classes.
 
 ### One worktree per story
 

@@ -7,7 +7,7 @@ description: Coordinate AI SDLC stories through the Command Center. Use when the
 
 Jarvis is the owner's coordinator for the software factory. It delegates each story to its own worker, and it keeps the Command Center showing where every story stands and what is waiting on the owner. The worker runs the `ai-sdlc` skill's phases unchanged; `ai-sdlc` is the source of truth for what a phase does and when it may advance, and nothing here loosens one of its gates.
 
-Run the steps in order. Steps 1 and 2 happen once per session, except that the preflight check in step 1 is run again for each repository a story is for. Steps 3 to 6 repeat for each story, and independent stories run through them at the same time.
+Run the steps in order. Steps 1 and 2 happen once per session, except that the preflight check in step 1 is run again whenever a story's repository or harness differs from the last check. Steps 3 to 6 repeat for each story, and independent stories run through them at the same time.
 
 - [ ] 1. Start the session: target repository, preflight check, Command Center
 - [ ] 2. Catch up: decisions and stories left from earlier sessions
@@ -23,7 +23,7 @@ The [factory runbook](RUNBOOK.md) gives the detail behind steps 3 to 6: the call
 Jarvis lives in one chat. On "Be Jarvis", when the host can list and rename its chats and none is named "Jarvis", rename this chat to "Jarvis" and say so; when one exists, point the owner to it instead of starting a second coordinator.
 
 1. **Find the target repository.** Use the repository the chat is in. If the chat is not in one, or the owner named another, ask which repository the story is for.
-2. **Run the preflight check on it**, as `ai-sdlc` phase 0 describes. If it reports problems, read and follow `ai-sdlc-setup`, then check again. No story starts on a failing check.
+2. **Run the preflight check on it** with the harness this chat runs in, as `ai-sdlc` phase 0 describes. If it reports problems, read and follow `ai-sdlc-setup`, then check again. No story starts on a failing check.
 3. **Take the paths from the check.** Its `commandCenter` output gives the full path of each file Jarvis runs: `console` (the story command line), `launcher` (starts the dashboard), `harnesses` (starts workers), `readiness` (checks a story against the work tracker), and `reference` (the Mission Console reference). Use them exactly as printed; never guess where the files are.
 4. **Start the Command Center.** Run `node <launcher>` as a background command and give the owner the address it prints; it says so if one is already running. In the GitHub Copilot app, open the extension's canvas instead. Then tell the owner what comes next: open the Command Center, and name the first feature or bug.
 
@@ -36,7 +36,7 @@ Read `pending` and the story snapshot. Tell the owner about every decision still
 Jarvis does not scout, plan, write tests, implement, review, or verify. For each story:
 
 1. Read the work item to name the story. Do not scout the repository.
-2. Name the story's repository. One Jarvis chat takes stories for any repository. When this one differs from the repository last checked, run the preflight check on it before going on, exactly as step 1 does. If it has no section in the profile yet, run the `ai-sdlc-setup` repository interview here in the Jarvis chat: a worker cannot interview the owner. Use that repository's check output for everything below.
+2. Name the story's repository. One Jarvis chat takes stories for any repository. When this one or the story's harness differs from the last check, run the preflight check with that repository and harness before going on, exactly as step 1 does. Ask each `ai-sdlc-setup` question its warnings name, such as the Models question, here in the Jarvis chat before `create`. If it has no section in the profile yet, run the `ai-sdlc-setup` repository interview here in the Jarvis chat: a worker cannot interview the owner. Use that repository's check output for everything below.
 3. Use the harness in which the owner started the request: a Codex request stays in Codex, a Claude Code request stays in Claude Code, and a GitHub Copilot app request stays there. Record that harness at creation and keep it. Use another only when the owner explicitly requests the switch; an unavailable login, model, or quota is a blocker to report, not permission to switch. Independent review seats may still use other authorized models as their review skill requires.
 4. Record `create`, with `repo` set to the check's `repo.slug` and the branch named from that repository's branch pattern.
 5. Start the story's worker in its own worktree with the kickoff prompt, and record `assign-worker` so decisions route to it.
@@ -70,7 +70,7 @@ When a worker ends its turn, read the console and check the evidence it recorded
 | 3. Implement | `building` | `activity` for progress and changed files; `handoff` with the green command |
 | 4. Required gates and mutation | `gates`, `mutation` | `handoff` with each gate's command and result; `return-to-build` on a failing gate; `return-to-testing` for surviving mutants |
 | 5. Adversarial review | `review` | `handoff` with the verdict; `return-to-build` with a verified finding; a `question` when the review reaches the profile's review round limit or otherwise escalates to the owner |
-| 6. Before and after | `comparison-choice`, `comparison` | The profile or the approved spec already decided this. Record `comparison-choice` with that answer instead of asking again, then `artifact` for each `before`, `after`, or `recording`, and a `question` asking the owner to accept the comparison. Their acceptance is followed by `handoff`; a change they ask for is `return-to-build` with their comment. |
+| 6. Before and after | `comparison-choice`, `comparison` | The profile or the approved spec already decided this. Record `comparison-choice` with that answer instead of asking again, then `artifact` for each `before`, `after`, or `recording` (a text capture, such as command output, is registered as a `document` whose detail starts with BEFORE or AFTER, since those kinds take only images and video), and a `question` asking the owner to accept the comparison. Their acceptance is followed by `handoff`; a change they ask for is `return-to-build` with their comment. |
 | 7. Architecture diagram | `diagram` | When the profile or the spec asks for one: `diagram-start` with the scope before the pull request opens, `artifact` of kind `diagram`, `handoff` |
 | 8. Pull request | `publishing`, `ci`, `merge`, `closed` | `pr-opened` with the URL; `activity` with `pipeline` for a required pipeline run; `pr-ready` for the reviewed head; `pr-recheck` on a new head; `merged` |
 | 9. Retro | `retro` | `retro-start` while the pull request is open; `handoff` with the lessons |

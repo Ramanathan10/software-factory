@@ -19,15 +19,15 @@
     "commandCenterPath": { "description": "The folder that holds the Command Center files Jarvis runs: the software-factory checkout, or the extension folder for a harness that needs copies. Setup saves what detect reports; the check refuses a folder that no longer holds them.", "type": "string", "minLength": 1 },
     "workerPermissions": { "description": "What a story worker started from the command line may do without asking. restricted: edit files in its worktree, read the commandCenterPath folder, and run git, gh, node, and the programs the gates use. unrestricted: run anything. Default: restricted.", "enum": ["restricted", "unrestricted"] },
     "models": {
-      "description": "The model each agent harness runs for each tier of work, keyed by the harness's install id (claude-code, codex). A value is a model name as that harness's own model option takes it. A harness or tier left out uses the harness's default model.",
+      "description": "The model each agent harness runs for each tier of work, keyed by the harness's install id (claude-code, codex). A value is a model name as that harness's own model option takes it, or null when the owner chose to keep the harness's default model. A harness or tier left out was never asked; the check warns about it for the harness a story runs in.",
       "type": "object",
       "additionalProperties": {
         "type": "object",
         "additionalProperties": false,
         "properties": {
-          "deep": { "description": "Planning, review, and the retro.", "type": "string", "minLength": 1 },
-          "standard": { "description": "Tests, implementation, gates, evidence, and the pull request.", "type": "string", "minLength": 1 },
-          "fast": { "description": "Used only by a phase the owner moves to it in phaseTiers.", "type": "string", "minLength": 1 }
+          "deep": { "description": "Planning, review, and the retro.", "type": ["string", "null"], "minLength": 1 },
+          "standard": { "description": "Tests, implementation, gates, evidence, and the pull request.", "type": ["string", "null"], "minLength": 1 },
+          "fast": { "description": "Used only by a phase the owner moves to it in phaseTiers. Setup does not ask it.", "type": ["string", "null"], "minLength": 1 }
         }
       }
     },
