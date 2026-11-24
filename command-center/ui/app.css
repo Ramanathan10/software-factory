@@ -169,16 +169,23 @@ h1 span { color: var(--muted); letter-spacing: .02em; font-weight: 500; margin-l
 .card.done { opacity: .6; }
 @keyframes enter { from { opacity: 0; transform: translateY(6px); } }
 .card header { display: flex; justify-content: space-between; gap: 6px; font: 11px var(--mono); color: var(--muted); white-space: nowrap; }
-.card header .phase { overflow: hidden; text-overflow: ellipsis; }
+.card header .phase { overflow: hidden; text-overflow: ellipsis; border: 1px solid var(--line); border-radius: 999px; padding: 0 8px; }
 .card .id { color: var(--role); font-weight: 700; }
 .card h3 { font-size: 13px; font-weight: 600; }
 .owner { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--muted); }
 .card.busy .owner { color: var(--text); }
 .card.waiting .owner { color: var(--amber); }
 .last { font-size: 12px; color: var(--muted); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-.card footer { display: flex; align-items: center; gap: 8px; font: 11px var(--mono); color: var(--muted); }
-.card footer a { color: var(--accent); }
-.meter { flex: 1; height: 3px; background: var(--line); border-radius: 3px; overflow: hidden; }
+.card .who { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.card .aside { display: inline-flex; align-items: center; gap: 8px; margin-left: auto; font: 11px var(--mono); color: var(--muted); }
+.card .aside a, .card .links { color: var(--accent); }
+.card .links { display: none; gap: 8px; }
+.card:hover .links, .card:focus-within .links { display: inline-flex; }
+.card:hover .aside time, .card:focus-within .aside time { display: none; }
+.card.busy .who { color: var(--text); }
+.pulse { width: 6px; height: 6px; border-radius: 50%; background: var(--role); animation: blink 1.4s infinite; flex: none; }
+@media (hover: none) { .card .links { display: inline-flex; } }
+.meter { height: 3px; background: var(--line); border-radius: 3px; overflow: hidden; }
 .meter span { display: block; height: 100%; background: var(--role); transform-origin: left; transition: transform .6s; }
 .dots { display: inline-flex; gap: 3px; }
 .dots i { width: 4px; height: 4px; border-radius: 50%; background: var(--role); animation: blink 1.2s infinite; }

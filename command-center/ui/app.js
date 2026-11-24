@@ -260,18 +260,19 @@ function storyCard(story) {
       el('span', { class: 'id' }, story.id),
       el('span', { class: 'phase' }, meta.phases[story.phase]?.[1] ?? story.phase)),
     el('h3', {}, story.title),
-    story.repo && el('p', { class: 'repo' }, story.repo),
+    story.repo && repos().length > 1 && el('p', { class: 'repo' }, story.repo),
     el('div', { class: 'owner' },
       idle ? el('span', { class: 'avatar sm' }, '··') : avatar(role, { small: true }),
-      el('span', {}, story.blocked ? 'Blocked' : waiting ? 'Waiting on you' : busy ? alias(role) + ' is working' : story.phase === 'closed' ? 'Done' : 'Idle · ' + idleReason(story)),
-      busy && el('span', { class: 'dots' }, el('i'), el('i'), el('i'))),
-    last && el('p', { class: 'last' }, last.detail),
-    el('footer', {},
-      el('div', { class: 'meter' }, el('span', { style: 'transform:scaleX(' + progress(story) / 100 + ')' })),
-      el('time', { 'data-at': story.updatedAt }, ago(story.updatedAt)),
-      hasDesign(story) && el('a', { href: '#', onclick: event => { event.preventDefault(); event.stopPropagation(); openDesign(story.id); } }, 'Plan'),
-      story.pipeline && el('a', { href: story.pipeline, target: '_blank', rel: 'noopener', onclick: event => event.stopPropagation() }, 'Run'),
-      story.pr && el('a', { href: story.pr, target: '_blank', rel: 'noopener', onclick: event => event.stopPropagation() }, 'PR')));
+      el('span', { class: 'who' }, story.blocked ? 'Blocked' : waiting ? 'Waiting on you' : busy ? alias(role) : story.phase === 'closed' ? 'Done' : 'Idle · ' + idleReason(story)),
+      busy && el('i', { class: 'pulse' }),
+      el('span', { class: 'aside' },
+        el('span', { class: 'links' },
+          hasDesign(story) && el('a', { href: '#', onclick: event => { event.preventDefault(); event.stopPropagation(); openDesign(story.id); } }, 'Plan'),
+          story.pipeline && el('a', { href: story.pipeline, target: '_blank', rel: 'noopener', onclick: event => event.stopPropagation() }, 'Run')),
+        story.pr && el('a', { href: story.pr, target: '_blank', rel: 'noopener', onclick: event => event.stopPropagation() }, 'PR'),
+        el('time', { 'data-at': story.updatedAt }, ago(story.updatedAt)))),
+    last && (waiting || story.blocked) && el('p', { class: 'last' }, last.detail),
+    el('div', { class: 'meter' }, el('span', { style: 'transform:scaleX(' + progress(story) / 100 + ')' })));
 }
 
 function renderToolbar() {
