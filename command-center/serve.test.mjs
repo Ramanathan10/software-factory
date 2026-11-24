@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join, relative } from 'node:path';
@@ -179,6 +179,40 @@ test('approving a plan with no assigned planner starts a Codex test worker from 
   assert.ok(recorder.pending().some(event => event.type === 'approve'), 'delivery does not acknowledge work for the agent');
   await requestDelivery('tl-1', Number(new URL(center.url).port));
   assert.equal(launched.length, 1);
+});
+
+test('the test author reads only the test-first and Gates sections, the spec for the context pack, and its handover', async t => {
+  const { start: open, recorder, story, directory } = approvedFixture(t);
+  const pack = join(directory, 'context-pack.md');
+  writeFileSync(pack, '# Context pack');
+  recorder.recordEvent({ story: 'tl-1', type: 'artifact', kind: 'document', path: pack, detail: 'Context pack from the scout.' });
+  const launched = [];
+  const center = await open({ launch: async input => { launched.push(input); return { session: 'test-author' }; } });
+  await fetch(center.url + 'api/decision', {
+    method: 'POST', headers: { 'Content-Type': 'application/json', Origin: center.url.slice(0, -1) },
+    body: JSON.stringify({ story: 'tl-1', type: 'approve', revision: story().revision }),
+  });
+  await requestDelivery('tl-1', Number(new URL(center.url).port));
+  const kickoff = launched[0].prompt;
+  assert.doesNotMatch(kickoff, /Read completely/);
+  assert.match(kickoff, /ai-sdlc[\\/]SKILL\.md/);
+  assert.match(kickoff, /2\. Test-first handoff/);
+  assert.match(kickoff, /\bGates\b/);
+  assert.match(kickoff, /the spec contains the context pack/);
+  assert.doesNotMatch(kickoff, /registered context pack/i);
+  assert.doesNotMatch(kickoff, /Registered context/);
+  assert.doesNotMatch(kickoff, /Context pack from the scout/, 'the registered artifact list is not inlined');
+  assert.match(kickoff, /Approved plan \(use only if the spec file is missing\):\n.*Export selected rows; keep unselected rows private/);
+  assert.match(kickoff, /If missing, record and commit the approved spec/);
+  assert.match(kickoff, /Read this story's handover/);
+  assert.doesNotMatch(kickoff, /snapshot/i);
+  assert.match(kickoff, /tests and necessary fixtures only/i);
+});
+
+test('the ai-sdlc skill keeps the two sections the test author is sent to, as whole heading lines', () => {
+  const lines = readFileSync(new URL('../skills/ai-sdlc/SKILL.md', import.meta.url), 'utf8').split(/\r?\n/);
+  assert.ok(lines.includes('## 2. Test-first handoff'), 'heading "## 2. Test-first handoff" is missing');
+  assert.ok(lines.includes('## Gates'), 'heading "## Gates" is missing');
 });
 
 test('an approval already pending when the daemon restarts starts its missing test worker', async t => {
