@@ -1,4 +1,4 @@
-# 0020. End-to-end checks run scripted workers and a scripted Jarvis, with no model
+# 0021. End-to-end checks run scripted workers and a scripted Jarvis, with no model
 
 Status: Accepted
 Date: 2026-11-24

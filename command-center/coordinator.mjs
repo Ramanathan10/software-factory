@@ -61,7 +61,8 @@ export function createCoordinator({ service, launch, adapters, kickoff, busy = (
     if (story.questions.some(question => question.id.startsWith(notice) && !question.answer)) return [];
     const news = pending.filter(event => event.story === story.id && !['create', 'approve'].includes(event.type) && !held(story, event) &&
       (!story.worker || !decisions.has(event.type) || answered(story, event)));
-    const forJarvis = event => (event.type === 'turn-ended' && event.worker?.id === story.worker.id) || answered(story, event);
+    const forJarvis = event => (event.type === 'turn-ended' && event.worker?.id === story.worker.id) || answered(story, event) ||
+      (event.type === 'pr-observed' && (event.feedback === true || ['merged', 'closed'].includes(event.observation?.status)));
     if (story.worker && (story.worker.turn || !unhandled(story, news).some(forJarvis))) return [];
     return news;
   }

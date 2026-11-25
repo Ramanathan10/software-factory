@@ -42,3 +42,12 @@ test('every role has a badge the Command Center can draw and tell apart', () => 
     drawings.set(drawing, id);
   }
 });
+
+test('PR review is Hawkeye\'s own lane between Ship and Done, inside the PR track step, on the standard tier', async () => {
+  assert.deepEqual(phases['pr-review'], ['watcher', 'PR review', 'PR review', 'PR']);
+  const names = lanes(phases, 2).map(lane => lane.name);
+  assert.deepEqual(names.slice(names.indexOf('Ship'), names.indexOf('Ship') + 3), ['Ship', 'PR review', 'Done']);
+  assert.ok(roles.watcher.skills.includes('PR review'), 'Hawkeye\'s skills name PR review');
+  const { phaseTiers } = await import('./roles.mjs');
+  assert.equal(phaseTiers['pr-review'], 'standard');
+});
