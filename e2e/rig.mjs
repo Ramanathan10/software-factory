@@ -1,8 +1,8 @@
 import { execFile, spawn } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, linkSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
-import { delimiter, join } from 'node:path';
+import { delimiter, dirname, extname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { harnesses, launchProblem } from '../adapters/harnesses.mjs';
@@ -52,6 +52,17 @@ export async function openRig({ entry, turnMs, tally, profile: overrides = {} })
   writeFileSync(join(home, 'profile.json'), JSON.stringify(profile));
   const pathKey = Object.keys(process.env).find(key => key.toUpperCase() === 'PATH') ?? 'PATH';
   const searched = (process.env[pathKey] ?? '').split(delimiter).filter(dir => dir && !holdsModelProgram(dir));
+  if (holdsModelProgram(dirname(process.execPath))) {
+    const nodeOnly = join(root, 'node');
+    const copy = join(nodeOnly, 'node' + extname(process.execPath));
+    mkdirSync(nodeOnly);
+    try {
+      linkSync(process.execPath, copy);
+    } catch {
+      copyFileSync(process.execPath, copy);
+    }
+    searched.unshift(nodeOnly);
+  }
   const env = { ...process.env, [pathKey]: [bin, ...searched].join(delimiter), GH_CONFIG_DIR: join(root, 'gh-config'), AI_SDLC_HOME: home, AI_SDLC_CONSOLE_DB: db };
   for (const key of Object.keys(env)) if (key !== pathKey && key.toUpperCase() === 'PATH') delete env[key];
   for (const name of Object.keys(harnesses).filter(name => harnesses[name].workers === 'command-line')) {

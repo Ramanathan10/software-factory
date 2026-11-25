@@ -1,6 +1,6 @@
 import { spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { openStore, workerPhases } from '../mission-console/store.mjs';
 
@@ -63,7 +63,25 @@ function serve(kind, input) {
   }
 }
 
-function coordinate() {
+function turnsRunning() {
+  const turnsFile = join(home, 'scripted-turns.jsonl');
+  const latest = new Map();
+  if (existsSync(turnsFile)) {
+    for (const line of readFileSync(turnsFile, 'utf8').split(/\r?\n/).filter(Boolean)) {
+      const { pid, event } = JSON.parse(line);
+      latest.set(pid, event);
+    }
+  }
+  const started = store.history(id).filter(event => event.type === 'turn-started').map(event => event.worker.turn.pid);
+  return started.some(pid => pid !== process.pid && latest.get(pid) === 'spawned');
+}
+
+async function coordinate() {
+  const deadline = Date.now() + 60000;
+  while (turnsRunning()) {
+    if (Date.now() > deadline) fail('A worker turn on story ' + id + ' was still running after 60 s.');
+    await sleep(250);
+  }
   const { story, pending } = read();
   if (!story.worker && workerPhases.has(story.phase) && story.questions.every(question => question.answer)) {
     serve('start', book.next);
@@ -124,7 +142,7 @@ async function work() {
 }
 
 try {
-  if (actor === 'jarvis') coordinate();
+  if (actor === 'jarvis') await coordinate();
   else await work();
 } finally {
   store.close();
