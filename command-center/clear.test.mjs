@@ -560,3 +560,25 @@ test('every Jarvis turn log of a story is cleared, even when the log is not name
   assert.equal(result.result, 'cleared', JSON.stringify(result));
   assert.ok(!existsSync(launch), 'a Jarvis turn log named after its launch is still there');
 });
+
+test('a story whose cleanup events cannot be recorded is reported blocked and the batch goes on', async t => {
+  const f = await fixture(t);
+  const trees = Object.fromEntries(['A-1', 'B-1'].map(id => [id, f.worktree(id)]));
+  for (const [id, tree] of Object.entries(trees)) f.story(id, tree);
+  const real = f.service.store;
+  const store = {
+    snapshot: () => real.snapshot(),
+    history: id => real.history(id),
+    record: input => {
+      if (input.story === 'B-1') throw new Error('store unavailable');
+      return real.record(input);
+    },
+  };
+  const clearer = createClearer({ store, home: f.home, attachmentRoot: join(f.root, 'db', 'attachments'), folderFor: id => String(id).replace(/[^\w-]/g, '_') });
+  const results = await clearer.clear(['B-1', 'A-1']);
+  const of = id => results.find(result => result.story === id);
+  assert.equal(of('B-1')?.result, 'blocked', JSON.stringify(results));
+  assert.match(of('B-1').reason, /store unavailable/);
+  assert.ok(existsSync(trees['B-1'].path), 'B-1 worktree was deleted');
+  assert.equal(of('A-1')?.result, 'cleared', JSON.stringify(results));
+});
