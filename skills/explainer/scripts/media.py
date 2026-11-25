@@ -26,7 +26,7 @@ def _strip_html(raw):
 
 def _is_wiki_url(url):
     host = urllib.parse.urlparse(url).netloc.lower()
-    return host.endswith("wikimedia.org") or host.endswith("wikipedia.org")
+    return any(host == d or host.endswith("." + d) for d in ("wikimedia.org", "wikipedia.org"))
 
 
 def _detect_project_root(out_path):

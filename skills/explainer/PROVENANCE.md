@@ -15,7 +15,7 @@
 
 ## video-explainer review (2026-11-25)
 
-Verdict: approve with changes, high capability risk. Upstream files are bundled unmodified except two moves: `reference.md` became `references/video-reference.md` (its example `S=` path now points here) and `eval.md` became `references/video-checks.md`. The upstream `SKILL.md` was reworded into `references/video.md`. The repository-level README, demo screenshots, and `tests/test_pipeline.py` were not imported. The Inter font keeps its SIL OFL license in `fonts/OFL.txt`.
+Verdict: approve with changes, high capability risk. Upstream files are bundled unmodified except two moves and one patch: `reference.md` became `references/video-reference.md` (its example `S=` path now points here), `eval.md` became `references/video-checks.md`, and `_is_wiki_url` in `scripts/media.py` now matches `wikimedia.org` and `wikipedia.org` only as the whole host or a subdomain, so a lookalike such as `evilwikimedia.org` no longer counts (CodeQL "incomplete URL substring sanitization"; the check only picks which User-Agent is sent first). The upstream `SKILL.md` was reworded into `references/video.md`. The repository-level README, demo screenshots, and `tests/test_pipeline.py` were not imported. The Inter font keeps its SIL OFL license in `fonts/OFL.txt`.
 
 Capabilities found:
 
