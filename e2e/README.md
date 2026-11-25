@@ -1,6 +1,6 @@
 # End-to-end checks
 
-These checks run the factory the way a real story does, with no model: a real Command Center, a real story store, real worker processes started and resumed through `adapters/harnesses.mjs`, and a real background Jarvis woken by the daemon. Scripts play the workers and Jarvis, so every run gives the same answer and spends no model usage. `node --test` covers the code; this suite covers what only shows up between processes. [ADR 0021](../docs/adr/0021-end-to-end-checks-run-scripted-workers.md) records the design and what it does not cover.
+These checks run the factory the way a real story does, with no model: a real Command Center, a real story store, real worker processes started and resumed through `adapters/harnesses.mjs`, and a real background Jarvis woken by the daemon. Scripts play the workers and Jarvis, so every run gives the same answer and spends no model usage. `node --test` covers the code; this suite covers what only shows up between processes. [ADR 0022](../docs/adr/0022-end-to-end-checks-run-scripted-workers.md) records the design and what it does not cover.
 
 ## Run it
 
