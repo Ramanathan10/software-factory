@@ -2,7 +2,7 @@ import { execFile, spawn } from 'node:child_process';
 import { copyFileSync, existsSync, linkSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
-import { delimiter, dirname, extname, join } from 'node:path';
+import { delimiter, extname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { harnesses, launchProblem } from '../adapters/harnesses.mjs';
@@ -24,6 +24,7 @@ export const quietMs = 2000;
 
 const modelPrograms = Object.values(harnesses).filter(entry => entry.workers === 'command-line').map(entry => entry.command);
 const programFiles = ['', '.exe', '.com', '.cmd', '.bat', '.ps1'];
+const holdsNode = dir => ['node', 'node.exe'].some(name => existsSync(join(dir, name)));
 const holdsModelProgram = dir => modelPrograms.some(command => programFiles.some(extension => existsSync(join(dir, command + extension))));
 
 function freePort() {
@@ -52,7 +53,7 @@ export async function openRig({ entry, turnMs, tally, profile: overrides = {} })
   writeFileSync(join(home, 'profile.json'), JSON.stringify(profile));
   const pathKey = Object.keys(process.env).find(key => key.toUpperCase() === 'PATH') ?? 'PATH';
   const searched = (process.env[pathKey] ?? '').split(delimiter).filter(dir => dir && !holdsModelProgram(dir));
-  if (holdsModelProgram(dirname(process.execPath))) {
+  if (!searched.some(holdsNode)) {
     const nodeOnly = join(root, 'node');
     const copy = join(nodeOnly, 'node' + extname(process.execPath));
     mkdirSync(nodeOnly);
@@ -126,7 +127,7 @@ export async function openRig({ entry, turnMs, tally, profile: overrides = {} })
     jarvisWakes: story => rig.history(story).filter(item => item.type === 'jarvis-woken'),
     quietMs,
     playbook(story, { next = 'You are the next scripted worker for story ' + story + '.', turns = [] } = {}) {
-      writeFileSync(join(playbooks, story + '.json'), JSON.stringify({ story, db, console: consoleCli, serve: launcher, port, next, turns }, null, 2));
+      writeFileSync(join(playbooks, story + '.json'), JSON.stringify({ story, db, console: consoleCli, serve: launcher, port, turnMs, next, turns }, null, 2));
     },
     gh: (...args) => ['node', standIn, github, ...args],
     calls: () => (existsSync(calls) ? readFileSync(calls, 'utf8').split(/\r?\n/).filter(Boolean).map(line => JSON.parse(line)) : []),

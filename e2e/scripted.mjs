@@ -77,9 +77,9 @@ function turnsRunning() {
 }
 
 async function coordinate() {
-  const deadline = Date.now() + 60000;
+  const deadline = Date.now() + book.turnMs;
   while (turnsRunning()) {
-    if (Date.now() > deadline) fail('A worker turn on story ' + id + ' was still running after 60 s.');
+    if (Date.now() > deadline) fail('A worker turn on story ' + id + ' was still running after ' + book.turnMs / 1000 + ' s.');
     await sleep(250);
   }
   const { story, pending } = read();
@@ -126,7 +126,7 @@ function perform(step) {
 }
 
 async function work() {
-  const deadline = Date.now() + 60000;
+  const deadline = Date.now() + book.turnMs;
   let story;
   while ((story = read().story).worker?.session !== session) {
     if (Date.now() > deadline) fail('Session ' + session + ' was never assigned to story ' + id + '.');

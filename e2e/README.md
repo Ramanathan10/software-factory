@@ -15,9 +15,9 @@ node e2e/run.mjs --list
 | `[harness]` | Run only as stories in this harness, spelled as in `adapters/harnesses.mjs`. Without it, every scenario runs once as a Claude Code story and once as a Codex story. |
 | `[scenario ...]` | Run only these scenarios. Without any, every scenario runs. |
 | `--keep` | Keep the throwaway folder and worker logs after a pass. A failure always keeps them. |
-| `--turn-seconds <n>` | How long to wait for one worker turn. The default is 60. |
+| `--turn-seconds <n>` | How long to wait for one worker turn, and how long a scripted Jarvis or worker waits on another turn. The default is 60. |
 
-Each scenario gets its own throwaway folder under the system's temporary directory: a git worktree, a profile, a story database, the playbooks and the worker logs. Nothing touches the owner's AI SDLC home. The rig removes every folder holding a `claude` or `codex` program from the Command Center's PATH and refuses to open if one is still reachable, so nothing can spend model usage. Workers find a `gh` stand-in that records pull requests in the folder's `github` subfolder, and the real GitHub CLI is left signed out. The run prints one line per step and exits 0 only when every scenario passed. Both harnesses take about three minutes; the Tests workflow runs it on Windows, macOS and Ubuntu after `node --test`.
+Each scenario gets its own throwaway folder under the system's temporary directory: a git worktree, a profile, a story database, the playbooks and the worker logs. Nothing touches the owner's AI SDLC home. The rig removes every folder holding a `claude` or `codex` program from the Command Center's PATH and refuses to open if one is still reachable, so nothing can spend model usage. If that leaves no folder holding `node`, it links the running node into a folder of its own. Workers find a `gh` stand-in that records pull requests in the folder's `github` subfolder, and the real GitHub CLI is left signed out. The run prints one line per step and exits 0 only when every scenario passed. Both harnesses take about three minutes; the Tests workflow runs it on Windows, macOS and Ubuntu after `node --test`.
 
 ## How the scripts stand in for the model
 
