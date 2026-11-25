@@ -418,6 +418,9 @@ async function confirmClear(ids) {
       el('h3', {}, preview.story),
       el('ul', {},
         el('li', {}, 'Worktree ' + preview.worktree.path + (preview.worktree.exists ? '' : ' (already gone)')),
+        preview.ignored === null ? el('li', {}, 'Ignored files in the worktree could not be listed')
+          : preview.ignored.count > 0 && el('li', {}, (preview.ignored.count === 1 ? '1 ignored file' : preview.ignored.count + ' ignored files')
+            + ' in the worktree, including ' + preview.ignored.paths.join(', ')),
         el('li', {}, 'Local branch ' + preview.branch.name + (preview.branch.remove ? '' : ' stays: ' + preview.branch.reason)),
         preview.folders.map(folder => el('li', {}, folder)),
         el('li', {}, preview.logs + (preview.logs === 1 ? ' turn log file' : ' turn log files')),

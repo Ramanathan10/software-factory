@@ -24,6 +24,16 @@ const inside = (root, path) => {
   return Boolean(rel) && !rel.startsWith('..') && !isAbsolute(rel);
 };
 
+async function ignoredIn(path) {
+  try {
+    const { stdout } = await run('git', ['ls-files', '--others', '--ignored', '--exclude-standard', '-z'], { cwd: path, encoding: 'utf8', windowsHide: true, maxBuffer: 256 * 1024 * 1024 });
+    const paths = stdout.split('\0').filter(Boolean);
+    return { count: paths.length, paths: paths.slice(0, 5) };
+  } catch {
+    return null;
+  }
+}
+
 async function locate(path) {
   if (!existsSync(path)) return { gone: true };
   let listing;
@@ -84,11 +94,12 @@ export function createClearer({ store, home, attachmentRoot, folderFor }) {
     return story;
   }
 
-  function preview(id) {
+  async function preview(id) {
     const story = closedStory(id);
     const others = live().filter(item => item.id !== id);
     const exists = existsSync(story.worktree);
     return {
+      ignored: exists ? await ignoredIn(story.worktree) : { count: 0, paths: [] },
       story: id,
       worktree: { path: story.worktree, exists },
       branch: exists ? { name: story.branch, remove: true }

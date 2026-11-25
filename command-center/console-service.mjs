@@ -170,7 +170,7 @@ export function createConsoleService({ dbPath = DEFAULT_DB_PATH, home = process.
           } else if (request.method === 'GET' && path === '/api/history') {
             send(response, 200, store.history(new URL(request.url, origin).searchParams.get('story')));
           } else if (request.method === 'GET' && path === '/api/clear/preview') {
-            send(response, 200, clearer.preview(new URL(request.url, origin).searchParams.get('story')));
+            send(response, 200, await clearer.preview(new URL(request.url, origin).searchParams.get('story')));
           } else if (request.method === 'POST' && path === '/api/clear') {
             if (request.headers.origin !== origin) throw new InputError('Clear requests must come from the console.', 403);
             const stories = (await readJson(request))?.stories;

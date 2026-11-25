@@ -21,6 +21,7 @@ Merged stories stay on the board forever in the Done lane, the "shipped" count o
 11. The archive detail shows the full history through a new read-only route.
 12. The legacy Mission Console page is unchanged.
 13. Before-and-after: screenshots (below). No architecture diagram.
+14. Git-ignored files in the worktree (such as `.env` files and build output) do not block a clear: the confirmation names how many there are and the first few paths, and they are deleted with the worktree (owner answer to `ignored-files`, event 1396).
 
 ## Refinements found while planning
 
@@ -41,7 +42,7 @@ D. **The fallback blocks.** A story with no recorded merged head whose remote br
 ### Archive tab
 - One row per closed story under the repository filter, newest merge first: ID, title, repository, merged date (time of its `merged` event, else `updatedAt`), PR link, and a "Clear blocked: <reason>" line when `story.cleanup.blocked` is set, or "Clearing…" while a clear runs.
 - A row opens the story detail; for a closed story the detail loads the full history from `GET /api/history?story=<ID>`.
-- "Clear" on each row and "Clear all (N)" for the listed rows. Both open one confirmation dialog built from `GET /api/clear/preview?story=<ID>` per story: the worktree path, the local branch (or why it stays), each folder and the number of log files that exist, and "its record in the story database". It says "This cannot be undone." and has "Delete permanently" and "Cancel".
+- "Clear" on each row and "Clear all (N)" for the listed rows. Both open one confirmation dialog built from `GET /api/clear/preview?story=<ID>` per story: the worktree path, how many git-ignored files it holds and the first five paths (`git ls-files --others --ignored --exclude-standard`; "could not be listed" when git fails), the local branch (or why it stays), each folder and the number of log files that exist, and "its record in the story database". It says "This cannot be undone." and has "Delete permanently" and "Cancel".
 - Empty state: "No shipped stories."
 
 ### Clear (new module `command-center/clear.mjs`, routes in `console-service.mjs`)
@@ -73,7 +74,7 @@ D. **The fallback blocks.** A story with no recorded merged head whose remote br
 3. The shipped counter equals the number of closed, not-deleted stories and opens the Archive tab.
 4. The Archive tab follows the repository filter for its list and for Clear all.
 5. Opening an archived story shows its plan, decisions, evidence and full event history (more than 40 events when it has them).
-6. Clear and Clear all show a confirmation naming the worktree, branch, folders, log count and database record, saying it cannot be undone; Cancel deletes nothing.
+6. Clear and Clear all show a confirmation naming the worktree, its ignored files (count and first few paths), branch, folders, log count and database record, saying it cannot be undone; Cancel deletes nothing.
 7. A clean, pushed (or merged-head) story is cleared: worktree, local branch, both notes folders, attachments and its logs are gone; `snapshot` no longer lists it; the database keeps only the deletion marker and the completion event.
 8. A story with uncommitted or untracked files, or unpushed commits, stays in the archive with `cleanup-blocked` and the reason shown on its row; nothing is deleted.
 9. A worktree already removed by hand does not block the clear.
