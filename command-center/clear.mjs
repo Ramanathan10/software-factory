@@ -68,7 +68,7 @@ export function createClearer({ store, home, attachmentRoot, folderFor }) {
     for (const event of store.history(story.id)) {
       add(event.worker?.turn?.log);
       session(event.worker?.session);
-      if (event.type === 'jarvis-turn-ended') add(/\nSee (.+)\.$/.exec(event.detail ?? '')?.[1]);
+      if (event.type === 'jarvis-turn-ended') add(/\sSee (.+)\.$/.exec(event.detail ?? '')?.[1]);
     }
     session(story.jarvis?.session);
     const used = new Set(others.flatMap(other => [other.worker?.turn?.log, other.worker?.session && join(workers, other.worker.session + '.log'),
