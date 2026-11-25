@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { test } from 'node:test';
+import { createClearer } from './clear.mjs';
 import { createConsoleService } from './console-service.mjs';
 
 const slash = path => path.replace(/\\/g, '/');
@@ -474,4 +475,88 @@ test('the clear preview refuses a story that is not closed or does not exist', a
   f.story('S-1', { ...open, phase: 'building' });
   assert.equal((await f.preview('S-1')).status, 409);
   assert.equal((await f.preview('NOPE-1')).status, 404);
+});
+
+test('a branch named like a folder in its worktree is cleared, in either order of clear all', async t => {
+  for (const order of [['A-1', 'B-1'], ['B-1', 'A-1']]) {
+    await t.test(order.join(' then '), async t => {
+      const f = await fixture(t);
+      const plain = f.worktree('A-1');
+      f.story('A-1', plain);
+      const docs = f.worktree('B-1', { branch: 'docs', push: false });
+      mkdirSync(join(docs.path, 'docs'));
+      writeFileSync(join(docs.path, 'docs', 'guide.md'), '# guide\n');
+      git(docs.path, 'add', '.');
+      git(docs.path, 'commit', '-q', '-m', 'Docs folder');
+      git(docs.path, 'push', '-q', '-u', 'origin', 'docs');
+      f.story('B-1', { branch: 'docs', path: docs.path });
+      const { status, results, of } = await f.clear(order);
+      assert.equal(status, 200);
+      assert.equal(results.length, 2);
+      assert.equal(of('A-1').result, 'cleared', JSON.stringify(results));
+      assert.equal(of('B-1').result, 'cleared', JSON.stringify(results));
+      assert.ok(!existsSync(docs.path) && !hasBranch(f.main, 'docs'));
+    });
+  }
+});
+
+test('a story that throws during a clear is blocked and does not stop the batch or lose another story report', async t => {
+  for (const order of [['A-1', 'B-1', 'C-1'], ['B-1', 'A-1', 'C-1']]) {
+    await t.test(order.join(' then '), async t => {
+      const f = await fixture(t);
+      const trees = Object.fromEntries(['A-1', 'B-1', 'C-1'].map(id => [id, f.worktree(id)]));
+      for (const [id, tree] of Object.entries(trees)) f.story(id, tree);
+      const made = f.files('A-1');
+      const real = f.service.store;
+      const store = {
+        snapshot: () => real.snapshot(),
+        record: input => real.record(input),
+        history: id => {
+          if (id === 'B-1') throw new Error('history unreadable');
+          return real.history(id);
+        },
+      };
+      const clearer = createClearer({ store, home: f.home, attachmentRoot: join(f.root, 'db', 'attachments'), folderFor: id => String(id).replace(/[^\w-]/g, '_') });
+      const results = await clearer.clear(order);
+      const of = id => results.find(result => result.story === id);
+      assert.equal(results.length, 3, JSON.stringify(results));
+      assert.equal(of('A-1').result, 'cleared', JSON.stringify(results));
+      assert.ok(of('A-1').deleted.some(item => String(item).includes('A-1')), JSON.stringify(of('A-1')));
+      for (const folder of Object.values(made)) assert.ok(!existsSync(folder), folder + ' is still there');
+      assert.equal(of('C-1').result, 'cleared', JSON.stringify(results));
+      assert.equal(of('B-1').result, 'blocked', JSON.stringify(results));
+      assert.match(of('B-1').reason, /history unreadable/);
+      assert.ok(of('B-1').deleted.some(item => same(item, trees['B-1'].path)), 'the partial report of B-1 was lost: ' + JSON.stringify(of('B-1')));
+      assert.ok(f.service.store.history('B-1').some(event => event.type === 'cleanup-blocked'), 'cleanup-blocked was not recorded for B-1');
+      noPendingFor(f, 'B-1');
+    });
+  }
+});
+
+test('a story whose attachments folder is shared with another story through folderFor is not cleared', async t => {
+  const f = await fixture(t);
+  const { path, branch } = f.worktree('S-1-dot');
+  f.story('S.1', { branch, path });
+  f.service.createStory({ story: 'S_1', title: 'Live work', detail: 'Still open.', branch: 'story/live', worktree: slash(join(f.root, 'wt', 'live')), harness: 'Codex', repo: 'acme/app' });
+  const shared = join(f.root, 'db', 'attachments', 'S_1');
+  mkdirSync(shared, { recursive: true });
+  writeFileSync(join(shared, 'keep.png'), Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+  const result = (await f.clear(['S.1'])).of('S.1');
+  assert.notEqual(result?.result, 'cleared', JSON.stringify(result));
+  assert.ok(existsSync(join(shared, 'keep.png')), 'the live story attachments were deleted');
+  assert.ok(existsSync(path), 'the worktree was deleted');
+  assert.ok(f.find('S_1'));
+});
+
+test('every Jarvis turn log of a story is cleared, even when the log is not named after the session', async t => {
+  const f = await fixture(t);
+  const { path, branch } = f.worktree('S-1');
+  f.story('S-1', { branch, path });
+  const launch = join(f.home, 'workers', 'launch-7f3a.log');
+  writeFileSync(launch, 'turn output\n');
+  f.record('S-1', 'jarvis-turn-started', { session: 'S-1-thread', pid: 4545, log: launch });
+  f.record('S-1', 'jarvis-turn-ended', { outcome: 'ended', code: 0, detail: 'Jarvis ended its turn.\nSee ' + launch + '.' });
+  const result = (await f.clear(['S-1'])).of('S-1');
+  assert.equal(result.result, 'cleared', JSON.stringify(result));
+  assert.ok(!existsSync(launch), 'a Jarvis turn log named after its launch is still there');
 });
