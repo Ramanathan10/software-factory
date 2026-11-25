@@ -48,8 +48,8 @@ const now = Date.now();
 const iso = minutes => new Date(now - minutes * 60000).toISOString();
 const history = Array.from({ length: 45 }, (_, index) => ({ seq: 1000 - index, at: iso(index), type: 'activity', phase: 'closed', revision: 45 - index, detail: 'Past event ' + index }));
 const previews = {
-  'DONE-1': { story: 'DONE-1', worktree: { path: 'C:/wt/done-1', exists: true }, branch: { name: 'story/done-1', remove: true }, folders: ['C:/home/stories/DONE-1', 'C:/home/notes/DONE-1', 'C:/db/attachments/DONE-1'], logs: 3, record: true },
-  'DONE-2': { story: 'DONE-2', worktree: { path: 'C:/wt/done-2', exists: false }, branch: { name: 'story/done-2', remove: false, reason: 'The worktree is gone, so the repository cannot be found.' }, folders: [], logs: 0, record: true },
+  'DONE-1': { story: 'DONE-1', worktree: { path: 'C:/wt/done-1', exists: true }, branch: { name: 'story/done-1', remove: true }, folders: ['C:/home/stories/DONE-1', 'C:/home/notes/DONE-1', 'C:/db/attachments/DONE-1'], logs: 3, ignored: { count: 7, paths: ['.env', 'build/1.js', 'build/2.js', 'build/3.js', 'build/4.js'] }, record: true },
+  'DONE-2': { story: 'DONE-2', worktree: { path: 'C:/wt/done-2', exists: false }, branch: { name: 'story/done-2', remove: false, reason: 'The worktree is gone, so the repository cannot be found.' }, folders: [], logs: 0, ignored: { count: 0, paths: [] }, record: true },
 };
 const reply = body => ({ ok: true, status: 200, json: async () => body, text: async () => JSON.stringify(body) });
 const viewButtons = ['lanes', 'agents', 'track', 'archive'].map(name => {
@@ -224,6 +224,17 @@ test('Delete permanently clears that one story', async () => {
   await click(buttonIn(rowOf('DONE-1'), /^Clear$/));
   await click(buttonIn(confirmation(), /^Delete permanently$/));
   assert.deepEqual(posts().slice(before).map(call => JSON.parse(call.body)), [{ stories: ['DONE-1'] }]);
+});
+
+test('the confirmation names how many ignored files the worktree holds and the first few', async () => {
+  await show('archive');
+  await click(buttonIn(rowOf('DONE-1'), /^Clear$/));
+  const text = confirmation().textContent;
+  assert.match(text, /7 ignored files/);
+  for (const path of previews['DONE-1'].ignored.paths) assert.ok(text.includes(path), 'the confirmation does not name ' + path);
+  await click(buttonIn(confirmation(), /^Cancel$/));
+  await click(buttonIn(rowOf('DONE-2'), /^Clear$/));
+  assert.doesNotMatch(confirmation().textContent, /ignored/i);
 });
 
 test('the confirmation says why a branch stays', async () => {

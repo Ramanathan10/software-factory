@@ -457,6 +457,34 @@ test('the clear preview names the worktree, branch, folders and logs that exist 
   assert.ok(existsSync(path));
 });
 
+test('the clear preview names the ignored files the worktree removal deletes, and the clear deletes them', async t => {
+  const f = await fixture(t);
+  const { path, branch } = f.worktree('S-1');
+  writeFileSync(join(path, '.gitignore'), '.env\nbuild/\n');
+  git(path, 'add', '.gitignore');
+  git(path, 'commit', '-q', '-m', 'Ignore local files');
+  git(path, 'push', '-q', 'origin', branch);
+  f.story('S-1', { branch, path });
+  writeFileSync(join(path, '.env'), 'TOKEN=local\n');
+  mkdirSync(join(path, 'build'));
+  for (const name of ['1', '2', '3', '4', '5', '6']) writeFileSync(join(path, 'build', name + '.js'), name + '\n');
+  const { status, body } = await f.preview('S-1');
+  assert.equal(status, 200, JSON.stringify(body));
+  assert.deepEqual(body.ignored, { count: 7, paths: ['.env', 'build/1.js', 'build/2.js', 'build/3.js', 'build/4.js'] });
+  const result = (await f.clear(['S-1'])).of('S-1');
+  assert.equal(result.result, 'cleared', JSON.stringify(result));
+  assert.ok(!existsSync(join(path, '.env')), 'the ignored .env file is still there');
+  assert.ok(!existsSync(path), 'the worktree is still there');
+});
+
+test('the clear preview lists no ignored files for a worktree without them', async t => {
+  const f = await fixture(t);
+  const { path, branch } = f.worktree('S-1');
+  f.story('S-1', { branch, path });
+  const { body } = await f.preview('S-1');
+  assert.deepEqual(body.ignored, { count: 0, paths: [] });
+});
+
 test('the clear preview says the branch stays when the worktree is already gone', async t => {
   const f = await fixture(t);
   const { path, branch } = f.worktree('S-1');
