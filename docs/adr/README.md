@@ -23,3 +23,4 @@ Each record explains one decision the code cannot show by itself. Code in this r
 | [0017](0017-existing-story-databases-stay-where-they-are.md) | Existing story databases stay where they are, and the store holds its file open |
 | [0018](0018-approved-plans-start-an-independent-test-worker.md) | Approved plans start an independent test author in the originating harness |
 | [0019](0019-a-background-jarvis-session-is-woken-for-news.md) | A background Jarvis session is woken for news, so a story never waits on a chat |
+| [0020](0020-end-to-end-checks-run-scripted-workers.md) | End-to-end checks run scripted workers and a scripted Jarvis, with no model |

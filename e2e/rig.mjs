@@ -13,6 +13,7 @@ const run = promisify(execFile);
 const slashes = path => path.replaceAll('\\', '/');
 const consoleCli = fileURLToPath(new URL('../mission-console/jarvis.mjs', import.meta.url));
 const launcher = fileURLToPath(new URL('../command-center/serve.mjs', import.meta.url));
+const daemonFile = fileURLToPath(new URL('./daemon.mjs', import.meta.url));
 const standIn = fileURLToPath(new URL('./gh-stand-in.mjs', import.meta.url));
 
 export function expect(condition, message) {
@@ -67,7 +68,7 @@ export async function openRig({ entry, turnMs, tally, profile: overrides = {} })
   const origin = 'http://127.0.0.1:' + port;
   const store = openStore(db);
   let daemonOutput = '';
-  const daemon = spawn(process.execPath, [launcher, String(port)], { env, stdio: ['ignore', 'pipe', 'pipe'] });
+  const daemon = spawn(process.execPath, [daemonFile, String(port)], { env, stdio: ['ignore', 'pipe', 'pipe'] });
   for (const stream of [daemon.stdout, daemon.stderr]) stream.on('data', chunk => { daemonOutput += chunk; });
 
   const everyEvent = () => store.snapshot().flatMap(story => store.history(story.id));
