@@ -150,7 +150,7 @@ Run this when Jarvis starts the `pr-review` phase for new feedback on the open p
 5. On the answers, apply the chosen fixes on the PR branch, run the required gates (`test` and `secrets` at least), commit and push.
 6. Reply in each thread with what changed or why nothing did, confirm the reply posted, and record its node id in `activity` with `posted`. Then resolve the thread. Conversation comments get a reply only.
 7. When an answer in the owner's own words is a question, reply to it in `activity` and ask a new question.
-8. When an answer asks for more than a small fix, release the worker and record `return-to-build` with the answer and `seen` set to the keys of the feedback you handled, copied as in step 9.
+8. When an answer asks for more than a small fix, release the worker and record `return-to-build` with the answer and `seen` set to the keys copied as in step 9, leaving out the item whose answer asks for more, so a pass after the rebuild replies to it.
 9. Before the handoff, copy `prObservation.review.keys` from the story's handover, then read the feedback on GitHub again and ask about anything new. Then release the worker and record `handoff` with `seen` set to the keys you copied, which returns the story to `ci`. Copy the keys before the GitHub read, never after: a key missing from `seen` only wakes Jarvis again, while one listed that you never read is feedback lost.
 
 ## 9. Retro
