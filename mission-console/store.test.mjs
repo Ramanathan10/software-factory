@@ -841,6 +841,27 @@ test('feedback first seen in a PR review that went back to build wakes on the fi
   assert.ok(record('pr-observed', observed(['PRRT_1:PRRC_1', 'IC_2'])).unchanged, 'once woken, the same observation records nothing');
 });
 
+test('feedback a PR review handled before going back to build stays quiet once the story is back in ci', t => {
+  const store = fixture(t)();
+  const record = toCi(store, 'handled');
+  record('pr-observed', observed(['PRRT_1:PRRC_1']));
+  record('pr-review-start', { detail: 'One new thread.' });
+  record('pr-observed', observed(['PRRT_1:PRRC_1', 'IC_2', 'IC_3']));
+  assert.throws(() => record('return-to-build', { detail: 'Larger change.', seen: 'IC_2' }), error => error.status === 400, 'seen is a list of review keys');
+  assert.throws(() => record('return-to-build', { detail: 'Larger change.', seen: [''] }), error => error.status === 400, 'a blank review key is refused');
+  record('return-to-build', { detail: 'The owner asked for a larger change.', seen: ['PRRT_1:PRRC_1', 'IC_2'] });
+  record('handoff', { detail: 'Verified green.', command: 'npm test' });
+  record('handoff', { detail: 'Gates pass.', command: 'node --test' });
+  record('handoff', { detail: 'No survivors.', command: 'npx stryker run' });
+  record('handoff', { detail: 'Reviewed.' });
+  record('comparison-choice', { run: false });
+  record('pr-opened', { url: REVIEW_PR });
+  assert.equal(record('pr-observed', observed(['PRRT_1:PRRC_1', 'IC_2'])).wake, false, 'the conversation comment the worker answered does not wake Jarvis again');
+  const unhandled = record('pr-observed', observed(['PRRT_1:PRRC_1', 'IC_2', 'IC_3']));
+  assert.equal(unhandled.wake, true, 'feedback the worker did not hand off as seen still wakes');
+  assert.match(store.pendingFor('handled').find(event => event.seq === unhandled.seq).detail, /New feedback · 1 item/);
+});
+
 test('a still-current key never wakes again, however many keys the story has seen', t => {
   const store = fixture(t)();
   const record = toCi(store, 'pruned');

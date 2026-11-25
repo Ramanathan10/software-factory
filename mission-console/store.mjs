@@ -139,6 +139,13 @@ function observePr(story, input, now) {
   return { detail, feedback, wake: checks || feedback };
 }
 
+function markSeen(story, seen) {
+  if (seen === undefined) return;
+  requireThat(Array.isArray(seen) && seen.length <= 1000 && seen.every(key => short(key, 200) && key.trim()),
+    'List at most 1000 review keys the worker read.');
+  story.prSeen = [...new Set([...(story.prSeen ?? []), ...seen])];
+}
+
 const jarvisTurnEvents = ['jarvis-woken', 'jarvis-turn-started', 'jarvis-turn-ended'];
 const jarvisNotice = input => input.type === 'question' && typeof input.question === 'string' && input.question.startsWith('action-jarvis-');
 
@@ -300,11 +307,7 @@ function apply(story, input, now) {
       }
       if (story.phase === 'pr-review') {
         const outcome = string(input.detail, 'PR review outcome');
-        if (input.seen !== undefined) {
-          requireThat(Array.isArray(input.seen) && input.seen.length <= 1000 && input.seen.every(key => short(key, 200) && key.trim()),
-            'List at most 1000 review keys the worker read.');
-          story.prSeen = [...new Set([...(story.prSeen ?? []), ...input.seen])];
-        }
+        markSeen(story, input.seen);
         story.phase = story.prReview?.returnPhase ?? 'ci';
         story.prReview = { ...story.prReview, completedAt: now, detail: outcome };
         return outcome;
@@ -340,6 +343,7 @@ function apply(story, input, now) {
     case 'return-to-build':
       requireThat(['review', 'gates', 'comparison', 'pr-review'].includes(story.phase), 'Return to build from review, the deterministic gates, the comparison, or PR review.', 409);
       if (story.phase === 'review') story.reviewRounds = (story.reviewRounds ?? 0) + 1;
+      if (story.phase === 'pr-review') markSeen(story, input.seen);
       story.phase = 'building';
       return string(input.detail, 'review finding');
     case 'return-to-testing':

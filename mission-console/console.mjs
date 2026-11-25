@@ -1,4 +1,4 @@
-import { reviewLabels, stalled } from './review.mjs';
+import { refreshKey, reviewLabels } from './review.mjs';
 import { harnessKey, lanes, phases, roles } from './roles.mjs';
 
 const ui = id => document.getElementById(id);
@@ -456,7 +456,7 @@ async function refresh() {
       const response = await fetch('/api/stories');
       if (!response.ok) throw new Error('Snapshot unavailable.');
       const updated = await response.json();
-      const signature = JSON.stringify(updated.map(story => [story.id, story.revision, story.pendingDecision?.seq, stalled(story, Date.now())]));
+      const signature = refreshKey(updated, Date.now());
       if (signature !== shown) {
         stories = updated;
         shown = signature;

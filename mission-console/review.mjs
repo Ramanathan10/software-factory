@@ -22,3 +22,6 @@ export function reviewLabels(story, now) {
     stalled(story, now) && 'No review activity for ' + since(review.lastActivityAt, now),
   ].filter(Boolean);
 }
+
+export const refreshKey = (stories, now) =>
+  JSON.stringify(stories.map(story => [story.id, story.revision, story.pendingDecision?.seq, reviewLabels(story, now)]));

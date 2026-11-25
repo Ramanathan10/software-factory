@@ -22,3 +22,12 @@ test('the stall flag is part of what tells the Mission Console to redraw', () =>
   assert.equal(labels.stalled(quiet, NOW + 2 * 60000), true, 'past 24 hours it is');
   assert.equal(labels.stalled(story('pr-review', { lastActivityAt: '2025-01-01T00:00:00.000Z' }), NOW), false, 'a story in PR review is not flagged');
 });
+
+test('the Mission Console redraws when the stall age it shows moves on, not every minute', () => {
+  assert.equal(typeof labels.refreshKey, 'function', 'review.mjs does not export refreshKey(stories, now)');
+  const stories = [{ id: 'PRR-9', revision: 4, ...story('ci', { lastActivityAt: '2026-01-01T14:00:00.000Z' }) }];
+  assert.notEqual(labels.refreshKey(stories, NOW - 60000), labels.refreshKey(stories, NOW + 60000), 'the stall flag appears');
+  assert.equal(labels.refreshKey(stories, NOW + 60000), labels.refreshKey(stories, NOW + 120000), 'the same shown age keeps the same key');
+  assert.notEqual(labels.refreshKey(stories, NOW + 60000), labels.refreshKey(stories, NOW + 3600000), '1d 0h becomes 1d 1h');
+  assert.notEqual(labels.refreshKey(stories, NOW), labels.refreshKey([{ ...stories[0], revision: 5 }], NOW), 'a new revision still redraws');
+});
