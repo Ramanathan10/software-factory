@@ -50,7 +50,7 @@ The diagrams are drawn in `docs/architecture.html` and `docs/lifecycle.html`. Ed
 | `diagram-design` | Architecture diagrams for pull request descriptions. |
 | `greploop` | Iterating on Greptile review feedback. |
 | `learnings`, `self-improvement` | The retro: lessons for the target repository and for the workflow. |
-| `explainer`, `hyperframes` | Explanations in the right format, including video. |
+| `explainer` | Explanations in the right format, including video. |
 
 When the `ai-sdlc` phases change, update `mission-console/roles.mjs`, the store's transitions, and the phase table in `skills/jarvis/SKILL.md` in the same change.
 

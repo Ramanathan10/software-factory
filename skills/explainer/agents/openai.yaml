@@ -1,6 +1,6 @@
 interface:
   display_name: "Explainer"
-  short_description: "Recommend and confirm an explanation format"
-  default_prompt: "Use $explainer to recommend one of five formats and ask me to confirm it before explaining."
+  short_description: "Recommend and confirm an explanation format, from a plain answer to a ~1-minute explainer video."
+  default_prompt: "Use $explainer to recommend one of five formats (simple, detailed, diagram, interactive HTML, or explainer video) and ask me to confirm it before explaining."
 policy:
   allow_implicit_invocation: true
