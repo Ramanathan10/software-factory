@@ -137,7 +137,7 @@ export function components(root, env = process.env, platform = process.platform)
       : { name: 'stryker', kind: 'gate', neededFor: 'mutation testing', found: local('stryker'), install: 'npm install --save-dev @stryker-mutator/core' },
     { name: 'gitleaks', kind: 'gate', neededFor: 'secret scanning', found: onPath('gitleaks', env), install: manager('Gitleaks.Gitleaks', 'gitleaks') },
     { name: 'ffmpeg', kind: 'optional', neededFor: 'screen recordings and rendering video', found: onPath('ffmpeg', env), install: manager('Gyan.FFmpeg', 'ffmpeg') },
-    { name: 'hyperframes', kind: 'optional', neededFor: 'explainer videos with the hyperframes skill', found: local('hyperframes'), install: 'npm install --save-dev hyperframes (in the video project)' },
+    { name: 'hyperframes', kind: 'optional', neededFor: 'explainer videos with the explainer skill', found: local('hyperframes'), install: 'npm install --save-dev hyperframes (in the video project)' },
   ];
 }
 

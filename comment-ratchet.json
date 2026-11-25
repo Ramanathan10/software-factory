@@ -2,6 +2,7 @@
   "exclude": [
     "skills/adversarial-code-review/",
     "skills/diagram-design/",
+    "skills/explainer/",
     "skills/greploop/",
     "skills/grill-me/",
     "skills/ponytail/"
