@@ -114,7 +114,10 @@ function observePr(story, input, now) {
   const review = reviewOf(observation.review);
   const previous = story.prObservation;
   const checksSame = previous && Object.keys(current).every(key => JSON.stringify(current[key]) === JSON.stringify(previous[key]));
-  if (checksSame && JSON.stringify(review) === JSON.stringify(previous.review)) return null;
+  const reviewing = story.phase === 'pr-review';
+  const seen = new Set(story.prSeen ?? []);
+  const fresh = review && !reviewing ? review.keys.filter(key => !seen.has(key)) : [];
+  if (checksSame && JSON.stringify(review) === JSON.stringify(previous.review) && !fresh.length) return null;
   const priorHead = previous?.head ?? story.readyHead;
   const newHead = Boolean(priorHead && priorHead !== current.head);
   const reconcileReady = story.phase === 'merge' && !previous && !story.readyHead;
@@ -123,13 +126,14 @@ function observePr(story, input, now) {
     'no-checks': 'No checks reported', merged: 'Merge observed', closed: 'PR closed without merge',
   };
   const listed = current.failures.length ? ' · ' + current.failures.join(', ') : '';
-  const seen = new Set(story.prSeen ?? []);
-  const fresh = review ? review.keys.filter(key => !seen.has(key)) : [];
-  const feedback = fresh.length > 0 && story.phase !== 'pr-review';
+  const feedback = fresh.length > 0;
   const said = feedback ? ' · New feedback · ' + fresh.length + (fresh.length === 1 ? ' item' : ' items') : '';
   const detail = 'Hawkeye · ' + (newHead ? 'New head · ' : '') + labels[status] + ' · ' + head.slice(0, 12) + listed + said;
   story.prObservation = { ...current, ...(review ? { review } : {}), at: now };
-  if (fresh.length) story.prSeen = [...seen, ...fresh].slice(-1000);
+  if (review && !reviewing) {
+    const live = new Set(review.keys);
+    story.prSeen = [...[...seen].filter(key => !live.has(key)), ...live].slice(-1000);
+  }
   const checks = !checksSame && (newHead || reconcileReady || ['failed', 'passed', 'merged', 'closed'].includes(status) ||
     Boolean(previous && ['failed', 'passed', 'closed'].includes(previous.status)));
   return { detail, feedback, wake: checks || feedback };
@@ -296,6 +300,11 @@ function apply(story, input, now) {
       }
       if (story.phase === 'pr-review') {
         const outcome = string(input.detail, 'PR review outcome');
+        if (input.seen !== undefined) {
+          requireThat(Array.isArray(input.seen) && input.seen.length <= 1000 && input.seen.every(key => short(key, 200) && key.trim()),
+            'List at most 1000 review keys the worker read.');
+          story.prSeen = [...new Set([...(story.prSeen ?? []), ...input.seen])];
+        }
         story.phase = story.prReview?.returnPhase ?? 'ci';
         story.prReview = { ...story.prReview, completedAt: now, detail: outcome };
         return outcome;
@@ -612,7 +621,7 @@ export function openStore(path) {
         const event = { at: now, type: input.type, phase: story.phase, revision: story.revision, detail };
         if (input.type === 'pr-observed') event.observation = story.prObservation;
         if (feedback) event.feedback = true;
-        else if (story.worker || worker) event.worker = story.worker ?? worker;
+        if (story.worker || worker) event.worker = story.worker ?? worker;
         if (input.type === 'pr-ready' && story.readyHead) event.head = story.readyHead;
         if (input.command) event.command = input.command;
         if (input.by) event.by = input.by;

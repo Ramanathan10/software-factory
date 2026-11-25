@@ -37,6 +37,7 @@ class Node {
 }
 
 const ids = new Map();
+const intervals = [];
 const sources = [];
 const meta = { roles, phases, columns: lanes(phases, 2) };
 Object.assign(globalThis, {
@@ -52,7 +53,7 @@ Object.assign(globalThis, {
   localStorage: { getItem: () => null, setItem() {}, removeItem() {} },
   fetch: async () => ({ ok: true, json: async () => meta }),
   EventSource: class { constructor() { this.listeners = {}; sources.push(this); } addEventListener(type, listener) { this.listeners[type] = listener; } close() {} },
-  setInterval: () => 0,
+  setInterval: callback => { intervals.push(callback); return 0; },
   window: globalThis,
 });
 await import('./ui/app.js');
@@ -208,4 +209,23 @@ test('a story in PR review sits in the PR review lane and waits for the PR revie
   const lane = walk(ids.get('board')).find(node => node.classes?.().includes('lane') && walk(node).includes(reviewCard('answering')));
   assert.ok(lane?.children.find(child => child?.tag === 'h2')?.textContent.startsWith('PR review'), 'the pr-review story is not in the PR review lane');
   assert.ok(reviewCard('answering').textContent.includes('Idle · waiting for the PR review worker'));
+});
+
+test('the stall flag appears on the next tick once 24 hours pass without review activity, and its age keeps counting', () => {
+  const realNow = Date.now;
+  try {
+    const nearly = { ...base, id: 'STALL-1', phase: 'ci', pr: 'https://github.com/acme/widgets/pull/10',
+      prObservation: observation({ lastActivityAt: ago(24 * 60 - 1) }) };
+    sources.at(-1).listeners.stories({ data: JSON.stringify({ stories: [...Object.values(fixtures), ...Object.values(reviewed), nearly] }) });
+    const card = () => walk(ids.get('board')).find(node => node.tag === 'article' && node.textContent.includes('STALL-1'));
+    assert.ok(!card().textContent.includes('No review activity'), 'a PR quiet for 23h 59m is not flagged yet');
+    Date.now = () => realNow() + 2 * 60000;
+    assert.ok(intervals.length, 'app.js ticks on an interval');
+    for (const tick of intervals) tick();
+    assert.ok(card().textContent.includes('No review activity for 1d 0h'), 'the flag appears without a new frame: ' + card().textContent);
+    const since = walk(card()).find(node => node.tag === 'time' && node.attributes['data-since']);
+    assert.equal(since?.attributes['data-since'], nearly.prObservation.review.lastActivityAt, 'the age of the flag is a time node the tick keeps current');
+  } finally {
+    Date.now = realNow;
+  }
 });

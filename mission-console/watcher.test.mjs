@@ -142,3 +142,13 @@ test('an incomplete GitHub answer is a read failure, not an empty review', () =>
   delete data.reviewThreads;
   assert.throws(() => watcher.summarizeReview(data, { head: HEAD, posted: [] }), error => !(error instanceof assert.AssertionError));
 });
+
+test('an approval on the current head that has a comment is feedback; an empty approval or one on an earlier head is not', () => {
+  const review = summarize(pullRequest({ reviews: [
+    { id: 'PRR_said', state: 'APPROVED', body: 'Looks good, but drop the debug log.', submittedAt: at(50), url: PR + '#r3', commit: { oid: HEAD }, author: user('reviewer-a') },
+    { id: 'PRR_empty', state: 'APPROVED', body: '  ', submittedAt: at(51), url: PR + '#r4', commit: { oid: HEAD }, author: user('reviewer-b') },
+    { id: 'PRR_old', state: 'APPROVED', body: 'Fine on the old head.', submittedAt: at(52), url: PR + '#r5', commit: { oid: OLD }, author: user('reviewer-c') },
+  ] }));
+  assert.deepEqual(review.keys, ['PRR_said']);
+  assert.deepEqual([review.items[0].kind, review.items[0].author, review.items[0].excerpt], ['review', 'reviewer-a', 'Looks good, but drop the debug log.']);
+});

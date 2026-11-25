@@ -39,6 +39,7 @@ export function serve(store, port) {
     ['/console.css', ['console.css', 'text/css; charset=utf-8']],
     ['/console.mjs', ['console.mjs', 'text/javascript; charset=utf-8']],
     ['/roles.mjs', ['roles.mjs', 'text/javascript; charset=utf-8']],
+    ['/review.mjs', ['review.mjs', 'text/javascript; charset=utf-8']],
   ].map(([route, [file, type]]) => [route, [readFileSync(new URL(file, import.meta.url)), type]]));
   const server = createServer(async (request, response) => {
     const authority = host + ':' + server.address().port;

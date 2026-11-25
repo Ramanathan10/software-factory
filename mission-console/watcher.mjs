@@ -73,7 +73,7 @@ export function summarizeReview(data, { head, posted = [] }) {
       path: thread.path ?? undefined, line: thread.line ?? undefined, excerpt: excerpt(first.body), url: last.url ?? first.url, at: last.createdAt });
   }
   for (const review of reviews) {
-    if (!current(review) || ours.has(review.id) || !(review.state === 'CHANGES_REQUESTED' || (review.state === 'COMMENTED' && review.body?.trim()))) continue;
+    if (!current(review) || ours.has(review.id) || !(review.state === 'CHANGES_REQUESTED' || review.body?.trim())) continue;
     items.push({ key: review.id, kind: 'review', author: login(review.author), bot: isBot(review.author), excerpt: excerpt(review.body), url: review.url, at: review.submittedAt });
   }
   for (const comment of comments) {

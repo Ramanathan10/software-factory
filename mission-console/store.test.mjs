@@ -804,7 +804,7 @@ test('PR review starts only while a PR is open, and can go back to build or clos
   assert.equal(store.handover('merged').story.phase, 'closed');
 });
 
-test('Hawkeye records review during PR review but never wakes Jarvis, and what it saw there does not wake later', t => {
+test('Hawkeye records review during PR review but never wakes Jarvis; only what the worker handed off as seen stays quiet later', t => {
   const store = fixture(t)();
   const record = toCi(store, 'inside');
   record('pr-observed', observed(['PRRT_1:PRRC_1']));
@@ -812,9 +812,55 @@ test('Hawkeye records review during PR review but never wakes Jarvis, and what i
   const during = record('pr-observed', observed(['PRRT_1:PRRC_1', 'IC_2']));
   assert.ok(during.seq, 'the observation is recorded in pr-review');
   assert.equal(during.wake, false, 'nothing wakes while the story is in pr-review');
-  record('handoff', { detail: 'Answered both.' });
-  assert.equal(record('pr-observed', observed(['IC_2'])).wake, false, 'feedback seen during PR review is not new afterwards');
-  assert.equal(record('pr-observed', observed(['IC_2', 'IC_3'])).wake, true);
+  assert.ok(record('pr-observed', observed(['PRRT_1:PRRC_1', 'IC_2'])).unchanged, 'an identical observation in pr-review records nothing');
+  assert.equal(record('pr-observed', observed(['PRRT_1:PRRC_1', 'IC_2', 'IC_4'])).wake, false, 'feedback after the re-read does not wake in pr-review');
+  assert.throws(() => record('handoff', { detail: 'Answered.', seen: 'IC_2' }), error => error.status === 400, 'seen is a list of review keys');
+  record('handoff', { detail: 'Answered both.', seen: ['PRRT_1:PRRC_1', 'IC_2'] });
+  const after = record('pr-observed', observed(['IC_2', 'IC_4']));
+  assert.equal(after.wake, true, 'feedback the worker did not hand off as seen wakes after the detour');
+  assert.match(store.pendingFor('inside').find(event => event.seq === after.seq).detail, /New feedback · 1 item/, 'the feedback the worker handled is not counted again');
+  assert.equal(record('pr-observed', observed(['IC_2', 'IC_4', 'IC_3'])).wake, true);
+});
+
+test('feedback first seen in a PR review that went back to build wakes on the first observation afterwards, even when unchanged', t => {
+  const store = fixture(t)();
+  const record = toCi(store, 'rebuilt');
+  record('pr-observed', observed(['PRRT_1:PRRC_1']));
+  record('pr-review-start', { detail: 'One new thread.' });
+  record('pr-observed', observed(['PRRT_1:PRRC_1', 'IC_2']));
+  record('return-to-build', { detail: 'The owner asked for a larger change.' });
+  record('handoff', { detail: 'Verified green.', command: 'npm test' });
+  record('handoff', { detail: 'Gates pass.', command: 'node --test' });
+  record('handoff', { detail: 'No survivors.', command: 'npx stryker run' });
+  record('handoff', { detail: 'Reviewed.' });
+  record('comparison-choice', { run: false });
+  record('pr-opened', { url: REVIEW_PR });
+  assert.equal(store.handover('rebuilt').story.phase, 'ci');
+  const again = record('pr-observed', observed(['PRRT_1:PRRC_1', 'IC_2']));
+  assert.equal(again.wake, true, 'the identical observation still wakes for the comment never brought to Jarvis');
+  assert.ok(record('pr-observed', observed(['PRRT_1:PRRC_1', 'IC_2'])).unchanged, 'once woken, the same observation records nothing');
+});
+
+test('a still-current key never wakes again, however many keys the story has seen', t => {
+  const store = fixture(t)();
+  const record = toCi(store, 'pruned');
+  record('pr-observed', observed(['PRRT_keep:PRRC_1']));
+  for (let round = 0; round < 3; round += 1) {
+    const batch = Array.from({ length: 500 }, (_, n) => 'IC_' + round + '_' + n);
+    const woken = record('pr-observed', observed(['PRRT_keep:PRRC_1', ...batch]));
+    assert.match(store.pendingFor('pruned').find(event => event.seq === woken.seq).detail, /New feedback · 500 items$/, 'round ' + round + ' counts only its new comments');
+  }
+  assert.equal(record('pr-observed', observed(['PRRT_keep:PRRC_1'])).wake, false, 'the thread seen first is still not new');
+});
+
+test('a review wake still names the assigned worker', t => {
+  const store = fixture(t)();
+  const record = toCi(store, 'named');
+  record('assign-worker', { session: 'hawkeye-1' });
+  const woken = record('pr-observed', observed(['IC_1']));
+  const event = store.pendingFor('named').find(item => item.seq === woken.seq);
+  assert.equal(event.feedback, true);
+  assert.equal(event.worker?.id, store.handover('named').story.worker.id);
 });
 
 test('the worker records the comment ids it posts, and Hawkeye passes them to the reader', async t => {

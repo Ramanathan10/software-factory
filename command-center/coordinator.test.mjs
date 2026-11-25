@@ -563,3 +563,36 @@ test('new review feedback wakes the background Jarvis even while the ci worker i
   assert.ok(rig.jarvis[0].input.prompt.includes(String(seen.seq)), 'the kickoff carries the review wake');
   assert.ok(rig.story().worker, 'the ci worker stays assigned until Jarvis releases it');
 });
+
+for (const status of ['merged', 'closed']) {
+  test('a ' + status + ' PR observed during PR review wakes the background Jarvis while the Hawkeye worker waits on the owner', async t => {
+    const rig = coordinated(t);
+    scoutHandedOff(rig);
+    const write = (type, extra = {}) => rig.recorder.recordEvent({ story: 'tl-1', type, ...extra });
+    write('plan', { detail: 'Export selected rows.' });
+    write('approve');
+    write('handoff', { detail: 'Red verified.', command: 'node --test' });
+    write('handoff', { detail: 'Green.', command: 'node --test' });
+    write('handoff', { detail: 'Gates pass.', command: 'node --test' });
+    write('handoff', { detail: 'Gates pass.', command: 'node --test' });
+    write('handoff', { detail: 'Mutation pass.', command: 'npx stryker run' });
+    write('handoff', { detail: 'Review clean.' });
+    write('comparison-choice', { run: false });
+    const url = 'https://github.com/acme/widgets/pull/1';
+    write('pr-opened', { url });
+    write('pr-review-start', { detail: 'One new thread from reviewer-a.' });
+    write('assign-worker', { session: 'hawkeye-1' });
+    const assignment = rig.story().worker.id;
+    write('question', { question: 'pr-1-1', prompt: 'Rename the helper?', options: ['Rename it', 'Reply without a change'], recommended: 0 });
+    write('turn-started', { assignment, pid: 999999, log: join(rig.directory, 'hawkeye.log') });
+    write('turn-ended', { assignment, outcome: 'ended', code: 0, detail: 'Asked the owner.' });
+    rig.ackAll();
+    await rig.open();
+    await settle();
+    assert.equal(rig.jarvisTurns(), 0, 'nothing is news while the worker waits on the owner');
+    const seen = write('pr-observed', { url, observation: { head: 'a'.repeat(40), status, failedCount: 0, failures: [] } });
+    assert.equal(seen.wake, true, 'the store queues the ' + status + ' observation');
+    await until('a background Jarvis turn for the ' + status + ' PR', () => rig.jarvis.length);
+    assert.ok(rig.jarvis[0].input.prompt.includes(String(seen.seq)), 'the kickoff carries the ' + status + ' observation');
+  });
+}
