@@ -65,7 +65,7 @@ function serve(kind, input) {
 
 function coordinate() {
   const { story, pending } = read();
-  if (!story.worker && workerPhases.has(story.phase)) {
+  if (!story.worker && workerPhases.has(story.phase) && story.questions.every(question => question.answer)) {
     serve('start', book.next);
     if (story.pendingDecision) serve('deliver');
   }

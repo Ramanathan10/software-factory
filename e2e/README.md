@@ -23,7 +23,7 @@ Each scenario gets its own throwaway folder under the system's temporary directo
 
 The rig starts `e2e/daemon.mjs` instead of `command-center/serve.mjs`. It runs the same Command Center with a 2 s settle, a 2 s Jarvis quiet period and a 250 ms poll, and starts `e2e/scripted.mjs` wherever the real code would start `claude` or `codex`, with the same arguments, working directory, environment and prompt. A Codex start prints a `thread_id` line first, as `codex exec --json` does. Every start appends a line to `scripted-calls.jsonl` in the rig's home, and after each scenario the runner checks those calls against the turns and Jarvis wakes the console recorded.
 
-A worker turn waits until the daemon assigns its session, then runs the first playbook entry that matches it. A turn run as Jarvis (`AI_SDLC_ACTOR=jarvis`) follows one fixed policy instead: with no worker in a phase that has one, it starts the next worker with the playbook's `next` kickoff, and delivers when an owner decision for the phase is pending; then it acknowledges the news it was given, except decisions. Given the model `no-such-model-e2e`, either kind of turn exits 1 before it reads a playbook.
+A worker turn waits until the daemon assigns its session, then runs the first playbook entry that matches it. A turn run as Jarvis (`AI_SDLC_ACTOR=jarvis`) follows one fixed policy instead: with no worker in a phase that has one and no owner question left unanswered, it starts the next worker with the playbook's `next` kickoff, and delivers when an owner decision for the phase is pending; then it acknowledges the news it was given, except decisions. Given the model `no-such-model-e2e`, either kind of turn exits 1 before it reads a playbook.
 
 ## Scenarios
 
