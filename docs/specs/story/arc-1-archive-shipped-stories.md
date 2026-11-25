@@ -13,7 +13,7 @@ Merged stories stay on the board forever in the Done lane, the "shipped" count o
 3. The "shipped" counter counts closed stories still kept, drops when they are cleared, and clicking it opens the Archive tab.
 4. The archive is a fourth tab, "Archive", beside Lanes, Agents and Track. It follows the repository filter (list and Clear all); the role filter does not apply to it.
 5. The Done lane is removed; closed stories are left out of Lanes, Track and Agents.
-6. The Command Center clears a story itself, with fixed checks, recording `request-cleanup`, then `complete-cleanup` or `cleanup-blocked`. ADR 0020 records why this departs from the issue's "not directly" wording.
+6. The Command Center clears a story itself, with fixed checks, recording `request-cleanup`, then `complete-cleanup` or `cleanup-blocked`. ADR 0021 records why this departs from the issue's "not directly" wording.
 7. A clear refuses, and the story stays archived with the reason, when the worktree has uncommitted or untracked files, or the branch has commits that are not pushed (see refinement A).
 8. A clear deletes: the worktree; the local branch when all its commits are pushed; `<AI_SDLC_HOME>/stories/<ID>`; `<AI_SDLC_HOME>/notes/<ID>`; `<db dir>/attachments/<ID>`; the story's worker and Jarvis turn logs. Remote branches and PRs are untouched.
 9. The database keeps the `{id, deleted}` marker; history and state go (today's `complete-cleanup`).
@@ -62,7 +62,7 @@ D. **The fallback blocks.** A story with no recorded merged head whose remote br
 - The AI SDLC home is an option of `createConsoleService` (default `AI_SDLC_HOME`, else `~/.ai-sdlc`, as `adapters/harnesses.mjs` reads it). Tests and the before-and-after run always pass a temporary home, so they cannot touch the real `~/.ai-sdlc`.
 
 ### Docs
-- ADR `docs/adr/0020-the-command-center-clears-shipped-stories.md`: why the Command Center runs these deletions itself, the checks, refinement A.
+- ADR `docs/adr/0021-the-command-center-clears-shipped-stories.md`: why the Command Center runs these deletions itself, the checks, refinement A.
 - `mission-console/README.md`: a "Clear shipped stories" paragraph under "Record and recover"; correct the sentence that says the dashboard runs no shell commands.
 - `/api/clear` records through `service.recordEvent`, which never calls `notify`/`hand` (only `/api/decision` does, `console-service.mjs:177-180`), and its events carry `by: "jarvis"`, so they are never pending and never delivered.
 - No change to `store.mjs`, phase keys, the Jarvis phase table, worker start, decision delivery or Jarvis waking. So no lifecycle-model change, no delivery-model check and no e2e run is required; `node --test` still runs the lifecycle model.
@@ -110,7 +110,7 @@ Work item: issue 36. Branch `story/arc-1-archive-shipped-stories`, cut from orig
 ### Rules that apply (AGENTS.md, profile)
 
 - `node --test` before every commit; secrets gate `gitleaks git --no-banner --log-opts=origin/main..HEAD`. Lint, typecheck, build, dependencies, static analysis, mutation declined.
-- No package dependencies. No comments in source files (`comment-ratchet.json`); reasons go in an ADR under `docs/adr/` (next free number 0020).
+- No package dependencies. No comments in source files (`comment-ratchet.json`); reasons go in an ADR under `docs/adr/` (next free number 0021).
 - Store or phase change: update `mission-console/store.mjs` transitions, `mission-console/roles.mjs` phases and the Jarvis phase table (`skills/jarvis/SKILL.md` step 5) together, and run `.claude/skills/verify-story-lifecycle/SKILL.md` (`node --test mission-console/lifecycle-model.test.mjs`).
 - Change to how workers start, how decisions reach them, or how Jarvis is woken: `.claude/skills/verify-decision-delivery/SKILL.md` plus `node e2e/run.mjs <harness>` (spends model usage).
 - Harness-neutral store and Command Center; harness specifics in `adapters/`.

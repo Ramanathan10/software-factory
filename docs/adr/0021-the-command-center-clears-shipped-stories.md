@@ -1,4 +1,4 @@
-# 0020. The Command Center clears shipped stories itself
+# 0021. The Command Center clears shipped stories itself
 
 Status: Accepted
 Date: 2026-11-24
