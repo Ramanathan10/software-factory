@@ -37,6 +37,7 @@ class Node {
 }
 
 const ids = new Map();
+const intervals = [];
 const sources = [];
 const meta = { roles, phases, columns: lanes(phases, 2) };
 Object.assign(globalThis, {
@@ -52,7 +53,7 @@ Object.assign(globalThis, {
   localStorage: { getItem: () => null, setItem() {}, removeItem() {} },
   fetch: async () => ({ ok: true, json: async () => meta }),
   EventSource: class { constructor() { this.listeners = {}; sources.push(this); } addEventListener(type, listener) { this.listeners[type] = listener; } close() {} },
-  setInterval: () => 0,
+  setInterval: callback => { intervals.push(callback); return 0; },
   window: globalThis,
 });
 await import('./ui/app.js');
@@ -67,7 +68,17 @@ const fixtures = {
   blocked: { ...base, id: 'BLOCK-1', repo: 'acme/two', phase: 'building', blocked: true, worker: { id: 'w3', role: 'implementer', session: 's3', turn }, events: [{ seq: 2, at: now(), type: 'blocked', detail: 'Stuck.' }] },
   closed: { ...base, id: 'DONE-1', repo: 'acme/one', phase: 'closed' },
 };
-sources.at(-1).listeners.stories({ data: JSON.stringify({ stories: Object.values(fixtures) }) });
+const ago = minutes => new Date(Date.now() - minutes * 60000).toISOString();
+const observation = review => ({ head: 'c'.repeat(40), status: 'passed', failedCount: 0, failures: [], at: now(),
+  review: { approvals: [], changesRequested: [], unresolved: 0, earlier: 0, items: [], keys: [], more: false, ...review } });
+const reviewed = {
+  review: { ...base, id: 'REVIEW-1', phase: 'ci', pr: 'https://github.com/acme/widgets/pull/7',
+    prObservation: observation({ changesRequested: ['reviewer-b'], unresolved: 3, earlier: 2, lastActivityAt: ago(26 * 60 + 1) }) },
+  quiet: { ...base, id: 'QUIET-1', phase: 'merge', pr: 'https://github.com/acme/widgets/pull/8', readyHead: 'c'.repeat(40),
+    prObservation: observation({ approvals: ['reviewer-a'], lastActivityAt: ago(120) }) },
+  answering: { ...base, id: 'PRR-9', phase: 'pr-review', pr: 'https://github.com/acme/widgets/pull/9' },
+};
+sources.at(-1).listeners.stories({ data: JSON.stringify({ stories: [...Object.values(fixtures), ...Object.values(reviewed)] }) });
 
 const walk = node => node && typeof node === 'object' ? [node, ...node.children.flatMap(walk)] : [];
 const cards = new Map(walk(ids.get('board')).filter(node => node.tag === 'article' && node.classes().includes('card')).map(card => [card.children.find(child => child?.tag === 'header')?.textContent.match(/[A-Z]+-\d+/)?.[0], card]));
@@ -175,4 +186,46 @@ test('reduced motion stops every animation, the card glyph included', () => {
   const block = read('./ui/app.css').match(/@media \(prefers-reduced-motion: reduce\) \{([\s\S]*?)\n\}/)?.[1];
   assert.ok(block, 'app.css has no prefers-reduced-motion block');
   assert.match(block, /\*, \*::before, \*::after \{[^}]*animation: none !important/);
+});
+
+const reviewCard = state => {
+  const found = cards.get(reviewed[state].id);
+  assert.ok(found, 'the board rendered no card for the ' + state + ' story ' + reviewed[state].id);
+  return found;
+};
+
+test('a story with an open PR shows its review state, and the stall flag after 24 hours without review activity', () => {
+  const text = reviewCard('review').textContent;
+  for (const label of ['Changes requested · 1 reviewer', '3 unresolved threads', 'Earlier-head feedback · 2', 'No review activity for 1d 2h']) {
+    assert.ok(text.includes(label), 'the card in ci does not say "' + label + '": ' + text);
+  }
+  const quiet = reviewCard('quiet').textContent;
+  for (const label of ['Changes requested', 'unresolved', 'Earlier-head', 'No review activity']) {
+    assert.ok(!quiet.includes(label), 'a clear review two hours old still says "' + label + '": ' + quiet);
+  }
+});
+
+test('a story in PR review sits in the PR review lane and waits for the PR review worker', () => {
+  const lane = walk(ids.get('board')).find(node => node.classes?.().includes('lane') && walk(node).includes(reviewCard('answering')));
+  assert.ok(lane?.children.find(child => child?.tag === 'h2')?.textContent.startsWith('PR review'), 'the pr-review story is not in the PR review lane');
+  assert.ok(reviewCard('answering').textContent.includes('Idle · waiting for the PR review worker'));
+});
+
+test('the stall flag appears on the next tick once 24 hours pass without review activity, and its age keeps counting', () => {
+  const realNow = Date.now;
+  try {
+    const nearly = { ...base, id: 'STALL-1', phase: 'ci', pr: 'https://github.com/acme/widgets/pull/10',
+      prObservation: observation({ lastActivityAt: ago(24 * 60 - 1) }) };
+    sources.at(-1).listeners.stories({ data: JSON.stringify({ stories: [...Object.values(fixtures), ...Object.values(reviewed), nearly] }) });
+    const card = () => walk(ids.get('board')).find(node => node.tag === 'article' && node.textContent.includes('STALL-1'));
+    assert.ok(!card().textContent.includes('No review activity'), 'a PR quiet for 23h 59m is not flagged yet');
+    Date.now = () => realNow() + 2 * 60000;
+    assert.ok(intervals.length, 'app.js ticks on an interval');
+    for (const tick of intervals) tick();
+    assert.ok(card().textContent.includes('No review activity for 1d 0h'), 'the flag appears without a new frame: ' + card().textContent);
+    const since = walk(card()).find(node => node.tag === 'time' && node.attributes['data-since']);
+    assert.equal(since?.attributes['data-since'], nearly.prObservation.review.lastActivityAt, 'the age of the flag is a time node the tick keeps current');
+  } finally {
+    Date.now = realNow;
+  }
 });

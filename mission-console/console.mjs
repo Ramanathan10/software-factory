@@ -1,3 +1,4 @@
+import { refreshKey, reviewLabels } from './review.mjs';
 import { harnessKey, lanes, phases, roles } from './roles.mjs';
 
 const ui = id => document.getElementById(id);
@@ -13,6 +14,7 @@ let detailKey;
 let evidenceKey;
 let storyTab = 'overview';
 let planKey;
+let shown;
 
 const observations = {
   failed: 'CI failed', passed: 'Reported checks passed', running: 'Checks still running',
@@ -74,11 +76,12 @@ function status(story) {
   if (waitingForJarvis(story)) return { owner, label: 'Decision saved · waiting for Jarvis', alert: true };
   const signal = story.prObservation?.status;
   if (['ci', 'merge'].includes(story.phase) && signal) {
+    const review = reviewLabels(story, Date.now()).map(said => ' · ' + said).join('');
     if (story.phase === 'merge' && story.readyHead === story.prObservation.head && signal === 'passed') {
-      return { owner, label };
+      return { owner, label: label + review };
     }
     const awaitingReview = story.phase === 'merge' && signal === 'passed';
-    return { owner, label: awaitingReview ? 'Checks passed · readiness needs confirmation' : observations[signal] ?? label,
+    return { owner, label: (awaitingReview ? 'Checks passed · readiness needs confirmation' : observations[signal] ?? label) + review,
       alert: ['failed', 'closed'].includes(signal) };
   }
   return { owner, label, decision: owner === 'approver' };
@@ -453,9 +456,10 @@ async function refresh() {
       const response = await fetch('/api/stories');
       if (!response.ok) throw new Error('Snapshot unavailable.');
       const updated = await response.json();
-      const signature = records => JSON.stringify(records.map(story => [story.id, story.revision, story.pendingDecision?.seq]));
-      if (signature(updated) !== signature(stories)) {
+      const signature = refreshKey(updated, Date.now());
+      if (signature !== shown) {
         stories = updated;
+        shown = signature;
         render();
       }
       ui('connection').textContent = 'Local console';

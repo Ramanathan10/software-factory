@@ -9,9 +9,16 @@ const WORKER = 'W';
 const PR = 'https://github.com/acme/widgets/pull/1';
 const HEADS = ['a'.repeat(40), 'b'.repeat(40)];
 
-export const guarded = ['phase', 'harness', 'branch', 'questions', 'worker', 'blocked', 'cleanup', 'pr', 'prObservation', 'readyHead', 'diagram', 'retro', 'jarvis', 'deleted'];
+export const guarded = ['phase', 'harness', 'branch', 'questions', 'worker', 'blocked', 'cleanup', 'pr', 'prObservation', 'readyHead', 'diagram', 'retro', 'prReview', 'jarvis', 'deleted'];
 export const unguarded = ['id', 'title', 'brief', 'worktree', 'revision', 'createdAt', 'updatedAt', 'activity', 'draftPlan', 'plan',
-  'feedback', 'reviewRounds', 'comparisonRequested', 'files', 'artifacts', 'pipeline', 'repo'];
+  'feedback', 'reviewRounds', 'comparisonRequested', 'files', 'artifacts', 'pipeline', 'repo', 'prPosted', 'prSeen'];
+
+const blocking = review => review.changesRequested.length > 0 || review.unresolved > 0;
+
+function review(blocked) {
+  return { approvals: [], changesRequested: blocked ? ['reviewer-a'] : [], unresolved: blocked ? 1 : 0, earlier: blocked ? 0 : 1,
+    items: [], keys: blocked ? ['PRRT_1:PRRC_1'] : [], more: false, lastActivityAt: '2026-01-01T00:00:00.000Z' };
+}
 
 export function abstract(story) {
   if (story.deleted) return { deleted: true };
@@ -21,10 +28,12 @@ export function abstract(story) {
   if (story.blocked) state.blocked = true;
   if (story.cleanup) state.cleanup = true;
   if (story.pr) state.pr = story.pr;
-  if (story.prObservation) state.prObservation = { head: story.prObservation.head, status: story.prObservation.status };
+  if (story.prObservation) state.prObservation = { head: story.prObservation.head, status: story.prObservation.status,
+    ...(story.prObservation.review ? { blocking: blocking(story.prObservation.review) } : {}) };
   if (story.readyHead) state.readyHead = story.readyHead;
   if (story.diagram) state.diagram = { returnPhase: story.diagram.returnPhase };
   if (story.retro) state.retro = { returnPhase: story.retro.returnPhase };
+  if (story.prReview) state.prReview = { returnPhase: story.prReview.returnPhase };
   if (story.jarvis?.turn) state.jarvis = { turn: { pid: story.jarvis.turn.pid } };
   else if (story.jarvis?.waking) state.jarvis = { waking: true };
   return state;
@@ -38,8 +47,11 @@ function concrete(state) {
   if (state.blocked) story.blocked = 'Blocked.';
   if (state.cleanup) story.cleanup = {};
   if (state.jarvis) story.jarvis = { session: 'jarvis-1', handled: 1, ...(state.jarvis.turn ? { turn: { ...state.jarvis.turn, log: 'jarvis.log' } } : { waking: 'now' }) };
-  if (state.prObservation) story.prObservation = { ...state.prObservation, failedCount: state.prObservation.status === 'failed' ? 1 : 0,
-    failures: state.prObservation.status === 'failed' ? ['test'] : [] };
+  if (state.prObservation) {
+    const { blocking: blocked, ...observed } = state.prObservation;
+    story.prObservation = { ...observed, failedCount: observed.status === 'failed' ? 1 : 0,
+      failures: observed.status === 'failed' ? ['test'] : [], ...(blocked === undefined ? {} : { review: review(blocked) }) };
+  }
   return story;
 }
 
@@ -64,6 +76,7 @@ export function eventInputs(evidence) {
     ['handoff', { ...detail, command: 'node --test' }],
     ['diagram-start', detail],
     ['retro-start', detail],
+    ['pr-review-start', detail],
     ['return-to-build', detail],
     ['return-to-testing', detail],
     ['replan', detail],
@@ -79,6 +92,9 @@ export function eventInputs(evidence) {
     ['merged', detail],
     ...HEADS.flatMap(head => ['failed', 'passed', 'merged'].map(status => ['pr-observed', {
       url: PR, observation: { head, status, failedCount: status === 'failed' ? 1 : 0, failures: status === 'failed' ? ['test'] : [] },
+    }])),
+    ...HEADS.flatMap(head => [true, false].map(blocked => ['pr-observed', {
+      url: PR, observation: { head, status: 'passed', failedCount: 0, failures: [], review: review(blocked) },
     }])),
     ['request-cleanup', {}],
     ['cleanup-blocked', detail],

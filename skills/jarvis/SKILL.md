@@ -58,7 +58,7 @@ The factory is event-driven, never scheduled. The owner decides in the console; 
 
 To hear when a worker ends its turn, use the harness's "Report an idle worker" call in the runbook. In a harness driven from the command line the daemon wakes a background Jarvis session for the story, as the runbook's "Background Jarvis" describes; the Jarvis chat runs no background `wait-any` there.
 
-Do not attach recurring schedules to workers or to the Jarvis chat. Hawkeye's PR watcher, described in the Mission Console reference, observes CI and merge status.
+Do not attach recurring schedules to workers or to the Jarvis chat. Hawkeye's PR watcher, described in the Mission Console reference, observes CI, merge status and review feedback.
 
 ## 5. Check handoffs and keep the console current
 
@@ -74,7 +74,8 @@ When a worker ends its turn, read the console and check the evidence it recorded
 | 5. Adversarial review | `review` | `handoff` with the verdict; `return-to-build` with a verified finding; a `question` when the review reaches the profile's review round limit or otherwise escalates to the owner |
 | 6. Before and after | `comparison-choice`, `comparison` | The profile or the approved spec already decided this. Record `comparison-choice` with that answer instead of asking again, then `artifact` for each `before`, `after`, or `recording` (a text capture, such as command output, is registered as a `document` whose detail starts with BEFORE or AFTER, since those kinds take only images and video), and a `question` asking the owner to accept the comparison. Their acceptance is followed by `handoff`; a change they ask for is `return-to-build` with their comment. |
 | 7. Architecture diagram | `diagram` | When the profile or the spec asks for one: `diagram-start` with the scope before the pull request opens, `artifact` of kind `diagram`, `handoff` |
-| 8. Pull request | `publishing`, `ci`, `merge`, `closed` | `pr-opened` with the URL; `activity` with `pipeline` for a required pipeline run; `pr-ready` for the reviewed head; `pr-recheck` on a new head; `merged` |
+| 8. Pull request | `publishing`, `ci`, `merge`, `closed` | `pr-opened` with the URL; `activity` with `pipeline` for a required pipeline run; `pr-ready` for the reviewed head, and `pr-review-start` naming the threads when it is refused for unresolved threads; `pr-recheck` on a new head; `merged` |
+| 8. PR review | `pr-review` | `pr-review-start` naming the new feedback, then start Hawkeye's worker; the worker records `question` per comment, the owner's `answer`, `activity` with the posted comment ids, `handoff` back to ci with the review keys it read as seen, or, when an answer asks for more, a reply on that item that it is going back to build and `return-to-build` with the keys it read as seen |
 | 9. Retro | `retro` | `retro-start` while the pull request is open; `handoff` with the lessons |
 
 Keep the console honest while this happens:
@@ -104,7 +105,7 @@ Use this persona map when coordinating. Accept a skill name or a role name as a 
 | Doctor Strange | Independent reviewer | `adversarial-code-review` |
 | Bruce Banner | Before-and-after verifier | `before-and-after` |
 | Rocket | Architecture diagram designer | `diagram-design` |
-| Hawkeye | Factory and PR watcher | Routes the owner's console decisions to workers; observes CI and merge status |
+| Hawkeye | Factory and PR watcher | Routes the owner's console decisions to workers; observes CI, merge status and review feedback; runs PR review |
 | Fury | Human approver | The owner makes the plan and workflow decisions |
 
 The console's own labels come from `roles.mjs`, beside the `console` file.

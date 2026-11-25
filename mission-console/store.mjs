@@ -5,7 +5,7 @@ import { extname, isAbsolute } from 'node:path';
 import { documentTypes, mediaTypes } from './media.mjs';
 import { harnessKey, phases, roles } from './roles.mjs';
 
-export const workerPhases = new Set(['scout', 'planning', 'testing', 'red', 'building', 'gates', 'mutation', 'review', 'comparison', 'diagram', 'ci', 'retro']);
+export const workerPhases = new Set(['scout', 'planning', 'testing', 'red', 'building', 'gates', 'mutation', 'review', 'comparison', 'diagram', 'ci', 'retro', 'pr-review']);
 const transitions = {
   scout: 'planning',
   testing: 'red',
@@ -21,7 +21,7 @@ const wakes = new Set([
   'comparison-choice', 'replan', 'return-to-testing', 'retro-start', 'blocked', 'resume', 'assign-worktree', 'release-worker', 'select-harness',
   'pr-opened', 'pr-ready', 'pr-recheck', 'merged',
   'request-cleanup', 'cleanup-blocked',
-  'diagram-start',
+  'diagram-start', 'pr-review-start',
 ]);
 
 export class InputError extends Error {
@@ -78,8 +78,30 @@ function validHead(head) {
   return typeof head === 'string' && /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(head);
 }
 
+const itemKinds = ['thread', 'review', 'comment'];
+const short = (value, max) => typeof value === 'string' && value.length <= max;
+const count = value => Number.isSafeInteger(value) && value >= 0;
+const names = value => Array.isArray(value) && value.length <= 100 && value.every(name => short(name, 100));
+
+function reviewOf(review) {
+  if (review === undefined) return undefined;
+  requireThat(review && typeof review === 'object' && names(review.approvals) && names(review.changesRequested) &&
+    count(review.unresolved) && count(review.earlier) && typeof review.more === 'boolean' &&
+    (review.lastActivityAt === undefined || short(review.lastActivityAt, 40)) &&
+    Array.isArray(review.keys) && review.keys.length <= 1000 && review.keys.every(key => short(key, 200)) &&
+    Array.isArray(review.items) && review.items.length <= 10 && review.items.every(item => item && short(item.key, 200) &&
+      itemKinds.includes(item.kind) && short(item.author, 100) && typeof item.bot === 'boolean' && short(item.excerpt, 200) &&
+      short(item.url, 500) && (item.path === undefined || short(item.path, 500)) && (item.line === undefined || count(item.line))),
+  'Supply valid review evidence.');
+  return {
+    approvals: review.approvals, changesRequested: review.changesRequested, unresolved: review.unresolved, earlier: review.earlier,
+    items: review.items.map(({ key, kind, author, bot, path, line, excerpt, url }) => ({ key, kind, author, bot, path, line, excerpt, url })),
+    keys: review.keys, more: review.more, lastActivityAt: review.lastActivityAt,
+  };
+}
+
 function observePr(story, input, now) {
-  requireThat(['ci', 'merge'].includes(story.phase) && story.pr && input.url === story.pr,
+  requireThat(['ci', 'merge', 'pr-review'].includes(story.phase) && story.pr && input.url === story.pr,
     'The registered PR is no longer being watched.', 409);
   const observation = input.observation;
   requireThat(validHead(observation?.head), 'Supply the observed PR head.');
@@ -89,8 +111,13 @@ function observePr(story, input, now) {
     failures.length <= Math.min(10, failedCount) && failures.every(name => typeof name === 'string' && name.length <= 160),
   'Supply valid check evidence.');
   const current = { head, status, failedCount: status === 'failed' ? failedCount : 0, failures: status === 'failed' ? failures : [] };
+  const review = reviewOf(observation.review);
   const previous = story.prObservation;
-  if (previous && Object.keys(current).every(key => JSON.stringify(current[key]) === JSON.stringify(previous[key]))) return null;
+  const checksSame = previous && Object.keys(current).every(key => JSON.stringify(current[key]) === JSON.stringify(previous[key]));
+  const reviewing = story.phase === 'pr-review';
+  const seen = new Set(story.prSeen ?? []);
+  const fresh = review && !reviewing ? review.keys.filter(key => !seen.has(key)) : [];
+  if (checksSame && JSON.stringify(review) === JSON.stringify(previous.review) && !fresh.length) return null;
   const priorHead = previous?.head ?? story.readyHead;
   const newHead = Boolean(priorHead && priorHead !== current.head);
   const reconcileReady = story.phase === 'merge' && !previous && !story.readyHead;
@@ -99,10 +126,24 @@ function observePr(story, input, now) {
     'no-checks': 'No checks reported', merged: 'Merge observed', closed: 'PR closed without merge',
   };
   const listed = current.failures.length ? ' · ' + current.failures.join(', ') : '';
-  const detail = 'Hawkeye · ' + (newHead ? 'New head · ' : '') + labels[status] + ' · ' + head.slice(0, 12) + listed;
-  story.prObservation = { ...current, at: now };
-  return { detail, wake: newHead || reconcileReady || ['failed', 'passed', 'merged', 'closed'].includes(status) ||
-    Boolean(previous && ['failed', 'passed', 'closed'].includes(previous.status)) };
+  const feedback = fresh.length > 0;
+  const said = feedback ? ' · New feedback · ' + fresh.length + (fresh.length === 1 ? ' item' : ' items') : '';
+  const detail = 'Hawkeye · ' + (newHead ? 'New head · ' : '') + labels[status] + ' · ' + head.slice(0, 12) + listed + said;
+  story.prObservation = { ...current, ...(review ? { review } : {}), at: now };
+  if (review && !reviewing) {
+    const live = new Set(review.keys);
+    story.prSeen = [...[...seen].filter(key => !live.has(key)), ...live].slice(-1000);
+  }
+  const checks = !checksSame && (newHead || reconcileReady || ['failed', 'passed', 'merged', 'closed'].includes(status) ||
+    Boolean(previous && ['failed', 'passed', 'closed'].includes(previous.status)));
+  return { detail, feedback, wake: checks || feedback };
+}
+
+function markSeen(story, seen) {
+  if (seen === undefined) return;
+  requireThat(Array.isArray(seen) && seen.length <= 1000 && seen.every(key => short(key, 200) && key.trim()),
+    'List at most 1000 review keys the worker read.');
+  story.prSeen = [...new Set([...(story.prSeen ?? []), ...seen])];
 }
 
 const jarvisTurnEvents = ['jarvis-woken', 'jarvis-turn-started', 'jarvis-turn-ended'];
@@ -170,6 +211,11 @@ function apply(story, input, now) {
         const file = { path, change, diff, at: now };
         if (previous >= 0) story.files[previous] = file;
         else story.files.push(file);
+      }
+      if (input.posted !== undefined) {
+        requireThat(Array.isArray(input.posted) && input.posted.length <= 500 && input.posted.every(id => short(id, 200) && id.trim()),
+          'List at most 500 posted comment IDs.');
+        story.prPosted = [...new Set([...(story.prPosted ?? []), ...input.posted])].slice(-500);
       }
       if (input.pipeline !== undefined) {
         const parsed = URL.parse(string(input.pipeline, 'pipeline run URL', 500));
@@ -259,6 +305,13 @@ function apply(story, input, now) {
         story.diagram.detail = evidence;
         return evidence;
       }
+      if (story.phase === 'pr-review') {
+        const outcome = string(input.detail, 'PR review outcome');
+        markSeen(story, input.seen);
+        story.phase = story.prReview?.returnPhase ?? 'ci';
+        story.prReview = { ...story.prReview, completedAt: now, detail: outcome };
+        return outcome;
+      }
       if (story.phase === 'retro') {
         requireThat(['ci', 'merge'].includes(story.retro?.returnPhase), 'Retro return phase is unavailable.', 409);
         const lessons = string(input.detail, 'retro lessons');
@@ -281,9 +334,16 @@ function apply(story, input, now) {
       story.retro = { returnPhase: story.phase, startedAt: now, detail: string(input.detail, 'retro scope') };
       story.phase = 'retro';
       return 'Retro started.';
+    case 'pr-review-start':
+      requireThat(['ci', 'merge'].includes(story.phase) && story.pr, 'Start PR review while the pull request is open.', 409);
+      story.prReview = { returnPhase: 'ci', startedAt: now, detail: string(input.detail, 'review feedback') };
+      delete story.readyHead;
+      story.phase = 'pr-review';
+      return 'Hawkeye started PR review · ' + story.prReview.detail;
     case 'return-to-build':
-      requireThat(['review', 'gates', 'comparison'].includes(story.phase), 'Return to build from review, the deterministic gates, or the comparison.', 409);
+      requireThat(['review', 'gates', 'comparison', 'pr-review'].includes(story.phase), 'Return to build from review, the deterministic gates, the comparison, or PR review.', 409);
       if (story.phase === 'review') story.reviewRounds = (story.reviewRounds ?? 0) + 1;
+      if (story.phase === 'pr-review') markSeen(story, input.seen);
       story.phase = 'building';
       return string(input.detail, 'review finding');
     case 'return-to-testing':
@@ -299,6 +359,7 @@ function apply(story, input, now) {
       delete story.draftPlan;
       delete story.diagram;
       delete story.retro;
+      delete story.prReview;
       delete story.comparisonRequested;
       return string(input.detail, 'unresolved decision');
     case 'assign-worktree': {
@@ -344,6 +405,9 @@ function apply(story, input, now) {
         requireThat(validHead(input.head), 'Supply the head this readiness decision covers.');
         requireThat(!story.prObservation || input.head === story.prObservation.head,
           'Readiness evidence does not cover the observed head.', 409);
+        const review = story.prObservation?.review;
+        requireThat(!review?.changesRequested.length, 'Changes are requested on the observed head by ' + review?.changesRequested.join(', ') + '.', 409);
+        requireThat(!review?.unresolved, review?.unresolved + ' unresolved review ' + (review?.unresolved === 1 ? 'thread remains' : 'threads remain') + ' on the observed head.', 409);
         story.readyHead = input.head;
       }
       story.phase = 'merge';
@@ -354,7 +418,7 @@ function apply(story, input, now) {
       story.phase = 'ci';
       return string(input.detail, 'new head or check regression');
     case 'merged':
-      requireThat(['ci', 'merge', 'retro'].includes(story.phase), 'There is no open PR to reconcile in this phase.', 409);
+      requireThat(['ci', 'merge', 'retro', 'pr-review'].includes(story.phase), 'There is no open PR to reconcile in this phase.', 409);
       story.phase = 'closed';
       delete story.blocked;
       return string(input.detail, 'merge evidence');
@@ -454,7 +518,7 @@ export function openStore(path) {
     },
     watchTargets() {
       return all.all().map(({ state }) => JSON.parse(state)).filter(story =>
-        !story.cleanup && story.pr && ['ci', 'merge'].includes(story.phase));
+        !story.cleanup && story.pr && ['ci', 'merge', 'pr-review'].includes(story.phase));
     },
     handover(id) {
       identifier(id, 'story ID');
@@ -492,6 +556,7 @@ export function openStore(path) {
         let story;
         let detail;
         let worker;
+        let feedback = false;
         requireThat(input.by === undefined || input.by === 'jarvis', 'by can only be jarvis.');
         let wake = wakes.has(input.type) && !input.by;
         if (input.type === 'create') {
@@ -539,7 +604,7 @@ export function openStore(path) {
               db.exec('COMMIT');
               return { unchanged: true };
             }
-            ({ detail, wake } = observed);
+            ({ detail, wake, feedback } = observed);
           } else {
             if (story.cleanup && input.type === 'release-worker') {
               requireThat(worker && worker.id === input.assignment, 'Current assignment does not match.', 409);
@@ -559,7 +624,8 @@ export function openStore(path) {
         story.updatedAt = now;
         const event = { at: now, type: input.type, phase: story.phase, revision: story.revision, detail };
         if (input.type === 'pr-observed') event.observation = story.prObservation;
-        else if (story.worker || worker) event.worker = story.worker ?? worker;
+        if (feedback) event.feedback = true;
+        if (story.worker || worker) event.worker = story.worker ?? worker;
         if (input.type === 'pr-ready' && story.readyHead) event.head = story.readyHead;
         if (input.command) event.command = input.command;
         if (input.by) event.by = input.by;

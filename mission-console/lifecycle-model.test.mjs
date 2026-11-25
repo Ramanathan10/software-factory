@@ -89,3 +89,28 @@ test('a background Jarvis turn changes nothing but its own record, is never refu
   assert.ok([...around.values()].some(node => node.state.cleanup && node.state.jarvis?.turn), 'no story awaiting cleanup with a Jarvis turn was reached');
   assert.deepEqual(wrong, []);
 });
+
+test('PR review is reached from an open PR, a merge closes it, and a retro never starts from it', () => {
+  const reviewing = live.filter(([, { state }]) => state.phase === 'pr-review');
+  assert.ok(reviewing.length, 'no event moves a story into pr-review');
+  const entries = live.flatMap(([, node]) => node.edges.filter(edge => states.get(edge.to).state.phase === 'pr-review' && node.state.phase !== 'pr-review')
+    .map(edge => node.state.phase + ' ' + edge.type));
+  assert.deepEqual([...new Set(entries)].sort(), ['ci pr-review-start', 'merge pr-review-start']);
+  const refused = reviewing.filter(([, { state }]) => !state.cleanup)
+    .filter(([id, { state }]) => follow(states, id, [...(state.worker ? ['release-worker'] : []), 'merged'])?.phase !== 'closed');
+  assert.deepEqual(refused.map(([, node]) => story(node)), [], 'merged was refused in pr-review after these events');
+  const retro = reviewing.filter(([, node]) => node.edges.some(edge => edge.type === 'retro-start'));
+  assert.deepEqual(retro.map(([, node]) => story(node)), [], 'a retro started from pr-review');
+  const handoffs = new Set(reviewing.flatMap(([, node]) => node.edges.filter(edge => edge.type === 'handoff').map(edge => states.get(edge.to).state.phase)));
+  assert.deepEqual([...handoffs], ['ci'], 'the PR review handoff returns to ci');
+});
+
+test('readiness is refused while the observed review blocks it, and allowed once it does not', () => {
+  const ci = live.filter(([, { state }]) => state.phase === 'ci' && !state.worker && !state.blocked && !state.cleanup && state.prObservation?.status === 'passed');
+  const blocked = ci.filter(([, { state }]) => state.prObservation.blocking === true);
+  const clear = ci.filter(([, { state }]) => state.prObservation.blocking === false);
+  assert.ok(blocked.length && clear.length, 'the explorer reaches ci with both a blocking and a clear review');
+  const ready = ([, node]) => node.edges.some(edge => edge.type === 'pr-ready' && states.get(edge.to).state.phase === 'merge');
+  assert.deepEqual(blocked.filter(ready).map(([, node]) => story(node)), [], 'pr-ready was accepted while the review blocks it');
+  assert.ok(clear.some(ready), 'pr-ready is never accepted once the review is clear');
+});
