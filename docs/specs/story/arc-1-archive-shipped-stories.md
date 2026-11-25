@@ -57,7 +57,7 @@ D. **The fallback blocks.** A story with no recorded merged head whose remote br
   - No other non-deleted story has the same ID ignoring case, and the ID does not end in `.` (Windows folder aliasing).
   - A folder at the worktree path that git no longer lists (left by a partial earlier removal) blocks with "remove <path> by hand"; it is never deleted blindly.
 - Deletion order: `git worktree remove <path>` (no `--force`); `git branch -D <branch>` in the repository's main checkout, resolved with `git rev-parse --git-common-dir` before the removal; then folders and logs. A deletion that fails records `cleanup-blocked` with the error. When the branch deletion fails after the worktree is gone, the reason names the repository and branch so the owner can delete it, since a retry can no longer find the repository (refinement B). A retry treats anything already gone as done.
-- Path safety: the story ID must match the store's identifier pattern; notes folders are `join(home, 'stories' or 'notes', ID)` and attachments `join(attachmentRoot, folderFor(ID))`, the same `folderFor` that stores them (`console-service.mjs:62`), never a path taken from the record; logs are the `log` fields from the story's `turn-started`/`jarvis-turn-started` events and its `worker`/`jarvis` fields, deleted only when they resolve inside `<AI_SDLC_HOME>/workers`.
+- Path safety: the story ID must match the store's identifier pattern; notes folders are `join(home, 'stories' or 'notes', ID)` and attachments `join(attachmentRoot, folderFor(ID))`, the same `folderFor` that stores them (`console-service.mjs:62`), never a path taken from the record; logs are the worker turn logs and sessions on the story's events, its `jarvis` session, and the log each `jarvis-turn-ended` names on its closing `See <log>.` line (the store keeps no Jarvis log path, and a Codex Jarvis log is named after its launch, not its session), deleted only when they resolve inside `<AI_SDLC_HOME>/workers`.
 - The AI SDLC home is an option of `createConsoleService` (default `AI_SDLC_HOME`, else `~/.ai-sdlc`, as `adapters/harnesses.mjs` reads it). Tests and the before-and-after run always pass a temporary home, so they cannot touch the real `~/.ai-sdlc`.
 
 ### Docs
@@ -69,7 +69,7 @@ D. **The fallback blocks.** A story with no recorded merged head whose remote br
 ## Acceptance criteria (observable)
 
 1. A story that receives `merged` disappears from Lanes, Agents and Track and appears in the Archive tab, with no owner action.
-2. No story in any other phase appears in the Archive tab, and `POST /api/clear` refuses it with 409 and records nothing.
+2. No story in any other phase appears in the Archive tab, and `POST /api/clear` refuses it with a per-story refused result and records nothing.
 3. The shipped counter equals the number of closed, not-deleted stories and opens the Archive tab.
 4. The Archive tab follows the repository filter for its list and for Clear all.
 5. Opening an archived story shows its plan, decisions, evidence and full event history (more than 40 events when it has them).

@@ -68,6 +68,7 @@ export function createClearer({ store, home, attachmentRoot, folderFor }) {
     for (const event of store.history(story.id)) {
       add(event.worker?.turn?.log);
       session(event.worker?.session);
+      if (event.type === 'jarvis-turn-ended') add(/\nSee (.+)\.$/.exec(event.detail ?? '')?.[1]);
     }
     session(story.jarvis?.session);
     const used = new Set(others.flatMap(other => [other.worker?.turn?.log, other.worker?.session && join(workers, other.worker.session + '.log'),
@@ -111,23 +112,34 @@ export function createClearer({ store, home, attachmentRoot, folderFor }) {
     clearing.add(id);
     try {
       return await clearClosed(story, result);
+    } catch (error) {
+      return blockFor(id, result, 'Could not finish the clear: ' + error.message);
     } finally {
       clearing.delete(id);
     }
   }
 
+  const recordFor = (id, type, detail) => store.record({ story: id, type, by: 'jarvis', key: randomUUID(),
+    revision: live().find(item => item.id === id).revision, ...(detail ? { detail } : {}) });
+
+  function blockFor(id, result, reason) {
+    let text = reason.replace(/\s+/g, ' ').trim().slice(0, 4000);
+    try {
+      recordFor(id, 'cleanup-blocked', text);
+    } catch (error) {
+      text = (text + ' The block could not be recorded: ' + error.message).slice(0, 4000);
+    }
+    return { ...result, result: 'blocked', reason: text };
+  }
+
   async function clearClosed(story, result) {
     const { id } = story;
-    const record = (type, detail) => store.record({ story: id, type, by: 'jarvis', key: randomUUID(),
-      revision: live().find(item => item.id === id).revision, ...(detail ? { detail } : {}) });
-    const block = reason => {
-      const text = reason.replace(/\s+/g, ' ').trim().slice(0, 4000);
-      record('cleanup-blocked', text);
-      return { ...result, result: 'blocked', reason: text };
-    };
+    const record = (type, detail) => recordFor(id, type, detail);
+    const block = reason => blockFor(id, result, reason);
     if (!story.cleanup) record('request-cleanup');
     const others = live().filter(item => item.id !== id);
-    const alias = others.find(other => other.id.toLowerCase() === id.toLowerCase());
+    const folder = folderFor(id).toLowerCase();
+    const alias = others.find(other => other.id.toLowerCase() === id.toLowerCase() || folderFor(other.id).toLowerCase() === folder);
     if (alias || id.endsWith('.')) return block('Story ID ' + id + ' shares its folder name with ' + (alias?.id ?? id.replace(/\.+$/, '')) + ' on Windows; clear it by hand.');
     const twin = others.find(other => samePath(other.worktree, story.worktree) || (other.branch === story.branch && other.repo === story.repo));
     if (twin) return block('Story ' + twin.id + ' uses the same worktree or branch; clear it by hand.');
@@ -141,7 +153,7 @@ export function createClearer({ store, home, attachmentRoot, folderFor }) {
       if (await git(story.worktree, 'status', '--porcelain', '--untracked-files=all')) {
         return block('Uncommitted or untracked files in ' + story.worktree + '.');
       }
-      const unpushed = await git(story.worktree, 'rev-list', '--count', 'HEAD', story.branch, '--not', '--remotes', ...await mergedHead(story.worktree, story));
+      const unpushed = await git(story.worktree, 'rev-list', '--count', 'HEAD', 'refs/heads/' + story.branch, '--not', '--remotes', ...await mergedHead(story.worktree, story), '--');
       if (Number(unpushed) > 0) {
         return block(unpushed + ' commits on ' + story.branch + ' are on no remote branch and not in the merged PR; push them or delete the branch by hand.');
       }
