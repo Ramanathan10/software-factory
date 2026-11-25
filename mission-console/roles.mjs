@@ -58,7 +58,7 @@ export const phases = {
   merge: ['watcher', 'PR ready to merge', 'Ship', 'PR'],
   retro: ['coordinator', 'Retro', 'Ship', 'PR'],
   'pr-review': ['watcher', 'PR review', 'PR review', 'PR'],
-  closed: ['coordinator', 'Merged', 'Done', 'PR'],
+  closed: ['coordinator', 'Merged', 'Archive', 'PR'],
 };
 
 export function lanes(table, at) {

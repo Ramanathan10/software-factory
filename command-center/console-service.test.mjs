@@ -235,3 +235,22 @@ test('/api/attachment stores a same-origin screenshot per story, serves it, and 
 test('DEFAULT_DB_PATH points at jarvis-missions.sqlite', () => {
   assert.ok(DEFAULT_DB_PATH.endsWith('jarvis-missions.sqlite'));
 });
+
+test('/api/history returns every event of a story, beyond the 40 the snapshot keeps', async t => {
+  const service = fixture(t);
+  service.createStory(base);
+  for (let index = 0; index < 50; index++) service.recordEvent({ story: 'tl-1', type: 'activity', detail: 'Observation ' + index });
+  assert.equal(find(service, 'tl-1').events.length, 40);
+  const { url, close } = await service.startServer(0);
+  t.after(close);
+  const response = await fetch(url + 'api/history?story=tl-1');
+  assert.equal(response.status, 200);
+  const events = await response.json();
+  assert.ok(Array.isArray(events), 'expected a list of events, got ' + JSON.stringify(events));
+  assert.equal(events.length, 51);
+  assert.deepEqual(events.map(event => event.seq), service.store.history('tl-1').map(event => event.seq));
+  assert.ok(events.some(event => event.type === 'create'));
+  assert.ok(events.some(event => event.detail === 'Observation 0'));
+  assert.equal((await fetch(url + 'api/history?story=missing')).status, 404);
+  assert.equal((await fetch(url + 'api/history?story=' + encodeURIComponent('../x'))).status, 400);
+});

@@ -16,7 +16,7 @@
       <div><strong id="stat-active">0</strong><span>stories in flight</span></div>
       <div><strong id="stat-agents">0</strong><span>agents working</span></div>
       <button type="button" class="warn" id="stat-waiting-button" title="Open your inbox"><strong id="stat-waiting">0</strong><span>waiting on you</span></button>
-      <div><strong id="stat-shipped">0</strong><span>shipped</span></div>
+      <button type="button" id="stat-shipped-button" title="Open the archive"><strong id="stat-shipped">0</strong><span>shipped</span></button>
     </div>
     <button type="button" class="link" id="notify" title="Show a desktop notification when a story starts waiting on you" hidden>Notify me</button>
     <time id="clock"></time>
@@ -32,6 +32,7 @@
           <button type="button" role="tab" data-view="lanes" title="Columns per stage">Lanes</button>
           <button type="button" role="tab" data-view="agents" title="One row per agent">Agents</button>
           <button type="button" role="tab" data-view="track" title="One row per story with its stage progress">Track</button>
+          <button type="button" role="tab" data-view="archive" title="Shipped stories, and clearing them">Archive</button>
         </div>
         <select class="repo-filter" id="repo-filter" aria-label="Repository" title="Show one repository's stories" hidden></select>
         <div class="filter" id="filter" hidden></div>
@@ -49,6 +50,7 @@
 
   <dialog id="detail" class="win"><header class="win-bar"><span class="win-title"></span><span class="win-ctl"><button type="button" data-win="min" title="Minimize" aria-label="Minimize">&#x2013;</button><button type="button" data-win="max" title="Maximize" aria-label="Maximize">&#x25A1;</button><button type="button" data-win="close" class="close" title="Close" aria-label="Close">&#x2715;</button></span></header><div id="detail-body" class="win-body"></div></dialog>
   <dialog id="plan-reader" class="reader win"><header class="win-bar"><span class="win-title"></span><span class="win-ctl"><button type="button" data-win="min" title="Minimize" aria-label="Minimize">&#x2013;</button><button type="button" data-win="max" title="Maximize" aria-label="Maximize">&#x25A1;</button><button type="button" data-win="close" class="close" title="Close" aria-label="Close">&#x2715;</button></span></header><div id="plan-body" class="win-body"></div><form method="dialog" class="reader-actions"><span id="plan-actions"></span></form></dialog>
+  <dialog id="confirm" class="confirm"><div id="confirm-body"></div></dialog>
   <div id="dock" aria-label="Minimized windows"></div>
   <div class="toast" id="toast" role="status"></div>
   <script type="module" src="/app.js"></script>

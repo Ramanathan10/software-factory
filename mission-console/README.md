@@ -98,6 +98,12 @@ Use **Delete story…** on the story page to authorize cleanup of that story's w
 
 Before cleanup, verify the story's repository, branch, worktree, recorded worker, and forge state independently. End and release the story's worker. Confirm that assets are dedicated to the story. Undo story-owned work by removing its dedicated worktree and branch, and close any open PR that this story created. Include the story's dedicated remote branch when it exists. Preserve unrelated changes and pre-existing tickets. If work was merged, report it and agree on a revert separately. Do not rewrite shared history. If ownership, scope, or cleanup cannot be verified, record `cleanup-blocked` with the concrete reason. Reconcile already finished steps before retrying.
 
+### Clear shipped stories
+
+A merged story leaves the Command Center board and appears in the Archive tab, which the "shipped" counter also opens. **Clear** on a row, or **Clear all** for the rows the repository filter shows, lists what will be deleted, including how many git-ignored files the worktree holds and the first few, and asks for confirmation. The Command Center then clears each story itself (ADR 0021): it refuses unless the worktree is clean, on the story branch, and every commit is on a remote branch or in the merged PR head, and records `cleanup-blocked` with the reason when a check fails. A clear removes the worktree, the local branch, `stories/<ID>` and `notes/<ID>` under the AI SDLC home, the story's attachments, and its worker and Jarvis turn logs, then records `complete-cleanup`. Remote branches and PRs stay. Its cleanup events carry `by: "jarvis"`, so none wakes Jarvis.
+
+### Complete a cleanup
+
 Record `complete-cleanup` with verification evidence only after the story-owned cleanup is complete. This removes the story, event history, and queued wakes from the console. A minimal deletion marker reserves the old story ID and prevents a stale worker from writing to a new story with that ID. Use a new ID for the next story.
 
 Send one JSON event to `record` on stdin. Use a fresh globally unique `key` for new events. Retrying an uncertain write with the same serialized request and key returns the original receipt. For events after creation, use the current story `revision` from `snapshot`. A stale revision is rejected. Reread the story before deciding whether the original action still applies.
@@ -165,7 +171,7 @@ Firstmate is the architecture reference. This implementation uses original code 
 | Resume by reconciling state | Jarvis checks the actual host session, Git worktree, and forge before retrying a side effect. |
 | PR registration and merge observation | Record the PR URL, current-head evidence, any recheck, and a distinct observed-merge event. |
 
-Out of scope for this PR are the upstream repository and scripts, Treehouse, Orca, tmux or other Firstmate session adapters, `no-mistakes` and its delivery modes, persistent or SSH secondmates, automatic worktree allocation or cleanup, waking closed agent chats, agent recovery or relaunch, Relay, fleet/backlog sync, self-updates, and automatic merges. GitHub and the current agent host remain external systems for their existing jobs. The dashboard polls explicit records and has no ability to spawn agents or run shell commands.
+Out of scope for this PR are the upstream repository and scripts, Treehouse, Orca, tmux or other Firstmate session adapters, `no-mistakes` and its delivery modes, persistent or SSH secondmates, automatic worktree allocation or cleanup, waking closed agent chats, agent recovery or relaunch, Relay, fleet/backlog sync, self-updates, and automatic merges. GitHub and the current agent host remain external systems for their existing jobs. The Mission Console page polls explicit records and has no ability to spawn agents or run shell commands. The Command Center starts workers and, to clear a shipped story, runs fixed git commands and deletions (ADR 0021).
 
 [Firstmate architecture](https://github.com/kunchenguid/firstmate/blob/main/docs/architecture.md) · [Watcher continuity](https://github.com/kunchenguid/firstmate/blob/main/docs/watcher-continuity.md)
 

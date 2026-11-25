@@ -6,6 +6,7 @@ import { dirname, join } from 'node:path';
 import { sendMedia } from '../mission-console/media.mjs';
 import { lanes, phases, roles } from '../mission-console/roles.mjs';
 import { InputError, openStore } from '../mission-console/store.mjs';
+import { createClearer } from './clear.mjs';
 
 const legacyDb = join(homedir(), '.copilot', 'ai-sdlc-console', 'jarvis-missions.sqlite');
 export const DEFAULT_DB_PATH = existsSync(legacyDb)
@@ -62,11 +63,13 @@ const images = {
 const folderFor = story => String(story).replace(/[^\w-]/g, '_');
 const imageOf = bytes => Object.entries(images).find(([, { magic }]) => magic.every((byte, index) => bytes[index] === byte))?.[0];
 
-export function createConsoleService({ dbPath = DEFAULT_DB_PATH, onDecision, onStartWorker, modelPlan, workerRan, annotate, decisionDelayMs = 1500 } = {}) {
+export function createConsoleService({ dbPath = DEFAULT_DB_PATH, home = process.env.AI_SDLC_HOME || join(homedir(), '.ai-sdlc'), onDecision, onStartWorker, modelPlan, workerRan, annotate, decisionDelayMs = 1500 } = {}) {
   mkdirSync(dirname(dbPath), { recursive: true });
   const store = openStore(dbPath);
   const currentRevision = story => store.snapshot().find(item => item.id === story)?.revision;
   const attachmentRoot = join(dirname(dbPath), 'attachments');
+  const clearer = createClearer({ store, home, attachmentRoot, folderFor });
+  let closed = false;
   const batches = new Map();
   const notify = (story, recorded, type) => {
     if (!onDecision) return;
@@ -164,6 +167,15 @@ export function createConsoleService({ dbPath = DEFAULT_DB_PATH, onDecision, onS
           } else if (request.method === 'GET' && path === '/api/media') {
             const query = new URL(request.url, origin).searchParams;
             await sendMedia(request, response, store.artifact(query.get('story'), query.get('id')));
+          } else if (request.method === 'GET' && path === '/api/history') {
+            send(response, 200, store.history(new URL(request.url, origin).searchParams.get('story')));
+          } else if (request.method === 'GET' && path === '/api/clear/preview') {
+            send(response, 200, await clearer.preview(new URL(request.url, origin).searchParams.get('story')));
+          } else if (request.method === 'POST' && path === '/api/clear') {
+            if (request.headers.origin !== origin) throw new InputError('Clear requests must come from the console.', 403);
+            const stories = (await readJson(request))?.stories;
+            if (!Array.isArray(stories) || !stories.every(story => typeof story === 'string')) throw new InputError('Send stories as a list of story IDs.');
+            send(response, 200, { results: await clearer.clear(stories) });
           } else if (request.method === 'GET' && path === '/api/meta') {
             send(response, 200, { roles, phases, columns: lanes(phases, 2), ...modelPlan?.() });
           } else if (request.method === 'GET' && path === '/events') {
@@ -221,7 +233,7 @@ export function createConsoleService({ dbPath = DEFAULT_DB_PATH, onDecision, onS
         }));
       });
     },
-    close: () => store.close(),
+    close: () => { if (!closed) store.close(); closed = true; },
   };
   return service;
 }
