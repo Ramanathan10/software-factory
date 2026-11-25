@@ -12,7 +12,7 @@ description: Check a change to the story store's lifecycle against every story s
 | Every field a guard in `store.mjs` reads is modeled | The model silently stops seeing a guard | |
 | Every reachable phase is in `roles.mjs`, and every phase there is reachable | A story moves to a phase the dashboard cannot show, or a phase is dead | |
 | A story not being cleaned up can always still reach `closed` | A story is stuck with no event that moves it | |
-| From `ci`, `merge` or `retro` with a registered PR, `merged` (after `release-worker` if a worker is assigned) closes the story | GitHub merged the PR and the story stays open | 3c60828: a stale `blocked` refused `merged` |
+| From `ci`, `merge`, `retro` or `pr-review` with a registered PR, `merged` (after `release-worker` if a worker is assigned) closes the story | GitHub merged the PR and the story stays open | 3c60828: a stale `blocked` refused `merged` |
 | A worker exists only in a worker phase, and no event changes the phase under it | A worker keeps running on a phase that is no longer its own | |
 | A story awaiting cleanup never changes phase | Cleanup races with work on the same story | |
 | Every event the Jarvis phase table names is accepted in or into that row's phases | Jarvis is told to record an event the store refuses | d989158: the owner's change request on the comparison had no `return-to-build` |
@@ -40,7 +40,7 @@ Never weaken a property to make a change pass. If the change is meant to alter t
 ## What it does not cover
 
 - One story at a time. Concurrency between processes recording on the same story is not modeled here; the store serializes each `record` in one `BEGIN IMMEDIATE` transaction and rejects a stale `revision`.
-- One question ID, two PR heads, and the `failed`, `passed` and `merged` observations. Answers are by option index only.
+- One question ID, two PR heads, the `failed`, `passed` and `merged` observations, and a `passed` observation with a blocking and with a clear review. Review keys, `prSeen` and `prPosted` are not modeled; `store.test.mjs` covers the review wake. Answers are by option index only.
 - `artifact` with one valid evidence file. File validation is covered by `store.test.mjs`.
 - The dashboards' lane lists in `command-center/ui/app.js` and `mission-console/console.mjs`.
 - Events after `complete-cleanup`: a deleted story refuses everything.

@@ -139,6 +139,20 @@ When the profile names Greptile as the review bot, read and follow the local `gr
 
 Before answering or acting on any pull request comment, read the profile's team rules again and follow what they say about review. On a later turn after that pull request is open, read the tail and the current head. The tail is the new comment, check, or review note. Earlier phases are already finished. A deployment comment, a stale failed check, a duplicate review-bot note, or a green-check notice ends the turn. Continue GrepLoop only when the tail is new Greptile feedback on the current head.
 
+### PR review
+
+Run this when Jarvis starts the `pr-review` phase for new feedback on the open pull request.
+
+1. Read the profile's team rules again.
+2. Read every unresolved review thread, every review that requests changes or has a comment, and every conversation comment on the current head with `gh api graphql`. Skip the comment ids in the story's `prPosted`. Label each author bot or human; GitHub marks a bot with the account type Bot or a login ending in `[bot]`.
+3. Write the summary as a document and register it as a `document` artifact. It maps each question id to its GitHub item.
+4. Record one `question` per thread or comment, with the id `pr-<pass>-<n>` from a pass counter and an item number, so a later pass never reuses an id. The prompt gives the author and the bot or human label, the file and line, a short quote, your summary, the proposed resolution in full, and your reasoning. The options are short labels: the proposed fix (recommended), an alternative fix, and a reply without a change. Then end the turn.
+5. On the answers, apply the chosen fixes on the PR branch, run the required gates (`test` and `secrets` at least), commit and push.
+6. Reply in each thread with what changed or why nothing did, confirm the reply posted, and record its node id in `activity` with `posted`. Then resolve the thread. Conversation comments get a reply only.
+7. When an answer in the owner's own words is a question, reply to it in `activity` and ask a new question.
+8. When an answer asks for more than a small fix, release the worker and record `return-to-build` with the answer.
+9. Before the handoff, read the feedback again and ask about anything new. Then release the worker and record `handoff`, which returns the story to `ci`.
+
 ## 9. Retro
 
 Look back over this run for what went wrong or took avoidable effort: a returned phase, an invalid test, a failing gate, a surviving mutant, a review finding, a review-bot cycle, or a correction from the owner. Most runs produce no durable lesson; report that plainly instead of inventing one.

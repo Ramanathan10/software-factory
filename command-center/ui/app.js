@@ -11,7 +11,7 @@ const eventRoles = {
   create: 'coordinator', question: 'planner', 'draft-plan': 'planner', plan: 'planner',
   answer: 'approver', approve: 'approver', 'comparison-choice': 'approver', 'request-cleanup': 'approver',
   'assign-worker': 'coordinator', 'release-worker': 'coordinator', handoff: 'coordinator',
-  'pr-opened': 'coordinator', 'pr-observed': 'watcher', 'pr-ready': 'watcher', merged: 'watcher',
+  'pr-opened': 'coordinator', 'pr-observed': 'watcher', 'pr-ready': 'watcher', 'pr-review-start': 'watcher', merged: 'watcher',
 };
 
 let meta = { roles: {}, phases: {} };
@@ -153,7 +153,7 @@ const idleReasons = {
   planning: 'no planner session active', testing: 'no tester session active', red: 'waiting to verify red',
   building: 'no implementer session active', review: 'waiting for review to start', comparison: 'waiting for before-and-after capture',
   diagram: 'waiting for the diagram', publishing: 'waiting on release pipeline before the PR opens',
-  ci: 'waiting on pipeline checks', merge: 'waiting on reviewer approval and merge',
+  ci: 'waiting on pipeline checks', merge: 'waiting on reviewer approval and merge', 'pr-review': 'waiting for the PR review worker',
 };
 const idleReason = story => idleReasons[story.phase] ?? 'no active worker';
 function isBusy(story) {
@@ -242,6 +242,21 @@ function renderCrew() {
   }));
 }
 
+const plural = (n, one, many) => n + ' ' + (n === 1 ? one : many);
+const STALL_MS = 24 * 3600 * 1000;
+function reviewState(story) {
+  const review = story.prObservation?.review;
+  if (!['ci', 'merge'].includes(story.phase) || !review) return null;
+  const stalled = review.lastActivityAt && Date.now() - Date.parse(review.lastActivityAt) > STALL_MS;
+  const labels = [
+    review.changesRequested.length > 0 && el('span', { class: 'blocking' }, 'Changes requested · ' + plural(review.changesRequested.length, 'reviewer', 'reviewers')),
+    review.unresolved > 0 && el('span', { class: 'blocking' }, plural(review.unresolved, 'unresolved thread', 'unresolved threads')),
+    review.earlier > 0 && el('span', { class: 'earlier' }, 'Earlier-head feedback · ' + review.earlier),
+    stalled && el('span', { class: 'stalled' }, 'No review activity for ' + elapsed(review.lastActivityAt)),
+  ].filter(Boolean);
+  return labels.length ? el('p', { class: 'review' }, ...labels) : null;
+}
+
 function storyCard(story) {
   const role = ownerOf(story);
   const busy = isBusy(story);
@@ -263,6 +278,7 @@ function storyCard(story) {
       idle ? el('span', { class: 'avatar sm', title: label, 'aria-label': label, role: 'img' }, '··') : avatar(role, { small: true, moving: busy, label })),
     el('h3', {}, story.title),
     last && (waiting || story.blocked) && el('p', { class: 'last' }, last.detail),
+    reviewState(story),
     el('div', { class: 'owner' },
       !busy && el('span', { class: 'who' }, story.blocked ? 'Blocked' : waiting ? 'Waiting on you' : story.phase === 'closed' ? 'Done' : jarvisStatus(story) ?? 'Idle · ' + idleReason(story)),
       el('span', { class: 'aside' },
