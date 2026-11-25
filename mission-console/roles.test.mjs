@@ -43,11 +43,17 @@ test('every role has a badge the Command Center can draw and tell apart', () => 
   }
 });
 
-test('PR review is Hawkeye\'s own lane between Ship and Done, inside the PR track step, on the standard tier', async () => {
+test('PR review is Hawkeye\'s own lane between Ship and Archive, inside the PR track step, on the standard tier', async () => {
   assert.deepEqual(phases['pr-review'], ['watcher', 'PR review', 'PR review', 'PR']);
   const names = lanes(phases, 2).map(lane => lane.name);
-  assert.deepEqual(names.slice(names.indexOf('Ship'), names.indexOf('Ship') + 3), ['Ship', 'PR review', 'Done']);
+  assert.deepEqual(names.slice(names.indexOf('Ship'), names.indexOf('Ship') + 3), ['Ship', 'PR review', 'Archive']);
   assert.ok(roles.watcher.skills.includes('PR review'), 'Hawkeye\'s skills name PR review');
   const { phaseTiers } = await import('./roles.mjs');
   assert.equal(phaseTiers['pr-review'], 'standard');
+});
+
+test('shipped stories sit in the Archive lane, which no other phase shares', () => {
+  assert.equal(phases.closed[2], 'Archive');
+  assert.deepEqual(lanes(phases, 2).find(lane => lane.name === 'Archive')?.phases, ['closed']);
+  assert.ok(!lanes(phases, 2).some(lane => lane.name === 'Done'));
 });

@@ -66,7 +66,6 @@ const fixtures = {
   idle: { ...base, id: 'IDLE-1', repo: 'acme/two', phase: 'testing', worker: { id: 'w2', role: 'tester', session: 's2', lastTurn: { outcome: 'ended', at: now(), code: 0 } } },
   waiting: { ...base, id: 'WAIT-1', repo: 'acme/one', phase: 'approval', events: [{ seq: 1, at: now(), type: 'plan', detail: 'Plan ready.' }] },
   blocked: { ...base, id: 'BLOCK-1', repo: 'acme/two', phase: 'building', blocked: true, worker: { id: 'w3', role: 'implementer', session: 's3', turn }, events: [{ seq: 2, at: now(), type: 'blocked', detail: 'Stuck.' }] },
-  closed: { ...base, id: 'DONE-1', repo: 'acme/one', phase: 'closed' },
 };
 const ago = minutes => new Date(Date.now() - minutes * 60000).toISOString();
 const observation = review => ({ head: 'c'.repeat(40), status: 'passed', failedCount: 0, failures: [], at: now(),
@@ -78,7 +77,8 @@ const reviewed = {
     prObservation: observation({ approvals: ['reviewer-a'], lastActivityAt: ago(120) }) },
   answering: { ...base, id: 'PRR-9', phase: 'pr-review', pr: 'https://github.com/acme/widgets/pull/9' },
 };
-sources.at(-1).listeners.stories({ data: JSON.stringify({ stories: [...Object.values(fixtures), ...Object.values(reviewed)] }) });
+const shipped = { ...base, id: 'DONE-1', repo: 'acme/one', phase: 'closed' };
+sources.at(-1).listeners.stories({ data: JSON.stringify({ stories: [...Object.values(fixtures), shipped, ...Object.values(reviewed)] }) });
 
 const walk = node => node && typeof node === 'object' ? [node, ...node.children.flatMap(walk)] : [];
 const cards = new Map(walk(ids.get('board')).filter(node => node.tag === 'article' && node.classes().includes('card')).map(card => [card.children.find(child => child?.tag === 'header')?.textContent.match(/[A-Z]+-\d+/)?.[0], card]));
@@ -103,8 +103,15 @@ test('a busy card shows its agent glyph in the header and the glyph moves', () =
   assert.ok(walk(glyph).some(node => node.tag === 'svg'), 'the busy card header glyph is not the role badge');
 });
 
-test('the glyph stays still on idle, waiting, blocked and closed cards', () => {
-  for (const state of ['idle', 'waiting', 'blocked', 'closed']) {
+test('a shipped story has no card on the board and the board has no Done or Archive lane', () => {
+  assert.ok(!cards.has(shipped.id), 'the board still renders a card for the closed story ' + shipped.id);
+  const lanes = walk(ids.get('board')).filter(node => node.tag === 'h2').map(node => node.children.find(child => typeof child === 'string'));
+  assert.ok(lanes.length > 0, 'the board rendered no lanes');
+  for (const name of ['Done', 'Archive']) assert.ok(!lanes.includes(name), 'the board still has a "' + name + '" lane');
+});
+
+test('the glyph stays still on idle, waiting and blocked cards', () => {
+  for (const state of ['idle', 'waiting', 'blocked']) {
     const glyph = glyphOf(state);
     assert.ok(glyph, 'the ' + state + ' card has no glyph (.avatar) in its header');
     assert.ok(!glyph.classes().includes('moving'), 'the ' + state + ' card header glyph moves');
@@ -153,7 +160,7 @@ test('cards show one glyph, no agent name and no pulse dot', () => {
 });
 
 test('the bottom row shows status words only when the story is not busy, and the time on the right', () => {
-  const words = { idle: 'Idle · no tester session active', waiting: 'Waiting on you', blocked: 'Blocked', closed: 'Done' };
+  const words = { idle: 'Idle · no tester session active', waiting: 'Waiting on you', blocked: 'Blocked' };
   for (const [state, text] of Object.entries(words)) assert.ok(card(state).textContent.includes(text), 'the ' + state + ' card does not say "' + text + '"');
   for (const text of Object.values(words)) assert.ok(!card('busy').textContent.includes(text), 'the busy card says "' + text + '"');
   assert.ok(!has('busy', 'who'), 'the busy card still renders a status-words element');
