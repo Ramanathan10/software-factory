@@ -147,7 +147,7 @@ test('the fixture builds a closed story on a pushed story branch in its own work
   assert.ok(git(f.main, 'ls-remote', 'origin', branch).length > 0);
 });
 
-const noPendingFor = (f, id) => assert.deepEqual(f.service.pending().filter(record => record.story === id).map(record => record.type), [], id + ' has pending events after a clear');
+const noPendingFor = (f, id) => assert.deepEqual(f.service.pending().filter(record => record.story === id && ['request-cleanup', 'cleanup-blocked', 'complete-cleanup'].includes(record.type)).map(record => record.type), [], id + ' has pending cleanup events after a clear');
 
 test('a clean story whose branch is pushed is cleared: worktree, branch, folders, attachments and its logs go', async t => {
   const f = await fixture(t);

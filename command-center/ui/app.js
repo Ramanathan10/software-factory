@@ -161,6 +161,8 @@ function isBusy(story) {
   if (story.worker) return Boolean(story.worker.turn) || !story.worker.lastTurn;
   return Boolean(story.activity?.at) && Date.now() - Date.parse(story.activity.at) < ACTIVE_MS;
 }
+const boardColumns = () => columns.filter(column => !column.phases.includes('closed'));
+const shipped = () => stories.filter(story => story.phase === 'closed');
 const progress = story => {
   const all = columns.flatMap(column => column.phases);
   return Math.round(((all.indexOf(story.phase) + 1) / all.length) * 100);
@@ -194,7 +196,7 @@ function renderStats() {
   $('stat-agents').textContent = new Set(open.filter(isBusy).map(ownerOf)).size;
   const waiting = open.filter(waitingOnYou);
   $('stat-waiting').textContent = waiting.length;
-  $('stat-shipped').textContent = stories.length - open.length;
+  $('stat-shipped').textContent = shipped().length;
   $('stat-waiting').parentElement.classList.toggle('hot', waiting.length > 0);
   document.title = titleFor(waiting.length);
   announce(waiting);
@@ -263,13 +265,13 @@ function storyCard(story) {
   const busy = isBusy(story);
   const waiting = waitingOnYou(story);
   const last = story.events?.[0];
-  const idle = !busy && !waiting && !story.blocked && story.phase !== 'closed';
+  const idle = !busy && !waiting && !story.blocked;
   const label = alias(role) + ' · ' + (meta.phases[story.phase]?.[1] ?? story.phase);
   const placement = story.id + ':' + story.phase;
   const arriving = !seenCards.has(placement);
   seenCards.add(placement);
   return el('article', {
-    class: ['card', arriving && 'new', busy && 'busy', waiting && 'waiting', story.blocked && 'blocked', story.phase === 'closed' && 'done', idle && 'idle'].filter(Boolean).join(' '),
+    class: ['card', arriving && 'new', busy && 'busy', waiting && 'waiting', story.blocked && 'blocked', idle && 'idle'].filter(Boolean).join(' '),
     'data-role': role, tabindex: 0,
     onclick: () => openDetail(story.id),
     onkeydown: event => event.key === 'Enter' && openDetail(story.id),
@@ -281,7 +283,7 @@ function storyCard(story) {
     last && (waiting || story.blocked) && el('p', { class: 'last' }, last.detail),
     reviewState(story),
     el('div', { class: 'owner' },
-      !busy && el('span', { class: 'who' }, story.blocked ? 'Blocked' : waiting ? 'Waiting on you' : story.phase === 'closed' ? 'Done' : jarvisStatus(story) ?? 'Idle · ' + idleReason(story)),
+      !busy && el('span', { class: 'who' }, story.blocked ? 'Blocked' : waiting ? 'Waiting on you' : jarvisStatus(story) ?? 'Idle · ' + idleReason(story)),
       el('span', { class: 'aside' },
         el('span', { class: 'links' },
           hasDesign(story) && el('a', { href: '#', onclick: event => { event.preventDefault(); event.stopPropagation(); openDesign(story.id); } }, 'Plan'),
@@ -313,7 +315,7 @@ function emptyBoard() {
 }
 
 function renderLanes(items) {
-  return columns.map(column => {
+  return boardColumns().map(column => {
     const here = items.filter(story => column.phases.includes(story.phase));
     return el('div', { class: 'lane' + (here.some(isBusy) ? ' hot' : '') + (here.length ? '' : ' empty') },
       el('h2', {}, column.name, el('span', {}, here.length)),
@@ -336,17 +338,17 @@ function renderAgents(items) {
 
 function renderTrack(items) {
   if (!items.length) return [emptyBoard()];
-  const sorted = [...items].sort((a, b) => (a.phase === 'closed') - (b.phase === 'closed') || Date.parse(b.updatedAt) - Date.parse(a.updatedAt));
-  return [el('div', { class: 'track-head' }, el('span', {}, 'Story'), el('ol', { class: 'steps legend' }, columns.map(column => el('li', {}, column.name))))]
+  const sorted = [...items].sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt));
+  return [el('div', { class: 'track-head' }, el('span', {}, 'Story'), el('ol', { class: 'steps legend' }, boardColumns().map(column => el('li', {}, column.name))))]
     .concat(sorted.map(story => {
       const role = ownerOf(story);
       const busy = isBusy(story);
       const waiting = waitingOnYou(story);
       const at = columnIndex(story);
       const last = story.events?.[0];
-      const idle = !busy && !waiting && !story.blocked && story.phase !== 'closed';
+      const idle = !busy && !waiting && !story.blocked;
       return el('article', {
-        class: ['track', busy && 'busy', waiting && 'waiting', story.blocked && 'blocked', story.phase === 'closed' && 'done', idle && 'idle'].filter(Boolean).join(' '),
+        class: ['track', busy && 'busy', waiting && 'waiting', story.blocked && 'blocked', idle && 'idle'].filter(Boolean).join(' '),
         'data-role': role, tabindex: 0,
         onclick: () => openDetail(story.id),
         onkeydown: event => event.key === 'Enter' && openDetail(story.id),
@@ -354,26 +356,105 @@ function renderTrack(items) {
         el('div', { class: 'track-info' },
           el('header', {}, el('span', { class: 'id' }, story.id),
             el('time', {
-              class: 'elapsed', 'data-since': story.createdAt, ...(story.phase === 'closed' ? { 'data-until': story.updatedAt } : {}),
-              title: 'Started ' + new Date(story.createdAt).toLocaleString() + (story.phase === 'closed' ? '' : ' · updated ' + ago(story.updatedAt)),
-            }, elapsed(story.createdAt, story.phase === 'closed' ? story.updatedAt : undefined))),
+              class: 'elapsed', 'data-since': story.createdAt,
+              title: 'Started ' + new Date(story.createdAt).toLocaleString() + ' · updated ' + ago(story.updatedAt),
+            }, elapsed(story.createdAt))),
           el('h3', {}, story.title),
           el('div', { class: 'owner' },
             el('span', {}, (meta.phases[story.phase]?.[1] ?? columns[at]?.name ?? story.phase) + (story.blocked ? ' · blocked' : waiting ? ' · waiting on you' : idle ? ' · ' + (jarvisStatus(story) ?? 'idle, ' + idleReason(story)) : '')),
             busy && el('span', { class: 'dots' }, el('i'), el('i'), el('i')))),
         el('div', { class: 'track-run' },
-          el('ol', { class: 'steps' }, columns.map((column, index) =>
+          el('ol', { class: 'steps' }, boardColumns().map((column, index) =>
             el('li', { class: index < at ? 'past' : index === at ? 'now' : '', title: column.name }, el('span', {}, index === at ? meta.phases[story.phase]?.[1] ?? column.name : column.name)))),
           last && el('p', { class: 'last' }, last.detail)));
     }));
 }
 
+const mergedAt = story => story.events?.find(event => event.type === 'merged')?.at ?? story.updatedAt;
+const clearing = new Set();
+
+function renderArchive() {
+  const rows = shipped().filter(story => !filterRepo || story.repo === filterRepo).sort((a, b) => Date.parse(mergedAt(b)) - Date.parse(mergedAt(a)));
+  if (!rows.length) return [el('p', { class: 'empty' }, 'No shipped stories.')];
+  const ids = rows.map(story => story.id);
+  return [
+    el('div', { class: 'archive-head' }, el('span', {}, rows.length + (rows.length === 1 ? ' shipped story' : ' shipped stories')),
+      el('button', { type: 'button', class: 'danger', disabled: ids.some(id => clearing.has(id)), onclick: () => confirmClear(ids) }, 'Clear all (' + rows.length + ')')),
+    ...rows.map(story => el('article', {
+      class: 'archive-row', tabindex: 0,
+      onclick: () => openDetail(story.id),
+      onkeydown: event => event.key === 'Enter' && openDetail(story.id),
+    },
+      el('div', { class: 'archive-info' },
+        el('header', {}, el('span', { class: 'id' }, story.id), story.repo && el('span', { class: 'repo' }, story.repo),
+          el('time', { datetime: mergedAt(story), title: 'Merged ' + new Date(mergedAt(story)).toLocaleString() }, new Date(mergedAt(story)).toLocaleDateString())),
+        el('h3', {}, story.title),
+        clearing.has(story.id) ? el('p', { class: 'last' }, 'Clearing…')
+          : story.cleanup?.blocked && el('p', { class: 'blocked-note' }, 'Clear blocked: ' + story.cleanup.blocked)),
+      el('span', { class: 'aside' },
+        story.pr && el('a', { href: story.pr, target: '_blank', rel: 'noopener', onclick: event => event.stopPropagation() }, 'PR'),
+        el('button', { type: 'button', disabled: clearing.has(story.id), onclick: event => { event.stopPropagation(); confirmClear([story.id]); } }, 'Clear')))),
+  ];
+}
+
+async function confirmClear(ids) {
+  const previews = [];
+  try {
+    for (const id of ids) {
+      const response = await fetch('/api/clear/preview?story=' + encodeURIComponent(id));
+      const body = await response.json();
+      if (!response.ok) throw new Error(id + ': ' + body.error);
+      previews.push(body);
+    }
+  } catch (error) {
+    toast(error.message, true);
+    return;
+  }
+  const dialog = $('confirm');
+  $('confirm-body').replaceChildren(
+    el('h2', {}, ids.length === 1 ? 'Clear ' + ids[0] + '?' : 'Clear ' + ids.length + ' shipped stories?'),
+    el('p', {}, 'This deletes, for each story:'),
+    ...previews.map(preview => el('section', {},
+      el('h3', {}, preview.story),
+      el('ul', {},
+        el('li', {}, 'Worktree ' + preview.worktree.path + (preview.worktree.exists ? '' : ' (already gone)')),
+        el('li', {}, 'Local branch ' + preview.branch.name + (preview.branch.remove ? '' : ' stays: ' + preview.branch.reason)),
+        preview.folders.map(folder => el('li', {}, folder)),
+        el('li', {}, preview.logs + (preview.logs === 1 ? ' turn log file' : ' turn log files')),
+        el('li', {}, 'Its record in the story database')))),
+    el('p', { class: 'warn-text' }, 'This cannot be undone.'),
+    el('div', { class: 'send' },
+      el('button', { type: 'button', onclick: () => { dialog.close(); } }, 'Cancel'),
+      el('button', { type: 'button', class: 'danger', onclick: () => runClear(ids) }, 'Delete permanently')));
+  dialog.showModal();
+}
+
+async function runClear(ids) {
+  for (const id of ids) clearing.add(id);
+  $('confirm-body').replaceChildren(el('h2', {}, 'Clearing…'));
+  render();
+  let lines;
+  try {
+    const response = await fetch('/api/clear', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ stories: ids }) });
+    const body = await response.json();
+    if (!response.ok) throw new Error(body.error);
+    lines = body.results.map(result => el('li', {}, el('b', {}, result.story + ' ' + result.result), result.reason ? ': ' + result.reason : '',
+      result.left?.length > 0 ? el('ul', {}, result.left.map(item => el('li', {}, 'Left ' + item))) : null));
+  } catch (error) {
+    lines = [el('li', {}, 'Clear failed: ' + error.message)];
+  }
+  for (const id of ids) clearing.delete(id);
+  $('confirm-body').replaceChildren(el('h2', {}, 'Clear results'), el('ul', {}, lines),
+    el('div', { class: 'send' }, el('button', { type: 'button', onclick: () => { $('confirm').close(); } }, 'Close')));
+  render();
+}
+
 function renderBoard() {
   $('empty').hidden = stories.length > 0;
-  const items = visible();
+  const items = visible().filter(story => story.phase !== 'closed');
   const board = $('board');
   board.className = 'board view-' + view;
-  board.replaceChildren(...(view === 'agents' ? renderAgents(items) : view === 'track' ? renderTrack(items) : renderLanes(items)));
+  board.replaceChildren(...(view === 'archive' ? renderArchive().filter(Boolean) : view === 'agents' ? renderAgents(items) : view === 'track' ? renderTrack(items) : renderLanes(items)));
 }
 
 async function decide(story, event, button) {
@@ -615,6 +696,7 @@ async function openDesign(id) {
       source = 'The preserved design is unavailable or changed. Showing the plan recorded in the story.';
     }
   }
+  detailFor = null;
   $('detail-body').replaceChildren(
     el('small', {}, story.id + ' · approved plan and design'),
     el('h2', {}, story.title),
@@ -650,9 +732,11 @@ function modelOf(story) {
   return named ? named + ' · set in the profile, not run yet' : 'Not run yet · ' + story.harness + ' will choose';
 }
 
-function openDetail(id) {
+let detailFor = null;
+async function openDetail(id, history) {
   const story = stories.find(item => item.id === id);
   if (!story) return;
+  detailFor = id;
   const row = (label, value) => value ? el('div', { class: 'row' }, el('dt', {}, label), el('dd', {}, value)) : null;
   $('detail-body').replaceChildren(...[
     el('small', {}, story.id + ' · ' + (meta.phases[story.phase]?.[1] ?? story.phase)),
@@ -673,10 +757,13 @@ function openDetail(id) {
     story.plan && el('section', {}, el('h3', {}, 'Plan'), md(story.plan)),
     story.artifacts?.length > 0 && el('section', {}, el('h3', {}, 'Evidence'), el('ul', { class: 'evidence' }, story.artifacts.map(artifact => evidenceItem(story, artifact)))),
     story.files?.length > 0 && el('section', {}, el('h3', {}, 'Files'), el('ul', {}, story.files.map(file => el('li', {}, el('code', {}, file.path), ' ', file.change)))),
-    el('section', {}, el('h3', {}, 'Timeline'), el('ol', { class: 'timeline' }, (story.events ?? []).map(event =>
+    el('section', {}, el('h3', {}, 'Timeline'), el('ol', { class: 'timeline' }, (history ?? story.events ?? []).map(event =>
       el('li', {}, el('time', {}, new Date(event.at).toLocaleString()), ' ', el('b', {}, event.type), ' ', event.detail ?? '')))),
   ].filter(Boolean));
   showWindow($('detail'), story.id + ' · ' + (meta.phases[story.phase]?.[1] ?? story.phase), () => openDetail(id));
+  if (story.phase !== 'closed' || history) return;
+  const response = await fetch('/api/history?story=' + encodeURIComponent(id));
+  if (response.ok && detailFor === id) openDetail(id, await response.json());
 }
 
 function toast(message, error = false) {
@@ -704,7 +791,7 @@ function render() {
   if (changed('toolbar', [view, filterRole, filterRepo, repos(), stories.length, visible().length])) renderToolbar();
   const decisionKey = [filterRole === 'approver', stories.map(story => [story.id, story.phase, openQuestions(story).map(question => question.id), story.plan, story.draftPlan?.text])];
   if (changed('decisions', decisionKey)) renderDecisions();
-  if (changed('board', [stories, busyKey, stories.map(stalled), view, filterRole, filterRepo])) renderBoard();
+  if (changed('board', [stories, busyKey, stories.map(stalled), view, filterRole, filterRepo, [...clearing]])) renderBoard();
   if (changed('feed', [lastFrameAt > 0, stories.map(story => story.events?.[0]?.seq), filterRole, filterRepo])) renderFeed();
 }
 
@@ -733,9 +820,10 @@ function connect() {
 
 meta = await (await fetch('/api/meta')).json();
 columns = meta.columns;
-if (!['lanes', 'agents', 'track'].includes(view)) view = 'lanes';
+if (!['lanes', 'agents', 'track', 'archive'].includes(view)) view = 'lanes';
 for (const button of document.querySelectorAll('.views button')) button.addEventListener('click', () => setView(button.dataset.view));
 $('stat-waiting-button').addEventListener('click', () => setFilter('approver'));
+$('stat-shipped-button').addEventListener('click', () => { filterRole = null; setView('archive'); });
 $('repo-filter').addEventListener('change', event => { filterRepo = event.target.value; render(); });
 $('notify').hidden = globalThis.Notification?.permission !== 'default';
 $('notify').addEventListener('click', async () => {

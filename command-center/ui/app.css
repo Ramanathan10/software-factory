@@ -412,3 +412,20 @@ dialog.win .reader-actions { position: static; flex: none; margin: 0; padding: 1
 
 .track.idle { opacity: .72; }
 
+.board.view-archive { display: grid; gap: 8px; align-content: start; grid-auto-rows: max-content; }
+.archive-head { display: flex; justify-content: space-between; align-items: center; padding: 0 4px; font-size: 12px; color: var(--muted); }
+.archive-row { display: flex; gap: 16px; align-items: center; padding: 12px; border-radius: 12px; background: var(--panel); border: 1px solid var(--line); cursor: pointer; }
+.archive-row:hover, .archive-row:focus-visible { outline: none; border-color: var(--muted); }
+.archive-info { display: grid; gap: 4px; flex: 1; min-width: 0; }
+.archive-info header { display: flex; gap: 12px; font: 11px var(--mono); color: var(--muted); }
+.archive-info .id { font-weight: 700; color: var(--text); }
+.archive-info h3 { font-size: 14px; font-weight: 600; }
+.archive-info .blocked-note { color: var(--red); font-size: 12px; }
+.archive-row .aside { display: flex; gap: 12px; align-items: center; }
+.board-wrap button.danger, .archive-row button { background: var(--panel-2); color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 6px 12px; cursor: pointer; }
+.board-wrap button.danger, .send button.danger { border-color: var(--red); color: var(--red); }
+.send button.danger { background: var(--red); color: #fff; font-weight: 600; }
+.archive-row button:disabled, .board-wrap button.danger:disabled { opacity: .5; cursor: wait; }
+dialog.confirm ul { margin: 4px 0 8px 18px; font: 12px var(--mono); overflow-wrap: anywhere; }
+dialog.confirm .warn-text { color: var(--red); font-weight: 600; margin: 12px 0; }
+dialog.confirm .send { justify-content: flex-end; }
