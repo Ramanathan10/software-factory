@@ -72,10 +72,21 @@ export async function openRig({ entry, turnMs, tally, profile: overrides = {} })
   for (const stream of [daemon.stdout, daemon.stderr]) stream.on('data', chunk => { daemonOutput += chunk; });
 
   const everyEvent = () => store.snapshot().flatMap(story => store.history(story.id));
-  const jarvisPids = new Set();
-  const turnPids = () => {
-    for (const story of store.snapshot()) if (story.jarvis?.turn?.pid) jarvisPids.add(story.jarvis.turn.pid);
-    return [...everyEvent().filter(event => event.type === 'turn-started').map(event => event.worker.turn.pid), ...jarvisPids];
+  const turnsFile = join(home, 'scripted-turns.jsonl');
+  const scriptedTurns = () => {
+    const latest = new Map();
+    if (existsSync(turnsFile)) {
+      for (const line of readFileSync(turnsFile, 'utf8').split(/\r?\n/).filter(Boolean)) {
+        const { pid, event } = JSON.parse(line);
+        latest.set(pid, event);
+      }
+    }
+    return latest;
+  };
+  const running = () => [...scriptedTurns()].filter(([, event]) => event === 'spawned').map(([pid]) => pid);
+  const ended = pid => {
+    const last = scriptedTurns().get(pid);
+    return last ? last === 'exited' : !isAlive(pid);
   };
   const lastLog = () => {
     const turn = everyEvent().filter(event => event.type === 'turn-started').sort((a, b) => b.seq - a.seq)[0];
@@ -114,7 +125,7 @@ export async function openRig({ entry, turnMs, tally, profile: overrides = {} })
     turnsEnded: (story, count) => rig.history(story).filter(item => item.type === 'turn-ended').length >= count && !rig.snapshot(story).worker?.turn,
     acknowledged: (story, seq) => !store.pendingFor(story).some(item => item.seq === seq),
     daemonSaid: pattern => pattern.test(daemonOutput),
-    processEnded: pid => !isAlive(pid),
+    processEnded: ended,
     create(story, { scouted = true, ...fields } = {}) {
       const created = store.record({ story, key: story + '-create', type: 'create', title: 'End-to-end check ' + story, detail: 'Exercise the factory with scripted workers.', branch: 'e2e', worktree, harness: entry.name, ...fields });
       if (scouted) store.record({ story, key: story + '-scout', type: 'handoff', revision: created.revision, detail: 'Context pack ready.' });
@@ -166,7 +177,7 @@ export async function openRig({ entry, turnMs, tally, profile: overrides = {} })
         const bad = turns.find(item => item.type === 'turn-ended' && item.worker.lastTurn.outcome !== 'ended');
         expect(!bad, story.id + ' has a turn that ' + bad?.worker.lastTurn.outcome + ': ' + bad?.detail);
       }
-      await rig.until('worker processes to end', () => turnPids().every(pid => !isAlive(pid)), 30000);
+      await rig.until('worker processes to end', () => !running().length, 30000);
     },
     checkCalls() {
       const ran = rig.calls();
@@ -188,12 +199,14 @@ export async function openRig({ entry, turnMs, tally, profile: overrides = {} })
       return ran.length;
     },
     async close({ keep }) {
-      daemon.kill();
-      try {
-        for (const pid of turnPids().filter(isAlive)) process.kill(pid);
-      } catch (error) {
-        console.log('# A worker process could not be stopped (' + error.message + ').');
+      for (const pid of running()) {
+        try {
+          process.kill(pid);
+        } catch (error) {
+          if (error.code !== 'ESRCH') console.log('# A worker process could not be stopped (' + error.message + ').');
+        }
       }
+      daemon.kill();
       store.close();
       await new Promise(resolve => (daemon.exitCode === null ? daemon.once('close', resolve) : resolve()));
       if (keep) {
