@@ -28,3 +28,4 @@ jobs:
         env:
           # Words private-details.test.mjs must not find, such as a work story prefix. Set under Settings → Variables.
           PRIVATE_WORDS: ${{ vars.PRIVATE_WORDS }}
+      - run: node e2e/run.mjs

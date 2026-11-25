@@ -17,14 +17,14 @@ export async function run(rig) {
     expect(/^Done/.test(asked.options[0]) && /^Hold/.test(asked.options[1]), 'The options are ' + JSON.stringify(asked.options) + '.');
     return asked;
   });
-  await rig.step('no second Jarvis turn starts within 30 seconds while the owner has not answered', async () => {
-    await new Promise(resolve => setTimeout(resolve, 30000));
+  await rig.step('no second Jarvis turn starts within three quiet periods while the owner has not answered', async () => {
+    await new Promise(resolve => setTimeout(resolve, rig.quietMs * 3));
     expect(rig.jarvisWakes(story).length === 1, 'Jarvis was woken again before the owner answered.');
   });
   await rig.step('answering Hold leaves Jarvis stopped and the answer acknowledged', async () => {
     const recorded = await rig.decide({ story, type: 'answer', question: notice.id, answer: 1, revision: rig.snapshot(story).revision });
     await rig.until('the Hold to be acknowledged', () => rig.acknowledged(story, recorded.seq), 30000);
-    await new Promise(resolve => setTimeout(resolve, 15000));
+    await new Promise(resolve => setTimeout(resolve, rig.quietMs * 2));
     expect(rig.jarvisWakes(story).length === 1, 'Jarvis was woken after Hold.');
   });
 }

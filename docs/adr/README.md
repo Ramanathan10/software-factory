@@ -25,3 +25,4 @@ Each record explains one decision the code cannot show by itself. Code in this r
 | [0019](0019-a-background-jarvis-session-is-woken-for-news.md) | A background Jarvis session is woken for news, so a story never waits on a chat |
 | [0020](0020-pr-review-is-a-detour-run-by-hawkeye.md) | PR review is a detour phase run by Hawkeye, and the poller only reads GitHub |
 | [0021](0021-the-command-center-clears-shipped-stories.md) | The Command Center archives shipped stories and clears them itself, with fixed checks |
+| [0022](0022-end-to-end-checks-run-scripted-workers.md) | End-to-end checks run scripted workers and a scripted Jarvis, with no model |

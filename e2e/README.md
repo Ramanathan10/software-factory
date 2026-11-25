@@ -1,27 +1,29 @@
 # End-to-end checks
 
-These checks run the factory the way a real story does: a real Command Center, a real story store, and real worker sessions in the harness you name. `node --test` covers the code; this suite covers what only shows up when a model is on the other end.
+These checks run the factory the way a real story does, with no model: a real Command Center, a real story store, real worker processes started and resumed through `adapters/harnesses.mjs`, and a real background Jarvis woken by the daemon. Scripts play the workers and Jarvis, so every run gives the same answer and spends no model usage. `node --test` covers the code; this suite covers what only shows up between processes. [ADR 0022](../docs/adr/0022-end-to-end-checks-run-scripted-workers.md) records the design and what it does not cover.
 
 ## Run it
 
 ```
-node e2e/run.mjs "Claude Code"
+node e2e/run.mjs
 node e2e/run.mjs Codex worker-releases-before-asking
 node e2e/run.mjs --list
 ```
 
 | Option | What it does |
 |---|---|
-| `<harness>` | A harness whose workers start from the command line, spelled as in `adapters/harnesses.mjs`. |
+| `[harness]` | Run only as stories in this harness, spelled as in `adapters/harnesses.mjs`. Without it, every scenario runs once as a Claude Code story and once as a Codex story. |
 | `[scenario ...]` | Run only these scenarios. Without any, every scenario runs. |
-| `--model <name>` | The model every worker turn and subagent runs on. Without it, the harness's cheapest model: `haiku` for Claude Code, `gpt-6-luna` for Codex. These checks test the Command Center's mechanics, not the quality of the code a worker writes. |
-| `--unrestricted` | Start workers with the harness's unrestricted permissions. The default is restricted. |
 | `--keep` | Keep the throwaway folder and worker logs after a pass. A failure always keeps them. |
-| `--turn-seconds <n>` | How long to wait for one worker turn. The default is 300. |
+| `--turn-seconds <n>` | How long to wait for one worker turn, and how long a scripted Jarvis or worker waits on another turn. The default is 60. |
 
-Each scenario gets its own throwaway folder under the system's temporary directory: a git worktree, a profile, a story database and the worker logs. Nothing touches the owner's AI SDLC home. Workers find a `gh` stand-in first on their PATH: it records pull requests in the folder's `github` subfolder and refuses anything else, and the real GitHub CLI is left signed out, so no scenario reaches the owner's GitHub account. The run prints one line per step and exits 0 only when every scenario passed.
+Each scenario gets its own throwaway folder under the system's temporary directory: a git worktree, a profile, a story database, the playbooks and the worker logs. Nothing touches the owner's AI SDLC home. The rig removes every folder holding a `claude` or `codex` program from the Command Center's PATH and refuses to open if one is still reachable, so nothing can spend model usage. If that leaves no folder holding `node`, it links the running node into a folder of its own. Workers find a `gh` stand-in that records pull requests in the folder's `github` subfolder, and the real GitHub CLI is left signed out. The run prints one line per step and exits 0 only when every scenario passed. Both harnesses take about three minutes; the Tests workflow runs it on Windows, macOS and Ubuntu after `node --test`.
 
-It spends the harness's model usage, so `node --test` and CI do not run it. Run it for each harness you can before merging a change to how workers start, how decisions reach them, or how Jarvis is woken.
+## How the scripts stand in for the model
+
+The rig starts `e2e/daemon.mjs` instead of `command-center/serve.mjs`. It runs the same Command Center with a 2 s settle, a 2 s Jarvis quiet period and a 250 ms poll, and starts `e2e/scripted.mjs` wherever the real code would start `claude` or `codex`, with the same arguments, working directory, environment and prompt. A Codex start prints a `thread_id` line first, as `codex exec --json` does. Every start appends a line to `scripted-calls.jsonl` in the rig's home, and after each scenario the runner checks those calls against the turns and Jarvis wakes the console recorded.
+
+A worker turn waits until the daemon assigns its session, then runs the first playbook entry that matches it. A turn run as Jarvis (`AI_SDLC_ACTOR=jarvis`) follows one fixed policy instead: with no worker in a phase that has one and no owner question left unanswered, it starts the next worker with the playbook's `next` kickoff, and delivers when an owner decision for the phase is pending; then it acknowledges the news it was given, except decisions. Given the model `no-such-model-e2e`, either kind of turn exits 1 before it reads a playbook.
 
 ## Scenarios
 
@@ -30,21 +32,23 @@ It spends the harness's model usage, so `node --test` and CI do not run it. Run 
 | `worker-keeps-assignment` | A worker asks a question and ends its turn. The owner's answer resumes that same session, which acts on it and acknowledges it. |
 | `worker-releases-before-asking` | A worker releases, then asks. The owner's answer has nobody to take it, so the daemon wakes a background Jarvis, which staffs a replacement that receives the answer after its kickoff turn. |
 | `clean-handoff-with-no-jarvis-chat` | A worker releases and hands off while nobody waits on the console. A background Jarvis turn starts and the next worker is assigned within 60 seconds of the handoff. |
-| `background-jarvis-turn-fails` | The coordinator tier names a model that does not exist, so the background Jarvis fails at once. The owner gets an `action-jarvis-` question in plain words, and Jarvis is not run again until they answer. |
-| `story-to-pull-request` | A feature story in a throwaway repository, whose origin is a local bare repository, runs from scout to an open pull request with the real lifecycle skills from this checkout. The scenario plays the owner, answering each question with its recommended option and approving the plan, and plays Jarvis, starting a worker whenever a decision has none to take it or a phase has nobody staffing it, unless the background Jarvis has already started one. After plan approval it leaves the test author to the Command Center, which starts one itself. It then checks that every phase ran in order, that the pull request carries the spec and gate results, and that the pushed branch starts with the spec and passes its tests. On `haiku` it takes about ten minutes. Each turn may run for 90 minutes, or `--turn-seconds` if longer. |
+| `background-jarvis-turn-fails` | The coordinator tier names the model `no-such-model-e2e`, so the background Jarvis fails at once. The owner gets an `action-jarvis-` question in plain words, and Jarvis is not run again until they answer. |
+| `story-to-pull-request` | A feature story in a throwaway repository, whose origin is a local bare repository, runs from scout to an open pull request. Scripted workers record every phase and do the git work: the spec as the first commit, the test, the code, the push, and the pull request through the `gh` stand-in. The scenario plays the owner, answering each question with its recommended option and approving the plan, and plays Jarvis alongside the background one. It checks that every phase ran in order, that the pull request carries the spec and gate results, and that the pushed branch starts with the spec and passes its tests. It checks the store and daemon across the lifecycle, not the skills. |
 
-After every scenario the runner also checks that each turn started and ended in order, that none failed or was lost, and that no worker process is left running.
-
-The throwaway profile names one model for every tier and does not authorize cross-model sharing, while review needs two reviewer seats of distinct model classes. A reviewer may work around that with a subagent on another model, or it may stop and ask the owner for a profile edit the scenario cannot make, which fails `story-to-pull-request` at its fourth step. Whether the reviewer stops depends on how the model chooses to staff the review, not only on the code, so one stop at review does not by itself show that a change broke the lifecycle. Read the reviewer's question for its reason, and run the branch again before blaming the change.
-
+After every scenario the runner also checks that each turn started and ended in order, that none failed or was lost, that no worker process is left running, and that every turn ran the scripted program with the harness's start or resume arguments.
 
 ## A bug becomes a scenario
 
-When a live story goes wrong, add a scenario that reproduces it before fixing it:
+When a live story goes wrong in the Command Center, the store or the daemon, add a scenario that reproduces it before fixing it. A bug that only a model's choices show is fixed in the skill that misled it, and gets no scenario.
 
-1. Create `e2e/scenarios/<what-went-wrong>.mjs`. Export `title`, one sentence saying what must hold, and `run(rig)`.
-2. Drive the story through `rig`: `create` a story (`{ scout: true }` leaves it in scout), `start` a worker with a kickoff, `decide` as the owner would in the console, `deliver`, and `waitAny` as Jarvis would. Read the result with `snapshot`, `history`, `event`, `turnsEnded` and `acknowledged`.
-3. Wrap each thing that must hold in `rig.step(label, body)` and state it with `expect(condition, message)`. Use `rig.worker(story, turns, what, check)` to wait on something a worker must do: it fails at once, with the end of the worker's log, when the turn ends without it.
-4. Run it against the unfixed code and confirm it fails at the step that describes the bug. Then fix the bug and confirm it passes.
-
-A kickoff tells the worker exactly which console events to record. `rig.script({ next, deliver })` writes an `AGENTS.md` and `CLAUDE.md` into the throwaway worktree that tell a background Jarvis to start the next worker with the kickoff `next`, and to deliver pending decisions when `deliver` is set. A scenario that exports `profile(entry)` adds those settings to the throwaway profile. `rig.brief(story)` explains the console to it, and `onAnswer(story, question)` tells it what to do when the owner's answer arrives. A scenario that needs the real skills, such as the story from scout to pull request, writes its own kickoff instead.
+1. Create `e2e/scenarios/<what-went-wrong>.mjs`. Export `title`, one sentence saying what must hold, and `run(rig)`. A scenario that exports `profile(entry)` adds those settings to the throwaway profile.
+2. Write what each worker turn does with `rig.playbook(story, { next, turns })`. `next` is the kickoff a background Jarvis gives the next worker it starts. Each entry in `turns` matches on `role` (the assigned worker's role), `phase` (the story's phase when the turn starts), `turn` (`"first"` or `"resumed"`) and, optionally, `worker` (1 for the story's first assignment, 2 for the next, and so on), and lists its `steps`:
+   - `{ "record": { "type": "question", ... } }` records an event. The script fills in the story, a fresh key, the current revision, and the assignment while the story has a worker.
+   - `{ "ack": ["answer"] }` acknowledges every pending event of those types on the story.
+   - `{ "write": "path/in/worktree", "text": "..." }` writes a file.
+   - `{ "run": ["git", "commit", "-q", "-m", "..."], "save": "name" }` runs a program in the worktree and fails the turn if it exits non-zero; `"node"` means the running Node. `save` keeps its trimmed output. Call the `gh` stand-in as `rig.gh(...args)`.
+   - In any string, `{{answer:<question id>}}` is the owner's answer to that question, and `{{<name>}}` is a saved output.
+   A turn with no matching entry prints what it looked for and fails.
+3. Drive the story through `rig`: `create` a story (`{ scouted: false }` leaves it in scout), `start` a worker with a kickoff, `decide` as the owner would in the console, `deliver`, and `waitAny` as a Jarvis chat would. Read the result with `snapshot`, `history`, `event`, `turnsEnded` and `acknowledged`.
+4. Wrap each thing that must hold in `rig.step(label, body)` and state it with `expect(condition, message)`. Use `rig.worker(story, turns, what, check)` to wait on something a worker must do: it fails at once, with the end of the worker's log, when the turn ends without it. Scale any fixed wait to `rig.quietMs`.
+5. Run it against the unfixed code and confirm it fails at the step that describes the bug. Then fix the bug and confirm it passes.

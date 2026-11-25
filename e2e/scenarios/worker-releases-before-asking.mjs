@@ -1,4 +1,4 @@
-import { expect, onAnswer } from '../rig.mjs';
+import { expect } from '../rig.mjs';
 
 export const title = 'A worker that releases before it asks leaves an answer nobody can take; a background Jarvis staffs a replacement that handles it';
 
@@ -6,23 +6,20 @@ const story = 'E2E-RELEASES';
 
 export async function run(rig) {
   rig.create(story);
-  rig.script({ deliver: true, next: [
-    rig.brief(story),
-    'You replace a worker that stopped.',
-    'Steps for this turn:',
-    '1. Read the story.',
-    '2. Record {"story":"' + story + '","type":"activity","assignment":"<story.worker.id>","detail":"E2E replacement ready"} with key and revision filled in.',
-    '3. End your turn now. Do not act on any pending event yet.',
-    onAnswer(story, 'runtime'),
-  ].join('\n\n') });
-  const gone = await rig.step(rig.harness + ' starts a worker', () => rig.start(story, [
-    rig.brief(story),
-    'Steps for this turn:',
-    '1. Read the story.',
-    '2. Record {"story":"' + story + '","type":"release-worker","assignment":"<story.worker.id>","detail":"Stopped at a blocker."} with key and revision filled in.',
-    '3. Record {"story":"' + story + '","type":"question","question":"runtime","prompt":"Install the runtime?","options":["install","hold"],"recommended":1} with key and the new revision filled in.',
-    '4. End your turn. Do nothing else, now or later.',
-  ].join('\n\n')));
+  rig.playbook(story, { next: 'You replace a worker that stopped on story ' + story + '.', turns: [
+    { role: 'planner', phase: 'planning', turn: 'first', worker: 1, steps: [
+      { record: { type: 'release-worker', detail: 'Stopped at a blocker.' } },
+      { record: { type: 'question', question: 'runtime', prompt: 'Install the runtime?', options: ['install', 'hold'], recommended: 1 } },
+    ] },
+    { role: 'planner', phase: 'planning', turn: 'first', worker: 2, steps: [
+      { record: { type: 'activity', detail: 'E2E replacement ready' } },
+    ] },
+    { role: 'planner', phase: 'planning', turn: 'resumed', worker: 2, steps: [
+      { record: { type: 'activity', detail: 'E2E answer received: {{answer:runtime}}' } },
+      { ack: ['answer'] },
+    ] },
+  ] });
+  const gone = await rig.step(rig.harness + ' starts a worker', () => rig.start(story, 'You are the scripted worker for story ' + story + '.'));
   const question = await rig.step('the worker releases, then asks, and its process ends', async () => {
     const asked = await rig.worker(story, 1, 'the question', () => rig.event(story, 'question'));
     const released = rig.event(story, 'release-worker');
