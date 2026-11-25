@@ -92,6 +92,7 @@ test('check reports the way-of-working settings, with defaults for the ones not 
 test('check reports the model of each tier and the tier of each phase, as the owner changed them', async t => {
   const roles = await import('../../../mission-console/roles.mjs');
   assert.deepEqual(phaseTiers, roles.phaseTiers, 'the skill and the Command Center agree on the tier of each phase');
+  assert.equal(phaseTiers['pr-review'], 'standard', 'PR review runs on the standard tier');
   const defaults = workspace(t, { machineProfile: machine, repoEntry: repoProfile({}) });
   assert.deepEqual([check(defaults.repo, defaults.env).models, check(defaults.repo, defaults.env).phaseTiers], [{}, phaseTiers]);
 
