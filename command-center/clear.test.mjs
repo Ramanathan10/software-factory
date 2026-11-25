@@ -302,7 +302,8 @@ test('a folder at the worktree path that git no longer lists blocks and is never
   const result = (await f.clear(['S-1'])).of('S-1');
   assert.equal(result.result, 'blocked', JSON.stringify(result));
   assert.match(result.reason, /by hand/i);
-  assert.ok(same(result.reason.match(/[A-Za-z]:[\\/][^\s"']+|\/[^\s"']+/)?.[0]?.replace(/[.,;:]$/, '') ?? '', path), 'the reason does not name the folder: ' + result.reason);
+  const said = slash(result.reason).toLowerCase();
+  assert.ok(said.includes(real(path)) || said.includes(slash(path).toLowerCase()), 'the reason does not name the folder: ' + result.reason);
   assert.ok(existsSync(join(path, 'left.txt')), 'the unlisted folder was deleted');
   assertKept(f, 'S-1', { branch });
 });
@@ -335,7 +336,7 @@ test('a worktree or branch shared with another live story is not cleared', async
       const made = f.files('S-1');
       const { logs } = f.story('S-1', { branch, path });
       const other = shared === 'worktree'
-        ? { branch: 'story/s-2', worktree: path.toUpperCase() === path ? path.toLowerCase() : path.toUpperCase() }
+        ? { branch: 'story/s-2', worktree: process.platform === 'win32' ? path.toUpperCase() : path + '/' }
         : { branch, worktree: slash(join(f.root, 'wt', 'S-2')) };
       f.service.createStory({ story: 'S-2', title: 'Live work', detail: 'Still open.', harness: 'Codex', repo: 'acme/app', ...other });
       const result = (await f.clear(['S-1'])).of('S-1');
