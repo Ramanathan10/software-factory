@@ -1,10 +1,12 @@
 import assert from 'node:assert/strict';
+import { EventEmitter } from 'node:events';
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { test } from 'node:test';
+import { startWorker } from '../adapters/harnesses.mjs';
 import { createClearer } from './clear.mjs';
 import { createConsoleService } from './console-service.mjs';
 
@@ -559,6 +561,29 @@ test('every Jarvis turn log of a story is cleared, even when the log is not name
   const result = (await f.clear(['S-1'])).of('S-1');
   assert.equal(result.result, 'cleared', JSON.stringify(result));
   assert.ok(!existsSync(launch), 'a Jarvis turn log named after its launch is still there');
+});
+
+test('the turn log of a Jarvis launch that never reported a session is cleared', async t => {
+  const f = await fixture(t);
+  const { path, branch } = f.worktree('S-1');
+  f.story('S-1', { branch, path });
+  const spawnProcess = () => {
+    const child = new EventEmitter();
+    child.pid = 4646;
+    child.stdin = { on: () => child.stdin, end: () => {} };
+    setImmediate(() => child.emit('spawn'));
+    return child;
+  };
+  const failure = await startWorker({ harness: 'Codex', worktree: path, prompt: 'wake', phase: 'coordinator' },
+    { spawnProcess, env: { AI_SDLC_HOME: f.home }, settings: { permissions: 'unrestricted', tools: [] }, settleMs: 0, waitMs: 0 }).then(() => null, error => error);
+  assert.ok(failure, 'the launch did not fail');
+  const launch = /See (.+)\.$/.exec(failure.message)?.[1];
+  assert.ok(launch && existsSync(launch), failure.message);
+  f.record('S-1', 'jarvis-woken', { handled: 0 });
+  f.record('S-1', 'jarvis-turn-ended', { outcome: 'failed', detail: 'Jarvis could not start.\n' + failure.message });
+  const result = (await f.clear(['S-1'])).of('S-1');
+  assert.equal(result.result, 'cleared', JSON.stringify(result));
+  assert.ok(!existsSync(launch), 'the log of a launch that never reported a session is still there');
 });
 
 test('a story whose cleanup events cannot be recorded is reported blocked and the batch goes on', async t => {
