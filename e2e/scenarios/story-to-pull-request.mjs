@@ -6,18 +6,18 @@ import { promisify } from 'node:util';
 import { workerPhases } from '../../mission-console/store.mjs';
 import { expect } from '../rig.mjs';
 
-export const title = 'A feature story runs from scout to an open pull request, with the lifecycle skills driving every phase and the owner deciding only in the console';
+export const title = 'A feature story runs from scout to an open pull request, with scripted workers doing every phase\'s git work and the owner deciding only in the console';
 
 const exec = promisify(execFile);
 const slashes = path => path.replaceAll('\\', '/');
 const checkout = fileURLToPath(new URL('../../', import.meta.url)).replace(/[\\/]$/, '');
-const skills = join(checkout, 'skills');
-const preflight = join(skills, 'ai-sdlc-setup', 'scripts', 'preflight.mjs');
+const preflight = join(checkout, 'skills', 'ai-sdlc-setup', 'scripts', 'preflight.mjs');
 const git = (cwd, ...args) => exec('git', args, { cwd }).then(({ stdout }) => stdout.trim());
 
 const story = 'E2E-FAREWELL';
 const slug = 'e2e-owner/greetings';
 const branch = 'story/E2E-FAREWELL-farewell';
+const spec = 'docs/specs/' + branch + '.md';
 const heading = 'Add a farewell greeting';
 const workItem = [
   'Title: ' + heading,
@@ -88,30 +88,65 @@ function writeProfile(rig, repo) {
   }, null, 2));
 }
 
-function kickoff(rig, repo, replacing) {
-  return [
-    'You are the dedicated worker for console story ' + story + '. Jarvis directs; you do every phase of the work through the ai-sdlc skill and the persona skills it names.',
-    replacing ? 'An earlier worker on this story finished its phase or stopped. Read the handover, continue from the phase the story is in, and act on its pending events.' : '',
-    'This story is an automated end-to-end check of the software factory. Everything in it is real except two stand-ins: the repository\'s origin is a local bare repository, and `gh` on your PATH records pull requests instead of sending them to GitHub. Use both exactly as you would the real ones.',
-    'Skills: read ' + slashes(join(skills, 'ai-sdlc', 'SKILL.md')) + ' and follow it. Read each skill it names from ' + slashes(skills) + '/<name>/SKILL.md, even where your harness has its own copy installed.',
-    'Work item ' + story + ', quoted verbatim:\n' + workItem,
-    'Repository: ' + slug + ', with its primary checkout at ' + slashes(repo.primary) + '. Your worktree is ' + slashes(repo.worktree) + ' on branch ' + branch + ', cut from origin/main at ' + repo.base + '. Jarvis recorded it on the story; work only there.',
-    'Preflight: AI_SDLC_HOME is set for you. Run phase 0\'s check as node "' + slashes(preflight) + '" check "' + slashes(repo.worktree) + '"',
-    'Console: node "' + slashes(rig.console) + '" handover|snapshot|record|ack "' + slashes(rig.db) + '". The Mission Console reference at ' + slashes(join(checkout, 'mission-console', 'README.md')) + ' lists every event and its fields. Record the events that the phase table in ' + slashes(join(skills, 'jarvis', 'SKILL.md')) + ' lists for each phase. Use the story\'s current revision and a fresh key for every write.',
-    'Your assignment: the Command Center recorded assign-worker with your session, which handover shows as story.worker.session. A phase change needs the worker released first: record release-worker, then the phase\'s event, then assign-worker again with that same session wherever the new phase has a worker, so the owner\'s decisions keep reaching you.',
-    'Ask the owner only through console question events, never in chat. After posting questions or a plan, end your turn; the owner\'s console decisions come back to you as a message. Acknowledge only this story\'s events, and only after handling them.',
-    'Gates: no tests or code before the owner approves the plan; tests first, written by a separate subagent; no pull request until every phase before it is done.',
-  ].filter(Boolean).join('\n\n');
+const farewellTest = files['greet.test.mjs'].replace("import { greet } from './greet.mjs';", "import { farewell, greet } from './greet.mjs';") +
+  "\ntest('farewell says goodbye to a person by name', () => {\n  assert.equal(farewell('Ada'), 'Goodbye, Ada!');\n});\n";
+const farewellCode = files['greet.mjs'] + '\nexport function farewell(name) {\n  return `Goodbye, ${name}!`;\n}\n';
+const kickoff = 'You are the scripted worker for story ' + story + '.';
+
+function playbook(rig) {
+  const handoff = (detail, command) => [
+    { record: { type: 'release-worker', detail: 'Phase work done; the worker is idle.' } },
+    { record: { type: 'handoff', detail, ...(command ? { command } : {}) } },
+  ];
+  rig.playbook(story, { next: kickoff, turns: [
+    { role: 'scout', phase: 'scout', turn: 'first', steps: handoff('E2E context pack: greet.mjs exports greet; tests run with node --test.') },
+    { role: 'planner', phase: 'planning', turn: 'first', steps: [
+      { record: { type: 'question', question: 'wording', prompt: 'How should the farewell read?', options: ['Goodbye, <name>!', 'Bye, <name>.'], recommended: 0 } },
+    ] },
+    { role: 'planner', phase: 'planning', turn: 'resumed', steps: [
+      { ack: ['answer'] },
+      { record: { type: 'release-worker', detail: 'Plan written; the planner is idle.' } },
+      { record: { type: 'plan', detail: '# ' + heading + '\n\nfarewell(name) returns "{{answer:wording}}" with the name filled in.\n\nAcceptance criteria: farewell(\'Ada\') returns \'Goodbye, Ada!\'; greet is unchanged; node --test passes.' } },
+    ] },
+    { role: 'tester', phase: 'testing', turn: 'first', steps: [
+      { write: spec, text: '# ' + heading + '\n\n' + workItem + '\n' },
+      { run: ['git', 'add', spec] },
+      { run: ['git', 'commit', '-q', '-m', 'Record the approved spec'] },
+      { write: 'greet.test.mjs', text: farewellTest },
+      { run: ['git', 'add', 'greet.test.mjs'] },
+      { run: ['git', 'commit', '-q', '-m', 'Test the farewell greeting'] },
+      { ack: ['approve'] },
+      ...handoff('E2E test for farewell written.'),
+    ] },
+    { role: 'coordinator', phase: 'red', turn: 'first', steps: handoff('E2E red: farewell is not exported yet.', 'node --test') },
+    { role: 'implementer', phase: 'building', turn: 'first', steps: [
+      { write: 'greet.mjs', text: farewellCode },
+      { run: ['node', '--test'] },
+      { run: ['git', 'add', 'greet.mjs'] },
+      { run: ['git', 'commit', '-q', '-m', 'Add the farewell greeting'] },
+      ...handoff('E2E green: node --test passes.', 'node --test'),
+    ] },
+    { role: 'implementer', phase: 'gates', turn: 'first', steps: [{ run: ['node', '--test'] }, ...handoff('E2E gates: node --test passed.', 'node --test')] },
+    { role: 'tester', phase: 'mutation', turn: 'first', steps: handoff('E2E mutation: the profile has no mutation gate.', 'none: no mutation gate in the profile') },
+    { role: 'reviewer', phase: 'review', turn: 'first', steps: [
+      ...handoff('E2E review: no findings.'),
+      { record: { type: 'comparison-choice', run: false, detail: 'The profile says never.' } },
+      { run: ['git', 'push', '-q', '-u', 'origin', branch] },
+      { run: rig.gh('pr', 'create', '--base', 'main', '--head', branch, '--title', heading, '--body', 'Spec: ' + spec + '\n\nGates: node --test passed.'), save: 'pr' },
+      { record: { type: 'pr-opened', url: '{{pr}}', detail: 'Pull request opened.' } },
+    ] },
+    { role: 'watcher', phase: 'ci', turn: 'first', steps: [{ record: { type: 'activity', detail: 'E2E watching the pull request checks.' } }] },
+  ] });
 }
 
-const staff = (rig, repo) => rig.start(story, kickoff(rig, repo, true)).catch(error => {
+const staff = rig => rig.start(story, kickoff).catch(error => {
   if (!/already has a worker|already in progress/.test(error.message)) throw error;
 });
 
 const turnsStarted = rig => rig.history(story).filter(item => item.type === 'turn-started');
 const idle = rig => turnsStarted(rig).every(item => rig.processEnded(item.worker.turn.pid));
 
-async function drive(rig, repo, done, limit, tally) {
+async function drive(rig, done, limit, tally) {
   for (;;) {
     if (done(rig.snapshot(story))) return;
     await rig.until('the worker to end its turn', () => idle(rig), limit);
@@ -128,14 +163,14 @@ async function drive(rig, repo, done, limit, tally) {
     if (open.length) {
       for (const item of open) last = await rig.decide({ story, type: 'answer', question: item.id, answer: item.recommended });
       if (!rig.snapshot(story).worker) {
-        await staff(rig, repo);
+        await staff(rig);
         await rig.deliver(story);
       }
     } else if (current.phase === 'approval') {
       last = await rig.decide({ story, type: 'approve' });
       waiting = 'the Command Center to start the test author after approval';
     } else if (!current.worker && workerPhases.has(current.phase)) {
-      await staff(rig, repo);
+      await staff(rig);
       waiting = 'the worker Jarvis started for ' + current.phase;
     } else {
       throw new Error('The worker ended its turn in ' + current.phase + ' with nothing for the owner or Jarvis to do. Its log ends:\n' + rig.lastLog());
@@ -150,7 +185,8 @@ async function drive(rig, repo, done, limit, tally) {
 export async function run(rig) {
   const repo = await makeRepository(rig);
   writeProfile(rig, repo);
-  const limit = Math.max(rig.turnMs, 90 * 60 * 1000);
+  const limit = rig.turnMs;
+  playbook(rig);
   const tally = { rounds: 0 };
 
   await rig.step('the target repository passes the AI SDLC preflight check', async () => {
@@ -161,15 +197,15 @@ export async function run(rig) {
   });
   rig.create(story, { scouted: false, title: heading, detail: workItem, branch, worktree: repo.worktree, repo: slug });
   await rig.step(rig.harness + ' starts the story worker in scout', async () => {
-    const started = await rig.start(story, kickoff(rig, repo, false));
+    const started = await rig.start(story, kickoff);
     expect(rig.snapshot(story).worker?.session === started.session, 'The story is not assigned to the session the start call printed.');
   });
   await rig.step('the worker scouts and plans, and the owner answers every question with its recommendation and approves the plan', () =>
-    drive(rig, repo, current => !['scout', 'planning', 'approval'].includes(current.phase), limit, tally));
-  await rig.step('the story runs from tests to an open pull request', () => drive(rig, repo, current => Boolean(current.pr), limit, tally));
+    drive(rig, current => !['scout', 'planning', 'approval'].includes(current.phase), limit, tally));
+  await rig.step('the story runs from tests to an open pull request', () => drive(rig, current => Boolean(current.pr), limit, tally));
   await rig.step('the worker and any background Jarvis turn end after the pull request opens', () => rig.until('the worker and Jarvis to end their turns', () => {
     const current = rig.snapshot(story);
-    return idle(rig) && !current.jarvis?.turn && !current.jarvis?.waking && Date.now() - Date.parse(current.updatedAt) > 20000;
+    return idle(rig) && !current.jarvis?.turn && !current.jarvis?.waking && Date.now() - Date.parse(current.updatedAt) > rig.quietMs * 5;
   }, limit));
 
   await rig.step('the console records every lifecycle phase in order, and every owner decision was acknowledged', () => {

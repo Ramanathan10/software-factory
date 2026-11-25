@@ -1,4 +1,4 @@
-import { expect, onAnswer } from '../rig.mjs';
+import { expect } from '../rig.mjs';
 
 export const title = 'A worker that asks a question keeps its assignment, and the owner\'s answer resumes its session';
 
@@ -6,15 +6,17 @@ const story = 'E2E-KEEPS';
 
 export async function run(rig) {
   rig.create(story);
+  rig.playbook(story, { turns: [
+    { role: 'planner', phase: 'planning', turn: 'first', steps: [
+      { record: { type: 'question', question: 'color', prompt: 'Which color?', options: ['red', 'blue'], recommended: 0 } },
+    ] },
+    { role: 'planner', phase: 'planning', turn: 'resumed', steps: [
+      { record: { type: 'activity', detail: 'E2E answer received: {{answer:color}}' } },
+      { ack: ['answer'] },
+    ] },
+  ] });
   const first = await rig.step(rig.harness + ' starts a worker and the daemon assigns it', async () => {
-    const started = await rig.start(story, [
-      rig.brief(story),
-      'Steps for this turn:',
-      '1. Read the story.',
-      '2. Record {"story":"' + story + '","type":"question","question":"color","prompt":"Which color?","options":["red","blue"],"recommended":0} with key and revision filled in.',
-      '3. Keep your assignment: do not record release-worker. End your turn now, without waiting for the answer.',
-      onAnswer(story, 'color'),
-    ].join('\n\n'));
+    const started = await rig.start(story, 'You are the scripted worker for story ' + story + '.');
     expect(rig.snapshot(story).worker?.session === started.session, 'The story is not assigned to the session the start call printed.');
     return started;
   });

@@ -6,22 +6,16 @@ const story = 'E2E-HANDOFF';
 
 export async function run(rig) {
   rig.create(story, { scouted: false });
-  rig.script({ next: [
-    rig.brief(story),
-    'You are the next worker on this story.',
-    'Steps for this turn:',
-    '1. Read the story.',
-    '2. Record {"story":"' + story + '","type":"activity","assignment":"<story.worker.id>","detail":"E2E next worker ready"} with key and revision filled in.',
-    '3. End your turn. Do nothing else.',
-  ].join('\n\n') });
-  await rig.step(rig.harness + ' starts a scout', () => rig.start(story, [
-    rig.brief(story),
-    'Steps for this turn:',
-    '1. Read the story.',
-    '2. Record {"story":"' + story + '","type":"release-worker","assignment":"<story.worker.id>","detail":"Scout finished."} with key and revision filled in.',
-    '3. Record {"story":"' + story + '","type":"handoff","detail":"E2E context pack ready."} with key and the new revision filled in.',
-    '4. End your turn. Do nothing else, now or later.',
-  ].join('\n\n')));
+  rig.playbook(story, { next: 'You are the next worker on story ' + story + '.', turns: [
+    { role: 'scout', phase: 'scout', turn: 'first', steps: [
+      { record: { type: 'release-worker', detail: 'Scout finished.' } },
+      { record: { type: 'handoff', detail: 'E2E context pack ready.' } },
+    ] },
+    { role: 'planner', phase: 'planning', turn: 'first', steps: [
+      { record: { type: 'activity', detail: 'E2E next worker ready' } },
+    ] },
+  ] });
+  await rig.step(rig.harness + ' starts a scout', () => rig.start(story, 'You are the scripted scout for story ' + story + '.'));
   const handoff = await rig.step('the scout releases, hands off, and its process ends', async () => {
     const handed = await rig.until('the handoff', () => rig.event(story, 'handoff'));
     const released = rig.event(story, 'release-worker');
