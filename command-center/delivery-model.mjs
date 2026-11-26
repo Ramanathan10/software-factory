@@ -1,4 +1,4 @@
-export const current = { filterSent: true, handReserves: true, startRegistersTurn: true, waitsForAdoptedTurns: true, recordsAtSpawn: true, rechecksAssignment: true, releasesAtTurnEnd: true };
+export const current = { filterSent: true, handReserves: true, startRegistersTurn: true, waitsForAdoptedTurns: true, recordsAtSpawn: true, rechecksAssignment: true, releasesAtTurnEnd: true, handsOnlyPending: true };
 
 const DECISIONS = 2;
 const JARVIS_CALLS = 2;
@@ -9,7 +9,7 @@ const initial = fix => ({
   restarts: 0, jarvisCalls: 0, nextId: 1, assign: 0, replaced: 0, released: 0, resumedReleased: false,
   live: Array(DECISIONS).fill(false), wasted: Array(DECISIONS).fill(false),
   recorded: Array(DECISIONS).fill(false), pending: Array(DECISIONS).fill(false),
-  duplicated: false, sent: Array(DECISIONS).fill(false), batch: Array(DECISIONS).fill(false),
+  duplicated: false, reservedAfterAck: false, sent: Array(DECISIONS).fill(false), batch: Array(DECISIONS).fill(false),
   procs: [],
   tails: Array(REPLACEMENTS + 1).fill(null).map((tail, session) => (session === 0 && fix.startRegistersTurn ? 0 : null)),
   turns: [{ id: 0, token: 0, session: 0, seqs: Array(DECISIONS).fill(false), known: Boolean(fix.startRegistersTurn), recorded: true }],
@@ -25,10 +25,12 @@ const settledEntry = (state, id) => id === null || (!state.procs.some(proc => pr
 
 function hand(state, fix, seqs, via) {
   if (state.assign === null) return null;
-  const carried = fix.handReserves ? seqs.map((seq, d) => seq && !state.sent[d]) : seqs;
+  const owed = seqs.map((seq, d) => seq && (!fix.handsOnlyPending || state.pending[d]));
+  const carried = fix.handReserves ? owed.map((seq, d) => seq && !state.sent[d]) : owed;
   if (!any(carried)) return null;
   const next = structuredClone(state);
   carried.forEach((seq, d) => {
+    if (seq && state.recorded[d] && !state.pending[d]) next.reservedAfterAck = true;
     if (seq && (state.procs.some(proc => proc.seqs[d]) || state.turns.some(turn => turn.seqs[d] && !turn.adopted))) next.duplicated = true;
   });
   if (fix.handReserves) carried.forEach((seq, d) => { if (seq) next.sent[d] = next.nextId; });
@@ -126,6 +128,7 @@ export const invariants = {
   OneTurnPerWorktree: state => state.turns.length <= 1,
   ReleasedSessionNeverResumed: state => !state.resumedReleased,
   NoDuplicateDelivery: state => !state.duplicated,
+  NoReserveAfterAck: state => !state.reservedAfterAck,
   NeverBlocked: state => state.assign === null || state.pending.every((pending, d) => !pending || !state.sent[d] || state.procs.some(proc => proc.seqs[d]) || state.turns.some(turn => turn.seqs[d])),
 };
 

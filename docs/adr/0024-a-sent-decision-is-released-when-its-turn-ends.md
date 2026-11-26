@@ -12,11 +12,11 @@ Date: 2026-11-26
 - `hand` releases its seqs once `onDecision` returned `worker` and every promise given to `carriedBy` settled, in either order, because a turn that exits within the settle window ends before `hand` returns. A release removes only seqs still holding its own reservation, so a later `hand` keeps its own. A result other than `worker` releases at once, as before. If `carriedBy` is never called, the seqs stay reserved.
 - A turn that ends, whatever the exit code, without acknowledging makes the decision deliverable on the next `serve.mjs deliver`. The daemon never hands it again by itself, and a clean exit wakes nobody new.
 - A decision stays reserved until the carrying turn of a released worker ends, so a replacement is handed it after that turn, not before.
-- The delivery model gains `releasesAtTurnEnd` and the invariant `NeverBlocked`. `NoDuplicateDelivery` is checked when a hand reserves.
+- The delivery model gains `releasesAtTurnEnd` and the invariant `NeverBlocked`. `NoDuplicateDelivery` is checked when a hand reserves, and `NoReserveAfterAck` fails if a hand reserves a decision already acknowledged.
 
 ## Consequences
 - A failed or unacknowledged turn no longer blocks redelivery.
-- An acknowledged decision stays out of `deliverPending`, which filters on pending. The dashboard batch does not check pending, so a batch that fires after the decision was handed, acknowledged and released could hand it again. The window is the batch delay and is not closed here.
+- An acknowledged decision is never handed again by the same daemon: `hand` keeps only the seqs still pending, so the dashboard batch and `deliver` share the filter.
 
 ## Where
 - `command-center/console-service.mjs` — `hand`

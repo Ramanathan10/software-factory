@@ -482,3 +482,31 @@ test('a decision handed again after its turn ended goes to the worker assigned t
   const again = await service.deliverPending('tl-1');
   assert.deepEqual([again.seqs, calls.map(call => call.session)], [[answer.seq], ['worker-1', 'worker-2']]);
 });
+
+test('a decision delivered, acknowledged and released before the dashboard batch fires is not handed again by the batch', async t => {
+  const calls = [];
+  const ends = [];
+  const directory = mkdtempSync(join(tmpdir(), 'console-deliver-'));
+  const service = createConsoleService({
+    dbPath: join(directory, 'stories.db'), decisionDelayMs: 80,
+    onDecision: async decision => {
+      calls.push(decision.seqs);
+      decision.carriedBy?.(new Promise(resolve => ends.push(resolve)));
+      return 'worker';
+    },
+  });
+  const server = await service.startServer();
+  t.after(async () => { await server.close(); service.close(); rmSync(directory, { recursive: true, force: true }); });
+  service.createStory({ story: 'tl-1', title: 'T', detail: 'B', branch: 'b', worktree: '/w', harness: 'Codex' });
+  const { revision } = service.recordEvent({ story: 'tl-1', type: 'question', question: 'q', prompt: 'Which?', options: ['a', 'b'], recommended: 0 });
+  service.recordEvent({ story: 'tl-1', type: 'assign-worker', session: 'worker-1' });
+  const posted = await fetch(server.url + 'api/decision', {
+    method: 'POST', headers: { 'Content-Type': 'application/json', Origin: server.url.slice(0, -1) },
+    body: JSON.stringify({ story: 'tl-1', type: 'answer', question: 'q', answer: 0, revision: revision + 1 }),
+  }).then(response => response.json());
+  assert.deepEqual((await service.deliverPending('tl-1')).seqs, [posted.seq]);
+  service.ack(posted.seq);
+  ends[0](0);
+  await new Promise(resolve => setTimeout(resolve, 150));
+  assert.deepEqual(calls, [[posted.seq]]);
+});

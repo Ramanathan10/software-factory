@@ -91,3 +91,11 @@ test('the verify-decision-delivery skill lists the Release and Assign steps and 
   assert.match(skill, /[|] *`TurnEnd` *[|][^\n]*sent/);
   assert.doesNotMatch(skill, /issue #49/);
 });
+
+test('hand keeps only decisions still pending, so none is reserved after it was acknowledged', () => {
+  assert.equal(current.handsOnlyPending, true);
+  assert.equal(check(current, ['NoReserveAfterAck']).invariant, undefined);
+  const result = check({ ...current, handsOnlyPending: false }, ['NoReserveAfterAck']);
+  assert.equal(result.invariant, 'NoReserveAfterAck');
+  for (const step of ['Ack', 'BatchFire']) assert.ok(result.trace.some(label => label.startsWith(step)), step + ' is not in the trace: ' + result.trace.join(' → '));
+});

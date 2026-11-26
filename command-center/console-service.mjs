@@ -85,7 +85,8 @@ export function createConsoleService({ dbPath = DEFAULT_DB_PATH, home = process.
   };
   const sent = new Map();
   const hand = async (story, seqs, types) => {
-    const carried = seqs.filter(seq => !sent.has(seq));
+    const owed = new Set(store.pendingFor(story).map(record => record.seq));
+    const carried = seqs.filter(seq => owed.has(seq) && !sent.has(seq));
     if (!carried.length) return { seqs: [], told: 'nobody' };
     const token = {};
     const release = () => { for (const seq of carried) if (sent.get(seq) === token) sent.delete(seq); };
