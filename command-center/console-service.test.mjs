@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync } from 'node:fs';
+import { Agent, request as httpRequest } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
@@ -253,4 +254,91 @@ test('/api/history returns every event of a story, beyond the 40 the snapshot ke
   assert.ok(events.some(event => event.detail === 'Observation 0'));
   assert.equal((await fetch(url + 'api/history?story=missing')).status, 404);
   assert.equal((await fetch(url + 'api/history?story=' + encodeURIComponent('../x'))).status, 400);
+});
+
+function streamPost(url, path, size, { agent = false, type = 'application/json' } = {}) {
+  return new Promise((resolve, reject) => {
+    const request = httpRequest(url + path, {
+      method: 'POST',
+      agent,
+      headers: { Origin: url.slice(0, -1), 'Content-Type': type, 'Content-Length': size },
+    }, response => {
+      const parts = [];
+      response.on('data', part => parts.push(part));
+      response.on('error', reject);
+      response.on('end', () => resolve({ status: response.statusCode, text: Buffer.concat(parts).toString('utf8'), reusedSocket: request.reusedSocket }));
+    });
+    request.on('error', reject);
+    const chunk = Buffer.alloc(65536, 0x61);
+    let sent = 0;
+    const pump = () => {
+      while (sent < size) {
+        const length = Math.min(chunk.length, size - sent);
+        sent += length;
+        if (!request.write(chunk.subarray(0, length))) {
+          request.once('drain', pump);
+          return;
+        }
+      }
+      request.end();
+    };
+    pump();
+  });
+}
+
+function getJson(url, path, agent) {
+  return new Promise((resolve, reject) => {
+    const request = httpRequest(url + path, { agent }, response => {
+      const parts = [];
+      response.on('data', part => parts.push(part));
+      response.on('error', reject);
+      response.on('end', () => resolve({ status: response.statusCode, reusedSocket: request.reusedSocket }));
+    });
+    request.on('error', reject);
+    request.end();
+  });
+}
+
+test('an oversized decision gets 413 on a fresh connection, not a reset', async t => {
+  const service = fixture(t);
+  service.createStory(base);
+  const { url, close } = await service.startServer(0);
+  t.after(close);
+  for (const size of [200 * 1000, 5 * 1000 * 1000, 5 * 1000 * 1000, 5 * 1000 * 1000]) {
+    const reply = await streamPost(url, 'api/decision', size);
+    assert.equal(reply.status, 413, 'size ' + size);
+    assert.deepEqual(JSON.parse(reply.text), { error: 'Decision exceeds 32 KiB.' });
+  }
+});
+
+test('an oversized screenshot gets 413 on a fresh connection, not a reset', async t => {
+  const service = fixture(t);
+  service.createStory(base);
+  const { url, close } = await service.startServer(0);
+  t.after(close);
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const reply = await streamPost(url, 'api/attachment?story=tl-1', 11 * 1024 * 1024, { type: 'image/png' });
+    assert.equal(reply.status, 413, 'attempt ' + attempt);
+    assert.deepEqual(JSON.parse(reply.text), { error: 'Screenshot exceeds 10 MiB.' });
+  }
+});
+
+test('after an oversized body the keep-alive connection is reused for the next request', async t => {
+  const service = fixture(t);
+  service.createStory(base);
+  const { url, close } = await service.startServer(0);
+  const agent = new Agent({ keepAlive: true, maxSockets: 1 });
+  t.after(async () => {
+    agent.destroy();
+    await close();
+  });
+  await getJson(url, 'api/stories', agent);
+  for (let round = 0; round < 3; round += 1) {
+    const rejected = await streamPost(url, 'api/decision', 5 * 1000 * 1000, { agent });
+    assert.equal(rejected.status, 413, 'round ' + round);
+    assert.equal(rejected.reusedSocket, true, 'oversized post reused the socket in round ' + round);
+    const next = await getJson(url, 'api/stories', agent);
+    assert.equal(next.status, 200, 'round ' + round);
+    assert.equal(next.reusedSocket, true, 'follow-up reused the socket in round ' + round);
+  }
 });
