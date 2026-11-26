@@ -12,7 +12,7 @@ const initial = fix => ({
   handed: Array(DECISIONS).fill(0), sent: Array(DECISIONS).fill(false), batch: Array(DECISIONS).fill(false),
   procs: [],
   tails: Array(REPLACEMENTS + 1).fill(null).map((tail, session) => (session === 0 && fix.startRegistersTurn ? 0 : null)),
-  turns: [{ id: 0, session: 0, seqs: Array(DECISIONS).fill(false), adopted: false, recorded: true }],
+  turns: [{ id: 0, session: 0, seqs: Array(DECISIONS).fill(false), known: Boolean(fix.startRegistersTurn), recorded: true }],
 });
 
 const any = seqs => seqs.some(Boolean);
@@ -51,8 +51,7 @@ export function steps(state, fix) {
   }
   for (const proc of state.procs) {
     const at = state.procs.indexOf(proc);
-    const adoptedRunning = state.turns.some(turn => turn.adopted);
-    const ready = !proc.spawned && settledEntry(state, proc.waitsFor) && !(fix.waitsForAdoptedTurns && adoptedRunning);
+    const ready = !proc.spawned && settledEntry(state, proc.waitsFor) && !(fix.waitsForAdoptedTurns && state.turns.some(turn => turn.known));
     if (ready && fix.rechecksAssignment && proc.session !== state.assign) {
       step('Stale(' + proc.via + '#' + proc.id + ')', next => {
         next.procs.splice(at, 1);
@@ -67,7 +66,7 @@ export function steps(state, fix) {
     } else if (ready) {
       step('Spawn(' + proc.via + '#' + proc.id + ')', next => {
         next.procs[at].spawned = true;
-        next.turns.push({ id: proc.id, session: proc.session, seqs: proc.seqs, adopted: false, recorded: Boolean(fix.recordsAtSpawn) });
+        next.turns.push({ id: proc.id, session: proc.session, seqs: proc.seqs, known: true, recorded: Boolean(fix.recordsAtSpawn) });
         if (proc.session !== state.assign && state.assign !== null) next.resumedReleased = true;
         proc.seqs.forEach((seq, d) => {
           if (!seq) return;
@@ -106,7 +105,7 @@ export function steps(state, fix) {
       next.handed.fill(0);
       next.procs = [];
       next.tails.fill(null);
-      next.turns.forEach(turn => { turn.adopted = turn.recorded; });
+      next.turns.forEach(turn => { turn.known = turn.recorded; });
     });
   }
   return out;
@@ -114,6 +113,7 @@ export function steps(state, fix) {
 
 export const invariants = {
   OneTurnPerSession: state => new Set(state.turns.map(turn => turn.session)).size === state.turns.length,
+  OneTurnPerWorktree: state => state.turns.length <= 1,
   ReleasedSessionNeverResumed: state => !state.resumedReleased,
   NoDuplicateDelivery: state => state.handed.every(count => count <= 1),
 };

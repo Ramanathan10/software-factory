@@ -34,6 +34,11 @@ test('after a restart while a new turn settled, the turn was in no store for the
   assert.ok(result.trace.indexOf('Restart') > result.trace.findIndex(step => step.startsWith('Spawn')), result.trace.join(' → '));
 });
 
+test('without the wait on every running turn of the story, a replacement turn could run beside a released one', () => {
+  assert.equal(check(version(true, true, true, false), ['OneTurnPerWorktree']).invariant, 'OneTurnPerWorktree');
+  assert.equal(check(current, ['OneTurnPerWorktree']).invariant, undefined);
+});
+
 test('the code as it is rechecks the assignment before it resumes a session, and the model says so', () => {
   assert.equal(current.rechecksAssignment, true);
 });
