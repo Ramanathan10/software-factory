@@ -29,3 +29,4 @@ Each record explains one decision the code cannot show by itself. Code in this r
 | [0023](0023-a-decision-goes-to-the-worker-assigned-when-it-is-delivered.md) | A decision goes to the worker assigned when it is delivered |
 | [0024](0024-a-story-with-nobody-working-on-it-wakes-jarvis-once.md) | A story with nobody working on it wakes Jarvis once per idle spell, then asks the owner |
 | [0025](0025-the-azure-reader-validates-instead-of-escaping.md) | The Azure DevOps reader validates what it sends to `az` instead of escaping it |
+| [0026](0026-hawkeye-opens-the-pull-request.md) | Hawkeye opens the pull request |
