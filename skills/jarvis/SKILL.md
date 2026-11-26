@@ -73,8 +73,8 @@ When a worker ends its turn, read the console and check the evidence it recorded
 | 4. Required gates and mutation | `gates`, `mutation` | `handoff` with each gate's command and result; `return-to-build` on a failing gate; `return-to-testing` for surviving mutants |
 | 5. Adversarial review | `review` | `handoff` with the verdict; `return-to-build` with a verified finding; a `question` when the review reaches the profile's review round limit or otherwise escalates to the owner |
 | 6. Before and after | `comparison-choice`, `comparison` | The profile or the approved spec already decided this. Record `comparison-choice` with that answer instead of asking again, then `artifact` for each `before`, `after`, or `recording` (a text capture, such as command output, is registered as a `document` whose detail starts with BEFORE or AFTER, since those kinds take only images and video), and a `question` asking the owner to accept the comparison. Their acceptance is followed by `handoff`; a change they ask for is `return-to-build` with their comment. |
-| 7. Architecture diagram | `diagram` | When the profile or the spec asks for one: `diagram-start` with the scope from publishing, before the pull request opens, `artifact` of kind `diagram`, `handoff` |
-| 8. Pull request | `publishing`, `ci`, `merge`, `closed` | `pr-opened` with the URL; `activity` with `pipeline` for a required pipeline run; `pr-ready` for the reviewed head, and `pr-review-start` naming the threads when it is refused for unresolved threads; `pr-recheck` on a new head; `merged` |
+| 7. Architecture diagram | `diagram` | When the profile or the spec asks for one: the publisher records `diagram-start` with the scope as its first step, before the pull request opens; staff Rocket, whose `artifact` of kind `diagram` and `handoff` return the story to publishing, then restaff the publisher |
+| 8. Pull request | `publishing`, `ci`, `merge`, `closed` | Start Hawkeye's publisher (kickoff: run "Publishing" in phase 8 of the ai-sdlc skill), which records `return-to-build` on a merge conflict or a story-caused gate failure, `blocked` and a `question` when the gate fails on the default branch too, and `pr-opened` with the URL; `activity` with `pipeline` for a required pipeline run; `pr-ready` for the reviewed head, and `pr-review-start` naming the threads when it is refused for unresolved threads; `pr-recheck` on a new head; `merged` |
 | 8. PR review | `pr-review` | `pr-review-start` naming the new feedback, then start Hawkeye's worker; the worker records `question` per comment, the owner's `answer`, `activity` with the posted comment ids, `handoff` back to ci with the review keys it read as seen, or, when an answer asks for more, a reply on that item that it is going back to build and `return-to-build` with the keys it read as seen |
 | 9. Retro | `retro` | `retro-start` while the pull request is open; `handoff` with the lessons |
 
@@ -105,7 +105,7 @@ Use this persona map when coordinating. Accept a skill name or a role name as a 
 | Doctor Strange | Independent reviewer | `adversarial-code-review` |
 | Bruce Banner | Before-and-after verifier | `before-and-after` |
 | Rocket | Architecture diagram designer | `diagram-design` |
-| Hawkeye | Factory and PR watcher | Routes the owner's console decisions to workers; observes CI, merge status and review feedback; runs PR review |
+| Hawkeye | Factory and PR watcher | Opens the pull request; routes the owner's console decisions to workers; observes CI, merge status and review feedback; runs PR review |
 | Fury | Human approver | The owner makes the plan and workflow decisions |
 
 The console's own labels come from `roles.mjs`, beside the `console` file.

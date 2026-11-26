@@ -152,7 +152,7 @@ const idleReasons = {
   scout: 'no scout session active', gates: 'waiting for the deterministic gates', mutation: 'waiting for the mutation check', retro: 'waiting for the retro',
   planning: 'no planner session active', testing: 'no tester session active', red: 'waiting to verify red',
   building: 'no implementer session active', review: 'waiting for review to start', comparison: 'waiting for before-and-after capture',
-  diagram: 'waiting for the diagram', publishing: 'waiting on release pipeline before the PR opens',
+  diagram: 'waiting for the diagram', publishing: 'no publisher session active',
   ci: 'waiting on pipeline checks', merge: 'waiting on reviewer approval and merge', 'pr-review': 'waiting for the PR review worker',
 };
 const idleReason = story => idleReasons[story.phase] ?? 'no active worker';

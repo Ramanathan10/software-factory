@@ -97,6 +97,8 @@ If the ladder's first step says an approved part should not exist, return to pha
 
 Turn the valid red test green without weakening or deleting its assertion. If the test encodes the wrong contract, return to the test author or phase 1 rather than silently changing it. Run the focused tests, then the relevant broader tests.
 
+A story returned from publishing with a merge conflict starts by merging the remote default branch and resolving it.
+
 ## 4. Required gates and mutation testing
 
 Run every gate the profile requires for the repository, with the command the profile gives, before any model reviews the change. These checks give the same answer every time; model review does not replace them.
@@ -131,13 +133,25 @@ Run only when the spec says the PR description needs one. Read and follow the lo
 
 Fetch the remote and bring the story branch up to date with the current remote default branch, then rerun the gates the update affects. Create the pull request for the approved, reviewed change. The description links or contains the spec and includes the gate results from phase 4, the review verdict, the before-and-after comparison when captured, and the architecture diagram when drawn.
 
-Do not commit the before-and-after screenshots or recordings, or the diagram image, to the repository: they are evidence for the description, not part of the change. Attach them to the pull request through its host's own upload, which returns an address the description can show. Where the host accepts an upload only through its web page, as GitHub does, use a browser tool that is signed in to it; without one, give the comparison in words, open the pull request, and tell the owner which files to drop into the description and where they are. Never send them to any other file host. Evidence that is text, such as test or command output, goes into the description as text.
+Do not commit the before-and-after screenshots or recordings, or the diagram image, to the repository: they are evidence for the description, not part of the change. Attach them to the pull request through its host's own upload, which returns an address the description can show. Where the host accepts an upload only through its web page, as GitHub does, use a browser tool that is signed in to it; without one, give the comparison in words and list each registered before and after file's caption and local path in an Evidence section of the description, noting that the Command Center shows them. Do not ask the owner to attach them. Never send them to any other file host. Evidence that is text, such as test or command output, goes into the description as text.
 
 When the profile lists required pipelines, the pull request is not reported ready until each has succeeded on its current head. Report each run's result and link. For a pipeline that only triggers on the default branch, queue it on the story branch when the CI system allows; otherwise tell the owner it has not run.
 
 When the profile names Greptile as the review bot, read and follow the local `greploop` skill on that pull request. Under a story in the console, record each GrepLoop reply's node id in `activity` with `posted` as soon as the reply is confirmed, before resolving its thread, so Hawkeye does not take the reply for new feedback. If Greptile turns out not to be configured, report that limitation and continue; do not install an app or open another pull request.
 
 Before answering or acting on any pull request comment, read the profile's team rules again and follow what they say about review. On a later turn after that pull request is open, read the tail and the current head. The tail is the new comment, check, or review note. Earlier phases are already finished. A deployment comment, a stale failed check, a duplicate review-bot note, or a green-check notice ends the turn. Continue GrepLoop only when the tail is new Greptile feedback on the current head.
+
+### Publishing
+
+Run this when Jarvis starts the `publishing` phase. Hawkeye's worker runs it. This phase authorizes the push and `gh pr create`. Whoever starts the publisher first acks the pending `comparison-choice` event, before delivering decisions, so the publisher never gets a second turn after it releases.
+
+1. If a diagram is due, because the profile's `architectureDiagram` is `always` or the spec asks for one, and `story.diagram.completedAt` is not set: record `release-worker`, then `diagram-start` with the spec's scope, and end the turn. Jarvis staffs Rocket; Rocket's `handoff` returns the story to `publishing` and a new publisher starts. A diagram is drawn once per story.
+2. Find an existing pull request: `story.pr`, then `gh pr list --head <branch> --state open`.
+3. Run `git fetch origin` and `git merge origin/<default branch>`; never rebase. On a conflict run `git merge --abort`, record `release-worker`, then `return-to-build` naming the conflicting files and saying "merge origin/main and resolve these". End the turn.
+4. Rerun the profile's required gates. When one fails, rerun it on unchanged `origin/main`. If it passes there, the failure is the story's: record `release-worker`, then `return-to-build` with the output. If it fails there too, record a `question` with both results, then `blocked`; the worker stays assigned so the owner's answer reaches it. The store refuses a `question` once the story is blocked, so the order is fixed.
+5. Run `git push -u origin <branch>`; never force.
+6. With no pull request, run `gh pr create` with a body from the spec, the gate results, the review verdict, the diagram, an Evidence section, and `Closes #<n>` when the work item is an issue. With one, create nothing and leave its description unchanged.
+7. Record `release-worker`, then `pr-opened` with the URL, which is the existing one when there was one. End the turn.
 
 ### PR review
 
