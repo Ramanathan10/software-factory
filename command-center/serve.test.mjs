@@ -620,3 +620,98 @@ test('a manual start after the approved test worker was assigned carries only th
   assert.equal(story().worker.session, 'tester-2');
   assert.equal(recorder.store.history('tl-1').filter(event => event.type === 'activity' && /Starting an independent/.test(event.detail)).length, 1);
 });
+
+function carrying(t, session = 'worker-1') {
+  const directory = mkdtempSync(join(tmpdir(), 'factory-serve-'));
+  const dbPath = join(directory, 'stories.sqlite');
+  const turns = [];
+  const send = async (message, options) => {
+    let end;
+    const ended = new Promise(resolve => { end = resolve; });
+    const turn = { session: message.session, end, pid: 91000 + turns.length };
+    turns.push(turn);
+    options.onTurn({ session: message.session, pid: turn.pid, log: join(directory, 'turn-' + turns.length + '.log'), ended });
+  };
+  const adapters = loadAdapters({ Codex: { workers: 'command-line' } }, send);
+  const waitFor = async (what, check) => {
+    for (let waited = 0; !check(); waited += 20) {
+      if (waited > 8000) throw new Error('Timed out waiting for ' + what + '.');
+      await new Promise(resolve => setTimeout(resolve, 20));
+    }
+  };
+  return { directory, dbPath, turns, adapters, waitFor, session };
+}
+
+async function carried(t, session = 'worker-1') {
+  const rig = carrying(t, session);
+  const center = await start({ port: 0, dbPath: rig.dbPath, adapters: rig.adapters, launch: async () => ({ session: 'jarvis-1' }), quietMs: 60000 });
+  const recorder = createConsoleService({ dbPath: rig.dbPath });
+  t.after(async () => {
+    recorder.close();
+    await center.close();
+    rmSync(rig.directory, { recursive: true, force: true });
+  });
+  recorder.createStory({ story: 'tl-1', title: 'Add export', detail: 'Export rows.', branch: 'tl-1', harness: 'Codex', worktree: '/work/tl-1' });
+  recorder.recordEvent({ story: 'tl-1', type: 'assign-worker', session });
+  recorder.recordEvent({ story: 'tl-1', type: 'question', question: 'scope', prompt: 'Which rows?', options: ['All', 'Selected'], recommended: 0 });
+  const port = Number(new URL(center.url).port);
+  const ended = count => recorder.store.history('tl-1').filter(event => event.type === 'turn-ended').length >= count;
+  return { ...rig, recorder, port, ended, deliver: () => requestDelivery('tl-1', port) };
+}
+
+for (const code of [1, 0]) {
+  test('a worker turn that ended with ' + code + ' without acknowledging its answer is handed the answer again by deliver, once', async t => {
+    const run = await carried(t);
+    const answer = run.recorder.recordEvent({ story: 'tl-1', type: 'answer', question: 'scope', answer: 1 });
+    assert.deepEqual(await run.deliver(), { story: 'tl-1', seqs: [answer.seq], told: 'worker' });
+    assert.deepEqual((await run.deliver()).seqs, [], 'the turn carrying the answer is still running');
+    assert.equal(run.turns.length, 1);
+    run.turns[0].end(code);
+    await run.waitFor('the end of the turn to be recorded', () => run.ended(1));
+    assert.deepEqual(await run.deliver(), { story: 'tl-1', seqs: [answer.seq], told: 'worker' });
+    assert.deepEqual(run.turns.map(turn => turn.session), ['worker-1', 'worker-1']);
+    assert.deepEqual((await run.deliver()).seqs, [], 'the second turn is still running');
+    run.recorder.ack(answer.seq);
+    run.turns[1].end(0);
+    await run.waitFor('the end of the second turn to be recorded', () => run.ended(2));
+    assert.deepEqual((await run.deliver()).seqs, [], 'an acknowledged answer is finished');
+    assert.equal(run.turns.length, 2);
+  });
+}
+
+test('an answer whose turn failed after its worker released goes to the replacement assigned when the turn has ended, not before', async t => {
+  const run = await carried(t);
+  const answer = run.recorder.recordEvent({ story: 'tl-1', type: 'answer', question: 'scope', answer: 1 });
+  await run.deliver();
+  run.recorder.recordEvent({ story: 'tl-1', type: 'release-worker', assignment: run.recorder.snapshot()[0].worker.id, detail: 'Stopped.' });
+  run.recorder.recordEvent({ story: 'tl-1', type: 'assign-worker', session: 'worker-2' });
+  assert.deepEqual((await run.deliver()).seqs, [], 'the released worker\'s turn still carries the answer');
+  run.turns[0].end(1);
+  await new Promise(resolve => setTimeout(resolve, 100));
+  assert.deepEqual(await run.deliver(), { story: 'tl-1', seqs: [answer.seq], told: 'worker' });
+  assert.deepEqual(run.turns.map(turn => turn.session), ['worker-1', 'worker-2']);
+});
+
+test('an approval whose test author kickoff ends without acknowledging it is handed to that test author again by deliver', async t => {
+  const rig = carrying(t);
+  const ends = [];
+  const fixture = approvedFixture(t);
+  const launch = async (input, options) => {
+    let end;
+    const ended = new Promise(resolve => { end = resolve; });
+    ends.push(end);
+    options.onTurn({ session: 'test-author', pid: 92000, log: join(fixture.directory, 'kickoff.log'), ended });
+    return { session: 'test-author' };
+  };
+  const center = await fixture.start({ launch, adapters: rig.adapters });
+  const port = Number(new URL(center.url).port);
+  const approval = fixture.recorder.recordEvent({ story: 'tl-1', type: 'approve' });
+  await requestDelivery('tl-1', port);
+  await rig.waitFor('the test author to be assigned', () => fixture.story().worker);
+  assert.deepEqual([ends.length, rig.turns.length], [1, 0]);
+  assert.deepEqual((await requestDelivery('tl-1', port)).seqs, [], 'the kickoff turn is still running');
+  ends[0](1);
+  await rig.waitFor('the end of the kickoff to be recorded', () => fixture.recorder.store.history('tl-1').some(event => event.type === 'turn-ended'));
+  assert.deepEqual(await requestDelivery('tl-1', port), { story: 'tl-1', seqs: [approval.seq], told: 'worker' });
+  assert.deepEqual([ends.length, rig.turns.map(turn => turn.session)], [1, ['test-author']], 'the test author was resumed, and no second one was started');
+});
