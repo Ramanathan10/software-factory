@@ -17,6 +17,7 @@ const inline = (text, el) => {
   return out;
 };
 
+const headingLine = /^\s*(#{1,6})\s+(.*?)\s*#*\s*$/;
 const listItem = /^(\s*)([-*+]|\d+[.)])\s+(.*)$/;
 const cells = line => line.trim().replace(/^\||\|$/g, '').split('|').map(cell => cell.trim());
 
@@ -61,7 +62,7 @@ export function renderMarkdown(text, el) {
       i++;
       continue;
     }
-    const heading = line.match(/^(#{1,6})\s+(.*?)\s*#*$/);
+    const heading = line.match(headingLine);
     if (heading) { blocks.push(el('h' + Math.min(6, heading[1].length + 2), {}, ...inline(heading[2], el))); i++; continue; }
     if (/^\s*([-*_])(\s*\1){2,}\s*$/.test(line)) { blocks.push(el('hr')); i++; continue; }
     if (line.includes('|') && /^\s*\|?\s*:?-{2,}/.test(lines[i + 1] ?? '') && lines[i + 1].includes('-')) {
@@ -80,8 +81,8 @@ export function renderMarkdown(text, el) {
       blocks.push(el('blockquote', {}, ...renderMarkdown(quote.join('\n'), el)));
       continue;
     }
-    const para = [];
-    for (; i < lines.length && lines[i].trim() && !listItem.test(lines[i]) && !/^\s*(#{1,6}\s|```|~~~|>)/.test(lines[i]); i++) para.push(lines[i].trim());
+    const para = [line.trim()];
+    for (i++; i < lines.length && lines[i].trim() && !listItem.test(lines[i]) && !headingLine.test(lines[i]) && !/^\s*(```|~~~|>)/.test(lines[i]); i++) para.push(lines[i].trim());
     blocks.push(el('p', {}, ...inline(para.join(' '), el)));
   }
   return blocks;
