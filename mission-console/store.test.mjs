@@ -940,3 +940,89 @@ test('a review read failure during PR review records nothing and only warns', as
   assert.equal(warnings, 1, 'Hawkeye warns about a story it watches in pr-review');
   assert.equal(store.handover('unread').story.revision, before);
 });
+
+function toPublishing(store, story) {
+  start(store, story);
+  const record = writer(store, story);
+  toGreen(record);
+  record('handoff', { detail: 'Gates passed.', command: 'node --test' });
+  record('handoff', { detail: 'No survivors.', command: 'npx stryker run' });
+  record('handoff', { detail: 'Reviewed.' });
+  record('comparison-choice', { run: false });
+  assert.equal(store.handover(story).story.phase, 'publishing');
+  return record;
+}
+
+test('a worker can be assigned in publishing as Hawkeye and records its work there', t => {
+  const store = fixture(t)();
+  const record = toPublishing(store, 'pub-worker');
+  record('assign-worker', { session: 'publisher-session' });
+  const { worker } = store.handover('pub-worker').story;
+  assert.equal(worker.role, 'watcher');
+  assert.equal(worker.session, 'publisher-session');
+  record('activity', { detail: 'Merged origin/main and reran the gates.' });
+  record('artifact', { kind: 'diagram', path: join(tmpdir(), 'publish-diagram.md'), detail: 'Publishing exits.' });
+  record('release-worker', { detail: 'Pull request opened.' });
+  assert.equal(store.handover('pub-worker').story.worker, undefined);
+});
+
+test('return-to-build is accepted from publishing and refused from ci, merge and building', t => {
+  const store = fixture(t)();
+  const record = toPublishing(store, 'pub-back');
+  record('return-to-build', { detail: 'Merging origin/main conflicts in greet.mjs: merge origin/main and resolve these.' });
+  assert.equal(store.handover('pub-back').story.phase, 'building');
+  assert.throws(() => record('return-to-build', { detail: 'Again.' }), error => error.status === 409 && /Return to build from review, the deterministic gates, the comparison, publishing, or PR review\./.test(error.message));
+  const open = toCi(store, 'pub-ci');
+  assert.equal(store.handover('pub-ci').story.phase, 'ci');
+  assert.throws(() => open('return-to-build', { detail: 'From ci.' }), error => error.status === 409);
+  open('pr-ready', { head: 'c'.repeat(40), detail: 'Checks and review passed.' });
+  assert.equal(store.handover('pub-ci').story.phase, 'merge');
+  assert.throws(() => open('return-to-build', { detail: 'From merge.' }), error => error.status === 409);
+});
+
+test('pr-opened is refused while a publisher is assigned and accepted after it releases', t => {
+  const store = fixture(t)();
+  const record = toPublishing(store, 'pub-open');
+  record('assign-worker', { session: 'publisher-session' });
+  assert.throws(() => record('pr-opened', { url: REVIEW_PR }), error => error.status === 409);
+  assert.equal(store.handover('pub-open').story.phase, 'publishing');
+  record('release-worker', { detail: 'Pushed and opened.' });
+  record('pr-opened', { url: REVIEW_PR });
+  assert.equal(store.handover('pub-open').story.phase, 'ci');
+});
+
+test('a second pass through publishing accepts the same pull request URL and refuses another', t => {
+  const store = fixture(t)();
+  const record = toCi(store, 'pub-twice');
+  record('pr-review-start', { detail: 'One comment asks for a larger change.' });
+  record('return-to-build', { detail: 'The owner asked for a larger change.' });
+  record('handoff', { detail: 'Verified green.', command: 'npm test' });
+  record('handoff', { detail: 'Gates pass.', command: 'node --test' });
+  record('handoff', { detail: 'No survivors.', command: 'npx stryker run' });
+  record('handoff', { detail: 'Reviewed.' });
+  record('comparison-choice', { run: false });
+  assert.equal(store.handover('pub-twice').story.phase, 'publishing');
+  record('assign-worker', { session: 'second-publisher' });
+  assert.equal(store.handover('pub-twice').story.worker.role, 'watcher');
+  record('release-worker', { detail: 'Pushed to the open pull request.' });
+  assert.throws(() => record('pr-opened', { url: 'https://github.com/acme/widgets/pull/99' }), error => error.status === 409);
+  record('pr-opened', { url: REVIEW_PR });
+  assert.equal(store.handover('pub-twice').story.phase, 'ci');
+});
+
+test('a publisher releases, starts diagram work, and a new publisher is assigned when the diagram returns', t => {
+  const store = fixture(t)();
+  const record = toPublishing(store, 'pub-diagram');
+  record('assign-worker', { session: 'publisher-session' });
+  assert.throws(() => record('diagram-start', { detail: 'Show the exits.' }), error => error.status === 409);
+  record('release-worker', { detail: 'A diagram is due.' });
+  record('diagram-start', { detail: 'Show the exits.' });
+  assert.equal(store.handover('pub-diagram').story.phase, 'diagram');
+  record('assign-worker', { session: 'rocket-session' });
+  assert.equal(store.handover('pub-diagram').story.worker.role, 'diagrammer');
+  record('release-worker', { detail: 'Diagram drawn.' });
+  record('handoff', { detail: 'Diagram done.' });
+  assert.equal(store.handover('pub-diagram').story.phase, 'publishing');
+  record('assign-worker', { session: 'publisher-again' });
+  assert.equal(store.handover('pub-diagram').story.worker.role, 'watcher');
+});

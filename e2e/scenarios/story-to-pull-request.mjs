@@ -131,8 +131,14 @@ function playbook(rig) {
     { role: 'reviewer', phase: 'review', turn: 'first', steps: [
       ...handoff('E2E review: no findings.'),
       { record: { type: 'comparison-choice', run: false, detail: 'The profile says never.' } },
+    ] },
+    { role: 'watcher', phase: 'publishing', turn: 'first', steps: [
+      { run: ['git', 'fetch', '-q', 'origin'] },
+      { run: ['git', 'merge', '-q', '--no-edit', 'origin/main'] },
+      { run: ['node', '--test'] },
       { run: ['git', 'push', '-q', '-u', 'origin', branch] },
       { run: rig.gh('pr', 'create', '--base', 'main', '--head', branch, '--title', heading, '--body', 'Spec: ' + spec + '\n\nGates: node --test passed.'), save: 'pr' },
+      { record: { type: 'release-worker', detail: 'Pull request opened; the publisher is idle.' } },
       { record: { type: 'pr-opened', url: '{{pr}}', detail: 'Pull request opened.' } },
     ] },
     { role: 'watcher', phase: 'ci', turn: 'first', steps: [{ record: { type: 'activity', detail: 'E2E watching the pull request checks.' } }] },
@@ -217,6 +223,12 @@ export async function run(rig) {
     expect(firsts.every((at, n) => !n || at > firsts[n - 1]), 'The phases ran out of order: ' + visited.join(' > ') + '.');
     const unacknowledged = rig.history(story).filter(item => ['answer', 'approve'].includes(item.type) && !rig.acknowledged(story, item.seq));
     expect(!unacknowledged.length, 'No worker acknowledged ' + unacknowledged.map(item => item.type + ' (seq ' + item.seq + ')').join(', ') + '.');
+  });
+
+  await rig.step('exactly one publisher turn ran, and it ran as Hawkeye in publishing', () => {
+    const turns = rig.history(story).filter(item => item.type === 'turn-started' && item.phase === 'publishing');
+    expect(turns.length === 1, 'Expected one worker turn in publishing, found ' + turns.length + '.');
+    expect(rig.snapshot(story).pr, 'The story has no pull request.');
   });
 
   const pull = await rig.step('one pull request is open from the story branch into main, and its description carries the spec and the gate results', () => {

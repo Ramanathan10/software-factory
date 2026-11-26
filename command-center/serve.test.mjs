@@ -486,3 +486,20 @@ test('a manual start after the approved test worker was assigned carries only th
   assert.equal(story().worker.session, 'tester-2');
   assert.equal(recorder.store.history('tl-1').filter(event => event.type === 'activity' && /Starting an independent/.test(event.detail)).length, 1);
 });
+
+test('a story in publishing gets a worker from a manual start, assigned as Hawkeye and launched in the publishing phase', async t => {
+  const { start: open, recorder, story } = approvedFixture(t, 'Claude Code');
+  recorder.recordEvent({ story: 'tl-1', type: 'approve' });
+  for (const [type, extra] of [['handoff', {}], ['handoff', { command: 'node --test' }], ['handoff', { command: 'node --test' }], ['handoff', { command: 'node --test' }],
+    ['handoff', { command: 'none: no mutation gate' }], ['handoff', {}], ['comparison-choice', { run: false }]]) {
+    recorder.recordEvent({ story: 'tl-1', type, detail: 'Phase work done.', ...extra });
+  }
+  for (const event of recorder.pending()) recorder.ack(event.seq);
+  assert.equal(story().phase, 'publishing');
+  const launched = [];
+  const center = await open({ launch: async input => { launched.push(input); return { session: 'publisher-1' }; } });
+  await requestStart('tl-1', 'Run Publishing in phase 8 of ai-sdlc.', Number(new URL(center.url).port));
+  assert.deepEqual([launched.length, launched[0].phase, launched[0].worktree], [1, 'publishing', story().worktree]);
+  assert.equal(story().worker.role, 'watcher');
+  assert.equal(story().worker.session, 'publisher-1');
+});

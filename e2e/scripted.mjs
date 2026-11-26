@@ -84,6 +84,7 @@ async function coordinate() {
   }
   const { story, pending } = read();
   if (!story.worker && workerPhases.has(story.phase) && story.questions.every(question => question.answer)) {
+    if (story.phase === 'publishing') for (const event of pending) if (event.type === 'comparison-choice') ack(event.seq);
     serve('start', book.next);
     if (story.pendingDecision) serve('deliver');
   }
