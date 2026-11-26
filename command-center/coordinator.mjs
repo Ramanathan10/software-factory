@@ -2,10 +2,13 @@ import { readFileSync } from 'node:fs';
 import { uptime } from 'node:os';
 import { row } from '../adapters/harnesses.mjs';
 import { harnessKey, phases } from '../mission-console/roles.mjs';
+import { workerPhases } from '../mission-console/store.mjs';
 import { isAlive } from './supervisor.mjs';
 
 const decisions = new Set(['answer', 'approve', 'plan-feedback', 'comparison-choice', 'request-cleanup']);
 const notice = 'action-jarvis-';
+const noNewsTurn = 'No-news turn. ';
+const intakeGrace = 12;
 const choices = ['Done - Jarvis can run again', 'Hold - not now'];
 const reasons = {
   'turn-ended': 'a worker turn needs a look',
@@ -39,6 +42,8 @@ export function createCoordinator({ service, launch, adapters, kickoff, busy = (
   const waking = new Set();
   const owned = new Set();
   const wakes = new Set();
+  const unattended = new Set();
+  const owed = new Set();
   let stopped = false;
   const find = id => service.snapshot().find(story => story.id === id);
 
@@ -67,16 +72,31 @@ export function createCoordinator({ service, launch, adapters, kickoff, busy = (
     return news;
   }
 
-  const unhandled = (story, news) => news.filter(event => event.seq > (story.jarvis?.handled ?? 0));
+  const unhandled = (story, news) => news.filter(event => event.seq > (story.jarvis?.handled ?? 0) || owed.has(event.seq));
 
-  function ask(id, seq, what) {
+  function ask(id, seq, what, prompt) {
     const text = what.replace(/[\s.]+$/, '').slice(0, 2000);
     try {
       record({ story: id, type: 'question', question: notice + seq, by: 'jarvis', recommended: 0, options: choices,
-        prompt: 'Action for you: Jarvis could not run for ' + id + ': ' + text + '. Then choose Done.' });
+        prompt: prompt ?? 'Action for you: Jarvis could not run for ' + id + ': ' + text + '. Then choose Done.' });
     } catch (error) {
       log('The Jarvis failure on ' + id + ' could not be put to the owner (' + error.message + ').');
     }
+  }
+
+  const unstaffed = (story, pending) => commandLine(story) && workerPhases.has(story.phase) && story.phase !== 'ci' && !story.worker && !story.blocked &&
+    !story.cleanup && !waking.has(story.id) && !story.jarvis?.turn && !story.jarvis?.waking && !busy(story.id) &&
+    story.questions.every(question => question.answer) && !pending.some(event => event.story === story.id && event.type === 'approve');
+
+  function stuck(story) {
+    const history = service.store.history(story.id).sort((a, b) => a.seq - b.seq);
+    const own = event => event.by === 'jarvis' || event.type.startsWith('jarvis-') || answered(story, event);
+    const since = history.slice(history.findLastIndex(event => !own(event)) + 1);
+    if (since.some(event => held(story, event))) return;
+    const attended = since.some(event => event.type === 'jarvis-turn-ended' && event.detail?.startsWith(noNewsTurn));
+    if (!attended) return wake(story, []);
+    ask(story.id, history.at(-1).seq, '', 'Action for you: nobody is working on ' + story.id + ' in ' + story.phase +
+      ", and Jarvis's turn did not staff it. Start a worker or tell Jarvis what to do, then choose Done.");
   }
 
   function told(story, text, fallback) {
@@ -88,7 +108,7 @@ export function createCoordinator({ service, launch, adapters, kickoff, busy = (
   function end(id, outcome, code, detail, what) {
     let ended;
     try {
-      ended = record({ story: id, type: 'jarvis-turn-ended', outcome, code, detail });
+      ended = record({ story: id, type: 'jarvis-turn-ended', outcome, code, detail: (unattended.delete(id) ? noNewsTurn : '') + detail });
     } catch (error) {
       log('The end of a Jarvis turn on ' + id + ' could not be recorded (' + error.message + ').');
       return;
@@ -142,7 +162,9 @@ export function createCoordinator({ service, launch, adapters, kickoff, busy = (
     const id = story.id;
     waking.add(id);
     try {
-      record({ story: id, type: 'jarvis-woken', handled: Math.max(...news.map(event => event.seq)) });
+      if (!news.length) unattended.add(id);
+      record({ story: id, type: 'jarvis-woken', handled: news.length ? Math.max(...news.map(event => event.seq)) : story.jarvis?.handled ?? 0 });
+      for (const event of news) owed.delete(event.seq);
       const prompt = kickoff(story, news);
       let tracked = false;
       const onTurn = ({ session, pid, log: file, ended }) => {
@@ -170,6 +192,7 @@ export function createCoordinator({ service, launch, adapters, kickoff, busy = (
           told(story, message, 'Jarvis stopped with an error: ' + message.replace(/\s*\n\s*/g, ' ')));
       }
     } catch (error) {
+      unattended.delete(id);
       log('Jarvis could not be woken for ' + id + ' (' + error.message + ').');
     } finally {
       waking.delete(id);
@@ -215,11 +238,17 @@ export function createCoordinator({ service, launch, adapters, kickoff, busy = (
       }
       for (const story of service.snapshot()) {
         const news = needs(story, pending);
-        if (!unhandled(story, news).length || Date.now() - Date.parse(story.updatedAt) < quietMs) continue;
-        const pendingWake = wake(story, news);
+        const intake = story.phase === 'scout' && !news.length && !service.store.history(story.id).some(event => event.type === 'assign-worker');
+        if (Date.now() - Date.parse(story.updatedAt) < (intake ? quietMs * intakeGrace : quietMs)) continue;
+        if (!unhandled(story, news).length && !unstaffed(story, pending)) continue;
+        const pendingWake = unhandled(story, news).length ? wake(story, news) : stuck(story);
+        if (!pendingWake) continue;
         wakes.add(pendingWake);
         pendingWake.finally(() => wakes.delete(pendingWake));
       }
+    },
+    owe(id, seqs) {
+      for (const seq of seqs) owed.add(seq);
     },
     nudge() {
       setImmediate(safely);

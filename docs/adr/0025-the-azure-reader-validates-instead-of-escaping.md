@@ -1,4 +1,4 @@
-# 0023. The Azure DevOps reader validates what it sends to `az` instead of escaping it
+# 0025. The Azure DevOps reader validates what it sends to `az` instead of escaping it
 
 Status: Accepted
 Date: 2026-11-26
