@@ -1,0 +1,145 @@
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { test } from 'node:test';
+
+const read = file => readFileSync(new URL(file, import.meta.url), 'utf8');
+const html = read('./ui/index.html');
+const css = read('./ui/app.css');
+const js = read('./ui/app.js');
+
+const between = (text, open, close) => {
+  const start = text.indexOf(open);
+  assert.ok(start >= 0, `${open} is missing`);
+  const end = text.indexOf(close, start);
+  assert.ok(end > start, `${close} is missing after ${open}`);
+  return text.slice(start, end + close.length);
+};
+
+const header = between(html, '<header class="bar">', '</header>');
+const boardWrap = between(html, '<section class="board-wrap">', '</section>');
+const tablist = '<div class="views" role="tablist" aria-label="Layout">';
+const views = ['lanes', 'agents', 'track', 'archive'];
+const baseCss = css.slice(0, css.indexOf('@media (max-width: 1100px)'));
+const narrowCss = between(css, '@media (max-width: 1100px)', '\n}');
+
+const declarations = (scope, selector) => {
+  const found = {};
+  for (const [, selectors, body] of scope.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+    if (!selectors.split(',').map(each => each.trim()).includes(selector)) continue;
+    for (const [, name, value] of body.matchAll(/([\w-]+)\s*:\s*([^;]+)/g)) found[name] = value.trim();
+  }
+  return found;
+};
+
+const headerRule = (scope, name) => ({ ...declarations(scope, name), ...declarations(scope, `.bar ${name}`) });
+
+const rightGroup = () => {
+  const match = header.match(/<(\w+) class="([\w-]+)"[^>]*>\s*<div class="stats">/);
+  assert.ok(match, 'the stats, Notify me and the clock must sit in one wrapper element with its own class');
+  return { className: match[2], html: header.slice(match.index), start: match.index };
+};
+
+test('the tablist sits in the header with its four tabs in order', () => {
+  assert.ok(header.includes(tablist), 'tablist with aria-label Layout is not in header.bar');
+  const tabs = [...between(header, tablist, '</div>').matchAll(/<button type="button" role="tab" data-view="(\w+)" title="([^"]+)">(\w+)<\/button>/g)];
+  assert.deepEqual(tabs.map(tab => tab[1]), views);
+  assert.deepEqual(tabs.map(tab => tab[3]), ['Lanes', 'Agents', 'Track', 'Archive']);
+  assert.deepEqual(tabs.map(tab => tab[2]), ['Columns per stage', 'One row per agent', 'One row per story with its stage progress', 'Shipped stories, and clearing them']);
+});
+
+test('the header holds brand, tabs, picker, chip, then the stats, in that order', () => {
+  const order = ['<div class="brand">', tablist, 'id="repo-filter"', 'id="filter"', '<div class="stats">'].map(marker => header.indexOf(marker));
+  assert.ok(order.every(index => index >= 0), `a header part is missing: ${order}`);
+  assert.deepEqual(order, [...order].sort((a, b) => a - b));
+});
+
+test('the picker and the chip keep their ids, classes, labels and hidden state', () => {
+  assert.ok(header.includes('<select class="repo-filter" id="repo-filter" aria-label="Repository" title="Show one repository\'s stories" hidden></select>'));
+  assert.ok(header.includes('<div class="filter" id="filter" hidden></div>'));
+});
+
+test('the picker and the chip sit together with the tabs in one toolbar in the header', () => {
+  const toolbar = between(header, '<div class="toolbar">', '<div class="filter" id="filter" hidden></div>');
+  assert.ok(toolbar.includes(tablist));
+  assert.ok(toolbar.includes('id="repo-filter"'));
+});
+
+test('the main pane holds no toolbar, tabs, picker or chip', () => {
+  for (const gone of ['toolbar', 'class="views"', 'role="tablist"', 'role="tab"', 'repo-filter', 'id="filter"', 'aria-label="Layout"', 'aria-label="Repository"']) {
+    assert.ok(!boardWrap.includes(gone), `board-wrap still contains ${gone}`);
+  }
+});
+
+test('the main pane keeps the decisions banner before the board, then the empty note', () => {
+  const order = ['id="decisions"', 'id="board"', 'id="empty"'].map(marker => boardWrap.indexOf(marker));
+  assert.ok(order.every(index => index >= 0));
+  assert.deepEqual(order, [...order].sort((a, b) => a - b));
+});
+
+test('the stats, Notify me and the clock sit in one right-hand group after the toolbar', () => {
+  const group = rightGroup();
+  assert.ok(header.indexOf('id="filter"') < group.start);
+  assert.ok(group.html.includes('<div class="stats">'));
+  assert.ok(group.html.includes('id="notify"'));
+  assert.ok(group.html.includes('id="clock"'));
+  assert.ok(group.html.indexOf('id="notify"') < group.html.indexOf('id="clock"'));
+});
+
+test('the stats, Notify me and the clock keep their ids, classes and titles', () => {
+  for (const kept of [
+    '<strong id="stat-active">', '<strong id="stat-agents">',
+    '<button type="button" class="warn" id="stat-waiting-button" title="Open your inbox">',
+    '<button type="button" id="stat-shipped-button" title="Open the archive">',
+    '<button type="button" class="link" id="notify" title="Show a desktop notification when a story starts waiting on you" hidden>Notify me</button>',
+    '<time id="clock"></time>',
+  ]) assert.ok(header.includes(kept), `${kept} is missing from the header`);
+});
+
+test('app.js still finds the moved controls by class and id', () => {
+  assert.ok(js.includes("document.querySelectorAll('.views button')"));
+  assert.ok(js.includes("$('filter')"));
+  assert.ok(js.includes("$('repo-filter')"));
+});
+
+test('the header wraps with a 10px row gap and a 16px column gap', () => {
+  const bar = declarations(baseCss, '.bar');
+  assert.equal(bar['flex-wrap'], 'wrap');
+  assert.equal(bar.gap, '10px 16px');
+});
+
+test('the header toolbar shrinks to its content and breaks only inside itself', () => {
+  const toolbar = headerRule(baseCss, '.toolbar');
+  assert.equal(toolbar.flex, '0 1 auto');
+  assert.equal(toolbar['min-width'], '0');
+  assert.equal(toolbar['flex-wrap'], 'wrap');
+  assert.equal(toolbar.gap, '8px');
+});
+
+test('the four tabs stay one control that never breaks', () => {
+  const viewsRule = declarations(baseCss, '.views');
+  assert.equal(viewsRule.display, 'inline-flex');
+  assert.ok(!/wrap/.test(viewsRule['flex-wrap'] ?? ''));
+});
+
+test('the right-hand group pushes right, with a 16px gap', () => {
+  const group = declarations(baseCss, `.${rightGroup().className}`);
+  assert.equal(group['margin-left'], 'auto');
+  assert.equal(group.display, 'flex');
+  assert.equal(group.gap, '16px');
+});
+
+test('the stats keep a 14px gap and no margin of their own', () => {
+  const stats = declarations(baseCss, '.stats');
+  assert.equal(stats.gap, '14px');
+  assert.equal(stats['margin-left'], undefined);
+});
+
+test('the picker is capped at 170px', () => {
+  assert.equal(declarations(baseCss, '.repo-filter')['max-width'], '170px');
+});
+
+test('the 1100px rule still hides the clock and tightens the stats', () => {
+  assert.equal(declarations(narrowCss, '#clock').display, 'none');
+  assert.equal(declarations(narrowCss, '.stats').gap, '14px');
+  assert.equal(declarations(narrowCss, '.stats span')['font-size'], '11px');
+});
