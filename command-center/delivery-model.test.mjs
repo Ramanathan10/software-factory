@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { check, current } from './delivery-model.mjs';
+import { check, current, invariants } from './delivery-model.mjs';
 
 const version = (filterSent, handReserves, startRegistersTurn, waitsForAdoptedTurns, recordsAtSpawn = true, rechecksAssignment = true) => ({ filterSent, handReserves, startRegistersTurn, waitsForAdoptedTurns, recordsAtSpawn, rechecksAssignment });
 const skill = readFileSync(new URL('../.claude/skills/verify-decision-delivery/SKILL.md', import.meta.url), 'utf8');
@@ -58,14 +58,44 @@ test('at 88b9cce a decision could be lost: handed to a session nobody reads and 
   assert.ok(result.trace.some(step => step.startsWith('Release')), result.trace.join(' → '));
 });
 
+const resumeInvariants = ['OneTurnPerSession', 'OneTurnPerWorktree', 'ReleasedSessionNeverResumed', 'NoDuplicateDelivery'];
+
 test('with the assignment rechecked, no released session is resumed and no decision is lost, in every order of release and assignment', () => {
-  const result = check(version(true, true, true, true, true, true));
+  const result = check(version(true, true, true, true, true, true), resumeInvariants);
   assert.deepEqual([result.invariant, result.lost, result.stuck], [undefined, undefined, undefined], JSON.stringify(result));
   assert.ok(result.states > 1000, JSON.stringify(result));
+});
+
+test('the code as it is releases the decisions a turn carried when the turn ends, and the model says so', () => {
+  assert.equal(current.releasesAtTurnEnd, true);
+});
+
+test('a decision that is pending, carried by no running turn or unresolved hand, with a worker assigned and still in sent, is a state the model forbids', () => {
+  assert.ok(Object.keys(invariants).includes('NeverBlocked'), 'NeverBlocked is not one of the invariants');
+  assert.equal(check(current, ['NeverBlocked']).invariant, undefined);
+  assert.ok(check(current).states > 1000);
+});
+
+test('without the release at turn end, a decision is left in sent after its turn failed, and the model reaches that state', () => {
+  assert.ok(Object.keys(invariants).includes('NeverBlocked'), 'NeverBlocked is not one of the invariants');
+  const result = check({ ...current, releasesAtTurnEnd: false }, ['NeverBlocked']);
+  assert.equal(result.invariant, 'NeverBlocked');
+  for (const step of ['Settled', 'TurnEnd']) assert.ok(result.trace.some(label => label.startsWith(step)), step + ' is not in the trace: ' + result.trace.join(' → '));
 });
 
 test('the verify-decision-delivery skill lists the Release and Assign steps and every flag in current', () => {
   for (const flag of Object.keys(current)) assert.ok(skill.includes('`' + flag + '`'), flag + ' is not in the skill');
   for (const step of ['Release', 'Assign']) assert.match(skill, new RegExp('[|] *`' + step + '` *[|]'), step + ' is not in the skill\'s table of steps');
   assert.match(skill, /ReleasedSessionNeverResumed/);
+  assert.match(skill, /NeverBlocked/);
+  assert.match(skill, /[|] *`TurnEnd` *[|][^\n]*sent/);
+  assert.doesNotMatch(skill, /issue #49/);
+});
+
+test('hand keeps only decisions still pending, so none is reserved after it was acknowledged', () => {
+  assert.equal(current.handsOnlyPending, true);
+  assert.equal(check(current, ['NoReserveAfterAck']).invariant, undefined);
+  const result = check({ ...current, handsOnlyPending: false }, ['NoReserveAfterAck']);
+  assert.equal(result.invariant, 'NoReserveAfterAck');
+  for (const step of ['Ack', 'BatchFire']) assert.ok(result.trace.some(label => label.startsWith(step)), step + ' is not in the trace: ' + result.trace.join(' → '));
 });

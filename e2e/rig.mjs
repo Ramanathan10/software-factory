@@ -116,6 +116,8 @@ export async function openRig({ entry, turnMs, tally, profile: overrides = {} })
       : resolve(JSON.parse(out)))));
   };
 
+  const failedAllowed = new Map();
+
   const rig = {
     harness: entry.name,
     root, home, db, env, profile, github, turnMs,
@@ -138,6 +140,7 @@ export async function openRig({ entry, turnMs, tally, profile: overrides = {} })
     acknowledged: (story, seq) => !store.pendingFor(story).some(item => item.seq === seq),
     daemonSaid: pattern => pattern.test(daemonOutput),
     processEnded: ended,
+    expectFailedTurns: (story, count) => failedAllowed.set(story, count),
     create(story, { scouted = true, ...fields } = {}) {
       const created = store.record({ story, key: story + '-create', type: 'create', title: 'End-to-end check ' + story, detail: 'Exercise the factory with scripted workers.', branch: 'e2e', worktree, harness: entry.name, ...fields });
       if (scouted) store.record({ story, key: story + '-scout', type: 'handoff', revision: created.revision, detail: 'Context pack ready.' });
@@ -186,7 +189,8 @@ export async function openRig({ entry, turnMs, tally, profile: overrides = {} })
         const turns = store.history(story.id).toReversed().filter(item => ['turn-started', 'turn-ended', 'release-worker'].includes(item.type));
         const doubled = turns.find((item, at) => item.type === 'turn-started' && turns[at + 1]?.type === 'turn-started');
         expect(!doubled, story.id + ' has two turns running at once (seq ' + doubled?.seq + ').');
-        const bad = turns.find(item => item.type === 'turn-ended' && item.worker.lastTurn.outcome !== 'ended');
+        let spared = failedAllowed.get(story.id) ?? 0;
+        const bad = turns.find(item => item.type === 'turn-ended' && item.worker.lastTurn.outcome !== 'ended' && !(item.worker.lastTurn.outcome === 'failed' && spared-- > 0));
         expect(!bad, story.id + ' has a turn that ' + bad?.worker.lastTurn.outcome + ': ' + bad?.detail);
       }
       await rig.until('worker processes to end', () => !running().length, 30000);
