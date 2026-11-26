@@ -96,6 +96,7 @@ test('Azure DevOps: the story, its child tasks and its linked pull requests beco
     story: { id: 1, assignee: 'owner@example.test', effort: 5 },
     tasks: [{ id: 10, title: 'Build', state: 'Closed', assignee: 'sam@example.test', assigneeName: 'Sam' }],
     prs: [{ id: 77, status: 'completed', target: 'main', linked: true }],
+    skippedRelations: [],
   });
 });
 
