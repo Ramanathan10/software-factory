@@ -5,13 +5,15 @@ description: Check a change to how the owner's decisions reach a story worker, o
 
 # Verify decision delivery
 
-`command-center/delivery-model.mjs` models one story's worker session and two of the owner's decisions. Several actors can act in any order: the dashboard's batch timer, two `serve.mjs deliver` calls from Jarvis, the worker acknowledging, its turns ending, and one daemon restart. The model's steps break exactly where the code `await`s, so every order the event loop can produce is an order the model explores. `check` walks every reachable state breadth-first, about 2,000 states in under a tenth of a second, and holds these invariants:
+`command-center/delivery-model.mjs` models one story's worker session and two of the owner's decisions. Several actors can act in any order: the dashboard's batch timer, two `serve.mjs deliver` calls from Jarvis, the worker acknowledging, its turns ending, and one daemon restart. The model's steps break exactly where the code `await`s, so every order the event loop can produce is an order the model explores. `check` walks every reachable state breadth-first, about 100,000 states in under ten seconds, and holds these invariants:
 
 | Invariant | Harm when it breaks |
 |---|---|
-| `OneTurnPerSession`: at most one turn of the session runs | Two harness programs resume the same conversation and race on one worktree |
+| `OneTurnPerSession`: at most one turn of each session runs | Two harness programs resume the same conversation and race on one worktree |
+| `ReleasedSessionNeverResumed`: no turn resumes a session whose assignment was released once a replacement is assigned | Two agent processes run in one worktree, and the replacement never gets the answer |
 | `NoDuplicateDelivery`: one daemon hands each decision to the worker at most once | The worker acts on the owner's answer twice |
 | No call of `hand` can be left waiting forever (reported as `stuck`) | A decision never reaches the worker and nobody is told |
+| No terminal state holds a decision that was handed only to a session no worker holds and never reached a live one (reported as `lost`) | The owner's answer sits in a session nobody reads, and `deliverPending` skips it because it is in `sent` |
 
 A decision handed again after a restart is allowed. The new daemon cannot know what the old one sent, and the worker acknowledges each decision only after acting on it, so it is still pending.
 
@@ -38,15 +40,18 @@ Each step in `delivery-model.mjs` stands for this code:
 | `BatchFire` | `console-service.mjs`: `notify`'s timer calls `hand` with the batch |
 | `JarvisDeliver` | `console-service.mjs`: `deliverPending` (`serve.mjs deliver`) filters the pending decisions and calls `hand` |
 | `Hand` | `console-service.mjs`: `hand` up to `await onDecision`; `harnesses.mjs`: `messageWorker` up to `await previous` |
+| `Release` | the worker records `release-worker`, and the story has no assignment until the next `Assign` |
+| `Assign` | Jarvis starts a replacement, and `assign-worker` records a new assignment with a new session |
+| `Stale` | `harnesses.mjs`: `messageWorker` finds after `await previous` that `options.current()` is false and throws `STALE_ASSIGNMENT`; `serve.mjs` `deliver` returns `stale`; `hand` takes a fresh snapshot and hands again to the worker assigned now, or with none releases its seqs from `sent` |
 | `Spawn` | `harnesses.mjs`: `messageWorker` spawns the turn, which is handed the decisions in its prompt; with `recordsAtSpawn`, `onTurn` records it in the store in the same step |
 | `Settled` | `console-service.mjs`: `onDecision` resolves to `'worker'` once the turn has settled and `hand` marks `sent`; without `recordsAtSpawn` the turn is recorded only now |
 | `Ack` | the worker records `ack` on the store for a decision it acted on |
 | `TurnEnd` | the harness program exits, and its entry in `harnesses.mjs` `turns` resolves |
 | `Restart` | the daemon stops and starts again: `sent`, `batches` and `turns` are gone, turns keep running, and the new daemon adopts those recorded in the store |
 
-The model's state mirrors the code: `procs` are calls of `hand` that have not resolved, each with the `turns` entry its `messageWorker` awaits; `tail` is the session's entry in `turns`; `turns` are the session's running turns. Turn 0 is the kickoff turn `startWorker` began, and it starts recorded, because the story has no worker to hand decisions to until the worker is recorded.
+The model's state mirrors the code: `assign` is the assignment now held, or null; `procs` are calls of `hand` that have not resolved, each with the assignment and session it captured and the `turns` entry its `messageWorker` awaits; `tails` holds each session's entry in `turns`; `turns` are the running turns, each of one session. Up to two workers are released and replaced. Turn 0 is the kickoff turn `startWorker` began, and it starts recorded, because the story has no worker to hand decisions to until the worker is recorded.
 
-`current` in `delivery-model.mjs` names five behaviors that differ between versions of the code, so `check` can replay a past version, and each one is pinned in the real code by a test, so the model cannot claim a fix the code lacks:
+`current` in `delivery-model.mjs` names six behaviors that differ between versions of the code, so `check` can replay a past version, and each one is pinned in the real code by a test, so the model cannot claim a fix the code lacks:
 
 | Flag | What the code does | Test that holds the code to it |
 |---|---|---|
@@ -54,6 +59,7 @@ The model's state mirrors the code: `procs` are calls of `hand` that have not re
 | `startRegistersTurn` | `startWorker` puts the kickoff turn in `turns` | `harnesses.test.mjs`: "a message to a new session waits for the kickoff turn startWorker began" |
 | `waitsForAdoptedTurns` | `serve.mjs` passes `supervisor.idle(story)` to `messageWorker` as `after`, and stopping the daemon rejects those waits | `supervisor.test.mjs`: "a message waits until the turn left by an earlier daemon has ended", "stopping the daemon ends a wait for an earlier daemon's turn"; `harnesses.test.mjs`: "a message waits for what the caller says is still running" |
 | `recordsAtSpawn` | `messageWorker` calls `onTurn`, which records `turn-started`, as soon as the process exists, before the turn settles | `harnesses.test.mjs`: "a message reports its turn as soon as the process exists, before the turn settles" |
+| `rechecksAssignment` | `messageWorker` calls `options.current()` after `await previous` with no `await` before it spawns; `serve.mjs` passes it only for worker deliveries, comparing the assignment `hand` captured with the one now assigned; a Jarvis resume gets none | `harnesses.test.mjs`: "a message the caller no longer wants is not started, and the session accepts the next message", "the caller is asked whether a message is still wanted after the earlier turn ends, not before"; `serve.test.mjs`: "an answer recorded while a worker is mid-turn goes to the worker assigned when the wait ends, not to the one that released"; `console-service.test.mjs`: "a decision whose delivery came back stale is handed again to the worker assigned by then, and is handed to nobody else" |
 
 When you change one of these behaviors, change the step in the model and its flag in `current` in the same pull request, and keep or replace the test that pins it.
 
@@ -70,12 +76,16 @@ Before you treat a failure as a bug, check that the step it names still matches 
 - The order of decisions within one turn, the store's own transactions (see `verify-story-lifecycle`), and harnesses whose workers run in-app.
 - Several daemons running at once. `serve.mjs` refuses to start a second one on the same port.
 - A decision on a command-line story with no worker. `onDecision` hands it to nobody: it nudges the coordinator and returns `coordinator`, so `hand` releases its seqs and the decision stays pending until a background Jarvis turn handles it (ADR 0019). The background Jarvis's own turns go through `messageWorker` on a session no worker shares. `coordinator.test.mjs` covers both.
+- The kickoff turn of a replacement worker, a replacement whose session string repeats a released one (the code compares assignment ids, and `serve.test.mjs` pins that case), and a release or assignment during a restart.
+- Enforcing that a worker ends its turn promptly after releasing, and a delivered turn that fails after the settle window (issue #49).
+- Whether Jarvis is woken for a decision no worker is left to take. The model lets `Assign` happen at any time; `coordinator.test.mjs` pins the wake through the seqs owed to Jarvis, even when an earlier Jarvis turn already saw the answer.
 - A restart while a kickoff turn settles. The story has no worker recorded until `startWorker` returns, so no decision can be handed to it, but Jarvis could start a second worker for the story.
 
 ## Coverage record
 
 - `command-center/console-service.mjs`: `notify`, `hand`, `deliverPending`
 - `command-center/serve.mjs`: `deliver`, the `onDecision` passed in `start`
+- `command-center/coordinator.mjs`: `owe`, `unhandled`
 - `adapters/harnesses.mjs`: `messageWorker`, `startWorker`, `turns`
 - `command-center/supervisor.mjs`: `idle`, `sweep`, `adopted`
 
