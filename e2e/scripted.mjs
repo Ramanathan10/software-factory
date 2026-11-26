@@ -82,6 +82,12 @@ async function coordinate() {
     if (Date.now() > deadline) fail('A worker turn on story ' + id + ' was still running after ' + book.turnMs / 1000 + ' s.');
     await sleep(250);
   }
+  const wake = store.history(id).filter(event => event.type === 'jarvis-woken').length;
+  const planned = book.jarvis?.find(entry => entry.wake === wake);
+  if (planned) {
+    for (const step of planned.steps) perform(step);
+    return;
+  }
   const { story, pending } = read();
   if (!story.worker && workerPhases.has(story.phase) && story.questions.every(question => question.answer)) {
     serve('start', book.next);

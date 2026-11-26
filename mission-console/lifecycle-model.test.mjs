@@ -114,3 +114,22 @@ test('readiness is refused while the observed review blocks it, and allowed once
   assert.deepEqual(blocked.filter(ready).map(([, node]) => story(node)), [], 'pr-ready was accepted while the review blocks it');
   assert.ok(clear.some(ready), 'pr-ready is never accepted once the review is clear');
 });
+
+test('diagram work starts only from publishing, ci or merge and always returns to the phase it started from', () => {
+  const open = ['publishing', 'ci', 'merge'];
+  const started = live.flatMap(([, node]) => node.edges.filter(edge => edge.type === 'diagram-start').map(edge => ({ node, next: states.get(edge.to).state })));
+  assert.ok(started.length, 'no event starts diagram work');
+  const wrong = started.filter(({ node, next }) => !open.includes(node.state.phase) || next.phase !== 'diagram' || next.diagram?.returnPhase !== node.state.phase)
+    .map(({ node }) => node.state.phase + ' diagram-start after ' + story(node));
+  assert.deepEqual(wrong, [], 'diagram-start was accepted outside publishing, ci and merge, or stored another return phase');
+  const early = live.filter(([, { state }]) => ['review', 'comparison'].includes(state.phase));
+  assert.ok(early.some(([, { state }]) => state.phase === 'review') && early.some(([, { state }]) => state.phase === 'comparison'), 'the explorer reaches review and comparison');
+  assert.deepEqual(early.filter(([, node]) => node.edges.some(edge => edge.type === 'diagram-start')).map(([, node]) => story(node)), [], 'diagram-start was accepted in review or comparison after these events');
+  const returns = live.filter(([, { state }]) => state.phase === 'diagram').flatMap(([, node]) => node.edges.filter(edge => edge.type === 'handoff').map(edge => ({ node, next: states.get(edge.to).state })));
+  assert.ok(returns.length, 'no handoff leaves diagram');
+  assert.deepEqual(returns.filter(({ node, next }) => next.phase !== node.state.diagram.returnPhase).map(({ node }) => story(node)), [], 'a diagram handoff landed on a phase other than its return phase');
+  const entered = new Set(started.map(({ node }) => node.state.phase));
+  assert.deepEqual(open.filter(phase => !entered.has(phase)), [], 'diagram-start is never accepted in these phases');
+  const back = new Set(returns.map(({ next }) => next.phase));
+  assert.deepEqual([...back].sort(), [...open].sort(), 'a diagram handoff returns to each of publishing, ci and merge');
+});

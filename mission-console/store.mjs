@@ -325,8 +325,8 @@ function apply(story, input, now) {
       story.phase = transitions[story.phase];
       return string(input.detail, 'handoff evidence');
     case 'diagram-start':
-      requireThat(['review', 'comparison', 'publishing', 'ci', 'merge'].includes(story.phase), 'Start diagram work after review.', 409);
-      story.diagram = { returnPhase: ['review', 'comparison'].includes(story.phase) ? 'publishing' : story.phase, startedAt: now, detail: string(input.detail, 'diagram scope') };
+      requireThat(['publishing', 'ci', 'merge'].includes(story.phase), 'Start diagram work from publishing, CI or merge, after the review and the comparison.', 409);
+      story.diagram = { returnPhase: story.phase, startedAt: now, detail: string(input.detail, 'diagram scope') };
       story.phase = 'diagram';
       return 'Rocket started architecture diagram work.';
     case 'retro-start':
