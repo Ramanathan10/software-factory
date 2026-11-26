@@ -22,7 +22,32 @@ test('a story waiting on Jarvis says so, with how long and why', async () => {
 test('a story whose Jarvis turn is running says Jarvis is checking it', async () => {
   const { jarvisStatus } = await helper();
   const story = { id: 'tl-1', phase: 'red', jarvis: { session: 'jarvis-1', turn: { pid: 4100, at: minutesAgo(1) } } };
-  assert.match(jarvisStatus(story, now), /^Jarvis is checking/);
+  assert.equal(jarvisStatus(story, now), 'Jarvis is checking');
+});
+
+test('a story whose Jarvis turn is about to start says Jarvis is checking it, without the story id', async () => {
+  const { jarvisStatus } = await helper();
+  const story = { id: 'tl-1', phase: 'red', jarvis: { session: 'jarvis-1', waking: minutesAgo(0) } };
+  assert.equal(jarvisStatus(story, now), 'Jarvis is checking');
+});
+
+test('a running turn wins over waiting in the words too', async () => {
+  const { jarvisStatus } = await helper();
+  const story = { id: 'tl-1', phase: 'red', jarvis: { session: 'jarvis-1', turn: { pid: 4100, at: minutesAgo(1) } }, waitingOnJarvis: { since: minutesAgo(4), why: 'tester handed off red' } };
+  assert.equal(jarvisStatus(story, now), 'Jarvis is checking');
+});
+
+test('jarvisHold says checking for a running turn or a waking Jarvis, waiting for a story that waits on Jarvis, and nothing otherwise', async () => {
+  const { jarvisHold } = await helper();
+  assert.equal(typeof jarvisHold, 'function', 'ui/jarvis.js exports no jarvisHold');
+  const waiting = { since: minutesAgo(4), why: 'tester handed off red' };
+  assert.equal(jarvisHold({ id: 'tl-1', jarvis: { session: 'jarvis-1', turn: { pid: 4100, at: minutesAgo(1) } } }), 'checking');
+  assert.equal(jarvisHold({ id: 'tl-1', jarvis: { session: 'jarvis-1', waking: minutesAgo(0) } }), 'checking');
+  assert.equal(jarvisHold({ id: 'tl-1', waitingOnJarvis: waiting }), 'waiting');
+  assert.equal(jarvisHold({ id: 'tl-1', jarvis: { session: 'jarvis-1', turn: { pid: 4100, at: minutesAgo(1) } }, waitingOnJarvis: waiting }), 'checking', 'checking wins when both hold');
+  assert.equal(jarvisHold({ id: 'tl-1', jarvis: { session: 'jarvis-1', waking: minutesAgo(0) }, waitingOnJarvis: waiting }), 'checking');
+  assert.equal(jarvisHold({ id: 'tl-1', phase: 'building' }), undefined);
+  assert.equal(jarvisHold({ id: 'tl-1', jarvis: { session: 'jarvis-1', lastTurn: { outcome: 'ended', code: 0, at: minutesAgo(2) } } }), undefined, 'a turn that ended holds nothing');
 });
 
 test('a story with nothing waiting on Jarvis has no Jarvis status, so the board falls back to its usual one', async () => {

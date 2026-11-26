@@ -39,8 +39,8 @@ h1, h2, h3, p { margin: 0; }
 button { font: inherit; }
 
 .bar {
-  display: flex; align-items: center; gap: 24px;
-  padding: 12px 20px; border-bottom: 1px solid var(--line);
+  display: flex; align-items: center; flex-wrap: wrap; gap: 10px 16px;
+  padding: 8px 20px; border-bottom: 1px solid var(--line);
   background: rgba(11, 14, 20, .8); backdrop-filter: blur(8px);
 }
 .brand { display: flex; align-items: center; gap: 14px; }
@@ -51,7 +51,8 @@ h1 span { color: var(--muted); letter-spacing: .02em; font-weight: 500; margin-l
 .live.down { color: var(--amber); }
 .live.down i { background: var(--amber); animation: none; }
 @keyframes ping { 70% { box-shadow: 0 0 0 9px rgba(62, 207, 142, 0); } 100% { box-shadow: 0 0 0 0 rgba(62, 207, 142, 0); } }
-.stats { display: flex; gap: 22px; margin-left: auto; }
+.head-end { display: flex; align-items: center; gap: 16px; margin-left: auto; }
+.stats { display: flex; gap: 14px; }
 .stats div { display: flex; align-items: baseline; gap: 6px; }
 .stats strong { font: 600 20px var(--mono); }
 .stats span { color: var(--muted); font-size: 12px; }
@@ -192,12 +193,12 @@ h1 span { color: var(--muted); letter-spacing: .02em; font-weight: 500; margin-l
 .dots i:nth-child(3) { animation-delay: .4s; }
 @keyframes blink { 0%, 80%, 100% { opacity: .2; } 40% { opacity: 1; } }
 
-.toolbar { flex: none; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.toolbar { flex: 0 1 auto; min-width: 0; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .views { display: inline-flex; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 3px; }
 .views button { background: none; border: 0; color: var(--muted); padding: 5px 14px; border-radius: 7px; cursor: pointer; font-size: 12px; letter-spacing: .04em; }
 .views button:hover { color: var(--text); }
 .views button[aria-selected="true"] { background: var(--panel-2); color: var(--text); box-shadow: inset 0 0 0 1px #2c3a55; }
-.repo-filter { background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 10px; padding: 6px 10px; font-size: 12px; }
+.repo-filter { max-width: 170px; background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 10px; padding: 6px 10px; font-size: 12px; }
 .filter { display: inline-flex; align-items: center; gap: 8px; padding: 4px 6px 4px 4px; border-radius: 999px; border: 1px solid var(--role); background: color-mix(in srgb, var(--role) 12%, var(--panel)); font-size: 12px; animation: enter .25s ease-out; }
 .filter button { background: none; border: 0; color: var(--role); cursor: pointer; font-size: 12px; padding: 2px 6px; }
 .filter button:hover { text-decoration: underline; }
