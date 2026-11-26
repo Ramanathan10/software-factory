@@ -9,15 +9,15 @@ const repo = fileURLToPath(new URL('.', import.meta.url));
 const git = (...args) => execFileSync('git', args, { cwd: repo, encoding: 'utf8' }).trim();
 const tracked = git('ls-files', '-z').split('\0').filter(Boolean);
 
-function privateWords(env = process.env) {
-  const owner = env.GITHUB_REPOSITORY_OWNER || /[:/]([^/]+)\/[^/]+?(?:\.git)?$/.exec(git('remote', 'get-url', 'origin').replace(/^.*\/git\/(?=[^/]+\/[^/]+$)/, '/'))?.[1];
-  let identities = git('log', '--format=%an%n%cn');
-  try { identities += '\n' + git('config', 'user.name'); } catch {}
-  const generic = /^(github|dependabot|claude|actions|bot|noreply|web-flow|users)$/i;
-  const names = [owner, ...identities.split('\n')].flatMap(name => String(name ?? '').split(/[^A-Za-z]+/))
-    .filter(word => word.length >= 3 && !generic.test(word) && !/\[bot\]/.test(word));
-  const words = new Set((env.PRIVATE_WORDS ?? '').split(',').map(word => word.trim()).filter(Boolean));
-  for (const name of names) for (let end = 3; end <= name.length; end += 1) words.add(name.slice(0, end));
+const generic = /^(github|dependabot|claude|actions|bot|noreply|web-flow|users)$/i;
+
+function privateWords({ owner, names = [], extra = '' }) {
+  if (!owner) throw new Error('No owner to check for: add an origin remote or set GITHUB_REPOSITORY_OWNER.');
+  const words = new Set(extra.split(',').map(word => word.trim()).filter(Boolean));
+  for (const word of owner.split(/[^A-Za-z]+/).filter(word => word.length >= 3 && !generic.test(word)))
+    for (let end = 3; end <= word.length; end += 1) words.add(word.slice(0, end));
+  for (const name of names.filter(name => !/\[bot\]/.test(name)).map(name => name.split(/[^A-Za-z]+/).filter(Boolean)))
+    if (name.join('').length >= 3 && !name.some(word => generic.test(word))) words.add(name.join(' '));
   return [...words];
 }
 
@@ -30,7 +30,11 @@ const exempt =/^(LICENSE|CODE_OF_CONDUCT\.md|SECURITY\.md|skills\/[^/]+\/LICENSE
 const text = file => !/\.(png|jpe?g|gif|webp|mp4|webm|ico|pdf|zip)$/i.test(file);
 
 test('no tracked file names the owner or other private details', () => {
-  const words = privateWords();
+  const origin = (() => { try { return git('remote', 'get-url', 'origin'); } catch { return ''; } })();
+  const owner = process.env.GITHUB_REPOSITORY_OWNER || /[:/]([^/]+)\/[^/]+?(?:\.git)?$/.exec(origin.replace(/^.*\/git\/(?=[^/]+\/[^/]+$)/, '/'))?.[1];
+  const names = git('log', '--format=%an%n%cn').split('\n');
+  try { names.push(git('config', 'user.name')); } catch {}
+  const words = privateWords({ owner, names, extra: process.env.PRIVATE_WORDS });
   assert.ok(words.length, 'no names to look for');
   const pattern = lineMatcher(words);
   const found = [];
