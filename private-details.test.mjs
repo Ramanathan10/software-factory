@@ -16,22 +16,31 @@ function privateWords({ owner, names = [], extra = '' }) {
   const words = new Set(extra.split(',').map(word => word.trim()).filter(Boolean));
   for (const word of owner.split(/[^A-Za-z]+/).filter(word => word.length >= 3 && !generic.test(word)))
     for (let end = 3; end <= word.length; end += 1) words.add(word.slice(0, end));
-  for (const name of names.filter(name => !/\[bot\]/.test(name)).map(name => name.split(/[^A-Za-z]+/).filter(Boolean)))
-    if (name.join('').length >= 3 && !name.some(word => generic.test(word))) words.add(name.join(' '));
+  for (const name of names.filter(name => !/\[bot\]/.test(name)).map(name => name.split(/[^\p{L}]+/u).filter(Boolean)))
+    if (name.join('').length >= 3 && !name.every(word => generic.test(word))) words.add(name.join(' '));
   return [...words];
 }
 
+const alnum = '[\\p{L}\\p{N}]';
+
 function lineMatcher(words) {
-  const bounded = word => (/^\w/.test(word) ? '(?<![A-Za-z0-9])' : '') + word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + (/\w$/.test(word) ? '(?![A-Za-z0-9])' : '');
-  return new RegExp('(' + words.map(bounded).join('|') + ')', 'i');
+  const escape = word => word.split(' ').map(part => part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('[^\\p{L}\\p{N}]+');
+  const bounded = word => (new RegExp('^' + alnum, 'u').test(word) ? '(?<!' + alnum + ')' : '') + escape(word) + (new RegExp(alnum + '$', 'u').test(word) ? '(?!' + alnum + ')' : '');
+  return new RegExp('(' + words.map(bounded).join('|') + ')', 'iu');
+}
+
+function ownerFrom(env, readOrigin) {
+  if (env) return env;
+  let origin = '';
+  try { origin = readOrigin(); } catch {}
+  return /[:/]([^/]+)\/[^/]+?(?:\.git)?$/.exec(origin.replace(/^.*\/git\/(?=[^/]+\/[^/]+$)/, '/'))?.[1];
 }
 
 const exempt =/^(LICENSE|CODE_OF_CONDUCT\.md|SECURITY\.md|skills\/[^/]+\/LICENSE)$/;
 const text = file => !/\.(png|jpe?g|gif|webp|mp4|webm|ico|pdf|zip)$/i.test(file);
 
 test('no tracked file names the owner or other private details', () => {
-  const origin = (() => { try { return git('remote', 'get-url', 'origin'); } catch { return ''; } })();
-  const owner = process.env.GITHUB_REPOSITORY_OWNER || /[:/]([^/]+)\/[^/]+?(?:\.git)?$/.exec(origin.replace(/^.*\/git\/(?=[^/]+\/[^/]+$)/, '/'))?.[1];
+  const owner = ownerFrom(process.env.GITHUB_REPOSITORY_OWNER, () => git('remote', 'get-url', 'origin'));
   const names = git('log', '--format=%an%n%cn').split('\n');
   try { names.push(git('config', 'user.name')); } catch {}
   const words = privateWords({ owner, names, extra: process.env.PRIVATE_WORDS });
@@ -67,21 +76,21 @@ test('each word of a hyphenated owner login gets prefixes', () => {
 });
 
 test('a contributor name matches only as the whole full name, words in order', () => {
-  const sources = { owner: 'quillfern', names: ['Andrew Marks'] };
-  assert.ok(hits(sources, 'written by Andrew Marks'));
-  assert.ok(hits(sources, 'ANDREW MARKS'));
-  for (const line of ['this and that', 'Marks alone', 'a mark of respect', 'Andrew alone', 'Marks Andrew']) assert.ok(!hits(sources, line), line);
+  const sources = { owner: 'quillfern', names: ['Andrex Markwell'] };
+  assert.ok(hits(sources, 'written by Andrex Markwell'));
+  assert.ok(hits(sources, 'ANDREX MARKWELL'));
+  for (const line of ['this and that', 'Markwell alone', 'a mark of respect', 'Andrex alone', 'Markwell Andrex']) assert.ok(!hits(sources, line), line);
 });
 
 test('a contributor name is not turned into prefixes', () => {
-  const words = privateWords({ owner: 'quillfern', names: ['Andrew Marks', 'Theodore', 'Ford', 'Willa', 'Mark Smith'] });
+  const words = privateWords({ owner: 'quillfern', names: ['Andrex Markwell', 'Thelwin', 'Fordane', 'Willowby', 'Markel Smythe'] });
   for (const word of ['and', 'and ', 'the', 'for', 'wil', 'will', 'mark', 'marks', 'Mar', 'The']) assert.ok(!words.includes(word), word);
   const line = 'and the for will mark marks smith';
   assert.ok(!lineMatcher(words).test(line), line);
 });
 
 test('common-word contributor names do not flag ordinary text', () => {
-  for (const name of ['Andrew Marks', 'Theodore', 'Ford', 'Willa', 'Mark Smith']) {
+  for (const name of ['Andrex Markwell', 'Thelwin', 'Fordane', 'Willowby', 'Markel Smythe']) {
     const sources = { owner: 'quillfern', names: [name] };
     assert.ok(hits(sources, 'by ' + name), name);
     assert.ok(!hits(sources, 'and the for will wil mark marks theo'), name);
@@ -116,4 +125,32 @@ test('a missing owner fails with a message that names origin and GITHUB_REPOSITO
       return true;
     });
   }
+});
+
+test('hyphenated, apostrophe and oddly spaced contributor names match as written', () => {
+  const sources = { owner: 'quillfern', names: ['Zyra-Venn', "Orla O'Venn"] };
+  for (const line of ['by Zyra-Venn', 'by Zyra Venn', 'by Zyra  Venn', 'by zyra_venn', "by Orla O'Venn", 'by Orla O Venn']) assert.ok(hits(sources, line), line);
+  for (const line of ['Zyra alone', 'Venn alone', 'Zyravenn']) assert.ok(!hits(sources, line), line);
+});
+
+test('non-ASCII contributor names keep their letters', () => {
+  const sources = { owner: 'quillfern', names: ['José García'] };
+  for (const line of ['by José García', 'by JOSÉ GARCÍA', 'by José-García']) assert.ok(hits(sources, line), line);
+  for (const line of ['Jos Garc a', 'by Josés García', 'by José Garcías']) assert.ok(!hits(sources, line), line);
+});
+
+test('a name with one generic word is still protected; a name of only generic words is skipped', () => {
+  const sources = { owner: 'quillfern', names: ['Zyra GitHub', 'Claude Orvane', 'GitHub Actions', 'Claude'] };
+  assert.ok(hits(sources, 'by Zyra GitHub'));
+  assert.ok(hits(sources, 'by Claude Orvane'));
+  assert.ok(!hits(sources, 'GitHub Actions and Claude alone'));
+});
+
+test('the owner comes from the environment, else from the origin url, else is missing', () => {
+  const boom = () => { throw new Error('Command failed: git remote get-url origin'); };
+  assert.equal(ownerFrom('acme', boom), 'acme');
+  assert.equal(ownerFrom(undefined, () => 'git@github.com:quillfern/factory.git'), 'quillfern');
+  assert.equal(ownerFrom('', () => 'https://github.com/quillfern/factory'), 'quillfern');
+  assert.equal(ownerFrom(undefined, boom), undefined);
+  assert.equal(ownerFrom(undefined, () => ''), undefined);
 });

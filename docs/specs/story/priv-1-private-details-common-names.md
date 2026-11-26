@@ -10,10 +10,10 @@ Reproduction on 88b9cce, Node 24.18.0, Windows 11, with `user.name` overridden p
 
 | user.name | Failing lines | Words that hit |
 |---|---|---|
-| Andrew Marks | 3,718 | and, marks, mark |
-| Theodore | 5,957 | the |
-| Ford | 2,174 | for |
-| Willa | 54 | will, wil |
+| Andrex Markwell | 3,718 | and, marks, mark |
+| Thelwin | 5,957 | the |
+| Fordane | 2,174 | for |
+| Willowby | 54 | will, wil |
 | Mark | 72 | mark |
 
 With no `origin` remote and no `GITHUB_REPOSITORY_OWNER`, the test throws `Command failed: git remote get-url origin`. Evidence: `repro-*.txt` beside the context pack.
@@ -21,7 +21,7 @@ With no `origin` remote and no `GITHUB_REPOSITORY_OWNER`, the test throws `Comma
 ## Settled decisions
 
 1. Prefixes (nickname catch) come only from the owner's GitHub login: `GITHUB_REPOSITORY_OWNER`, else the `origin` remote. Each 3+ letter prefix of each login word counts as a whole word, as today.
-2. Every other git name (history authors and committers, local `user.name`) is matched as its whole full name, words in order (for example "Andrew Marks"), not word by word and not by prefix. Bots and the generic list are still skipped.
+2. Every other git name (history authors and committers, local `user.name`) is matched as its whole full name, words in order (for example "Andrex Markwell"), not word by word and not by prefix. Bots and the generic list are still skipped.
 3. `PRIVATE_WORDS` is unchanged, including the edge rule for entries such as `ZZQ-`.
 4. With no `origin` remote and `GITHUB_REPOSITORY_OWNER` unset, the test fails with a clear message that asks for an `origin` remote or `GITHUB_REPOSITORY_OWNER`. It does not throw a raw git error.
 5. ADR 0016 is edited in place to state the new rule (owner login gets prefixes; other names match in full; the missing-owner failure) and its Consequences updated. No new ADR.
@@ -30,7 +30,7 @@ With no `origin` remote and no `GITHUB_REPOSITORY_OWNER`, the test throws `Comma
 
 ## Acceptance criteria
 
-- On an unchanged checkout, `node --test private-details.test.mjs` passes with `user.name` set to "Andrew Marks", "Theodore", "Ford", "Willa" or "Mark Smith".
+- On an unchanged checkout, `node --test private-details.test.mjs` passes with `user.name` set to "Andrex Markwell", "Thelwin", "Fordane", "Willowby" or "Markel Smythe".
 - For an invented owner login, a tracked line holding the login or a 3+ letter prefix of it is reported.
 - A tracked line holding a contributor's full name is reported; a line holding only one of that contributor's words (for example "and" or "Marks" alone) is not.
 - A `PRIVATE_WORDS` entry, including one ending in a non-letter such as `ZZQ-`, is reported.
@@ -77,13 +77,13 @@ Issue #56: the private-details test fails for contributors with common names. Br
 | user.name | Failing lines | Banned words that hit |
 |---|---|---|
 | (owner's own, baseline) | 0 (pass) | — |
-| Andrew Marks | 3,718 | and 3,611, marks 64, mark 43 |
-| Theodore | 5,957 | the |
-| Ford | 2,174 | for |
-| Willa | 54 | will 53, wil 1 |
+| Andrex Markwell | 3,718 | and 3,611, marks 64, mark 43 |
+| Thelwin | 5,957 | the |
+| Fordane | 2,174 | for |
+| Willowby | 54 | will 53, wil 1 |
 | Mark | 72 | mark (the whole name, not a prefix) |
 
-The `node --test private-details.test.mjs` run with "Andrew Marks" fails with 3,618+ reported lines (`repro-andrew-marks.txt`). The last row matters: matching whole names instead of prefixes does not fix the bug on its own. A contributor whose first name is an ordinary word still fails.
+The `node --test private-details.test.mjs` run with "Andrex Markwell" fails with 3,618+ reported lines (`repro-andrex-markwell.txt`). The last row matters: matching whole names instead of prefixes does not fix the bug on its own. A contributor whose first name is an ordinary word still fails.
 
 Second symptom, confirmed by running it: in a clone with no `origin` remote and no `GITHUB_REPOSITORY_OWNER`, the test throws `Command failed: git remote get-url origin` instead of reaching a verdict (`repro-no-origin.txt`).
 
@@ -122,7 +122,7 @@ Matching is already whole-word (`bounded`), so the problem is which words are ba
 
 - Focused: `node --test private-details.test.mjs`
 - Full: `node --test`; gates: `node --test`, `gitleaks git --no-banner --log-opts=origin/main..HEAD`.
-- Reproduce with a name: prefix the focused command with `GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=user.name GIT_CONFIG_VALUE_0="Andrew Marks"`.
+- Reproduce with a name: prefix the focused command with `GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=user.name GIT_CONFIG_VALUE_0="Andrex Markwell"`.
 
 ## Similar earlier changes
 

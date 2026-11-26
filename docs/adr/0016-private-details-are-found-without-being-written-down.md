@@ -11,7 +11,7 @@ The repository is meant to be shared, so it must not carry the owner's name, oth
 
 The owner's login is the only source that gets prefixes. A nickname is usually the start of the login, so each word of the login counts as a whole word, and so does each prefix of three or more letters. A nickname that is not the start of the login goes in `PRIVATE_WORDS`.
 
-Every other git name matches only as the whole full name, with its words in order, so a contributor named "Mark" or "Andrew Marks" does not ban `mark`, `and` or `the`. Bots and generic words are skipped. A word edge applies only where the entry itself starts or ends with a letter or digit, so an entry such as `PCS-` still matches `PCS-12`.
+Every other git name matches only as the whole full name, with its words in order, so a contributor named "Andrex Markwell" does not ban `mark`, `and` or `the`. Bots and generic words are skipped. A word edge applies only where the entry itself starts or ends with a letter or digit, so an entry such as `PCS-` still matches `PCS-12`.
 
 With no `origin` remote and no `GITHUB_REPOSITORY_OWNER`, the test fails and asks for one of them, because without an owner it cannot tell what to protect. The licence and community files are exempt because they name the copyright holder and where to report a problem.
 
