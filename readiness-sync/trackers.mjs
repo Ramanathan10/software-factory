@@ -30,7 +30,8 @@ export function runJson(command, args, { platform = process.platform, exec = exe
 }
 
 const digits = /^[0-9]+$/;
-const organizationName = /^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?$/;
+const organizationPattern = /^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?$/;
+const organizationName = { test: value => typeof value === 'string' && organizationPattern.test(value) };
 
 export const trackers = {
   'azure-devops': {

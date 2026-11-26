@@ -59,6 +59,15 @@ for (const organization of ['a&b', 'a b', '-a', 'a-', '', 'a%b', 'a"b', 'a.b', '
   });
 }
 
+for (const [label, value] of [['missing', undefined], ['null', null], ['a number', 12], ['an object', {}], ['a list', ['your-org']]]) {
+  test(`an organization that is ${label} is refused before any call`, () => {
+    const { run, calls } = recorder([]);
+    assert.throws(() => azure.read(1, { ...settings, organization: value }, run));
+    assert.deepEqual(calls, []);
+    assert.match(azure.invalid({ ...settings, organization: value }), /readiness\.organization/);
+  });
+}
+
 for (const organization of ['your-org', 'a', 'A1-b2', 'x--y']) {
   test(`an organization that follows the naming rules is read: ${organization}`, () => {
     const { run, calls } = recorder([]);
