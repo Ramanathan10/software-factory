@@ -478,6 +478,7 @@ test('nothing in the repository tells the owner to look for a .bak-<time> folder
   const adr = readdirSync(join(here, 'docs', 'adr')).find(name => name.startsWith('0008-'));
   for (const text of [read('install.mjs'), read('AGENTS.md'), read('README.md'), read('docs', 'adr', adr)]) assert.doesNotMatch(text, /bak-<time>/);
   for (const text of [read('README.md'), read('docs', 'adr', adr)]) assert.match(text, /ai-sdlc-backups/);
+  assert.ok(read('README.md').includes('~/.copilot/ai-sdlc-backups/<time>/<skills|extensions>/<name>'));
 });
 
 test('a copied skill the owner customizes is kept, and checking changes nothing', t => {
