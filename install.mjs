@@ -58,7 +58,13 @@ export function install({ home = homedir(), repoDir = repo, skillsDir = join(rep
     const backupFolder = () => {
       if (backup !== undefined) return backup;
       const base = join(dirname(folder), 'ai-sdlc-backups');
-      let link = stat(base)?.isSymbolicLink() ? base : null;
+      const top = stat(base);
+      if (top && !top.isDirectory() && !top.isSymbolicLink()) {
+        backup = null;
+        results.push({ harness: name, path: base, state: 'backup-is-file' });
+        return backup;
+      }
+      let link = top?.isSymbolicLink() ? base : null;
       for (let n = 1; !link; n++) {
         const candidate = join(base, n === 1 ? String(stamp) : stamp + '-' + n);
         const found = stat(candidate);
@@ -84,7 +90,7 @@ export function install({ home = homedir(), repoDir = repo, skillsDir = join(rep
         const path = join(scanned, entry);
         if (!write) { add(entry, path, 'old-backup'); continue; }
         const movedTo = moveAside(path, kind, entry);
-        if (movedTo) add(entry, path, 'moved', { movedTo });
+        add(entry, path, movedTo ? 'moved' : 'old-backup', movedTo ? { movedTo } : {});
       }
     };
     const put = (parts, path, kind, entry, label, assemble) => {
@@ -92,7 +98,7 @@ export function install({ home = homedir(), repoDir = repo, skillsDir = join(rep
       if (!write) return add(label, path, !there ? 'missing' : matches(parts, path) ? 'current' : 'outdated');
       if (there && matches(parts, path)) return add(label, path, 'current');
       const movedTo = there ? moveAside(path, kind, entry) : undefined;
-      if (movedTo === null) return;
+      if (movedTo === null) return add(label, path, 'not-moved');
       assemble();
       add(label, path, there ? 'updated' : 'copied', movedTo ? { movedTo } : {});
     };
@@ -164,7 +170,7 @@ function main(args) {
       continue;
     }
     const label = state => state === 'old-backup' ? (count(state) === 1 ? 'old backup' : 'old backups') : state;
-    console.log(name + ': ' + ['created', 'linked', 'replaced', 'copied', 'updated', 'current', 'moved', 'outdated', 'missing', 'blocked', 'kept', 'old-backup', 'backup-is-link'].filter(count).map(state => count(state) + ' ' + label(state)).join(', '));
+    console.log(name + ': ' + ['created', 'linked', 'replaced', 'copied', 'updated', 'current', 'moved', 'outdated', 'missing', 'blocked', 'kept', 'old-backup', 'not-moved', 'backup-is-link', 'backup-is-file'].filter(count).map(state => count(state) + ' ' + label(state)).join(', '));
     const problem = harnesses[name].workers === 'command-line' && launchProblem(name);
     if (problem) console.log('  Story sessions will not start: ' + problem);
     for (const result of mine.filter(result => result.state === 'kept')) {
@@ -183,12 +189,18 @@ function main(args) {
     for (const result of mine.filter(result => result.state === 'backup-is-link')) {
       console.log('  NOT MOVED: ' + result.path + ' is a link, so nothing that needed moving aside was changed. Replace it with a real folder, then run this again.');
     }
+    for (const result of mine.filter(result => result.state === 'backup-is-file')) {
+      console.log('  NOT MOVED: ' + result.path + ' is a file, so nothing that needed moving aside was changed. Remove or rename it, then run this again.');
+    }
+    for (const result of mine.filter(result => result.state === 'not-moved')) {
+      console.log('  NOT UPDATED: ' + result.skill + ' at ' + result.path + ' differs and could not be moved aside.');
+    }
     for (const result of mine.filter(result => result.state === 'blocked')) {
       console.log('  NOT INSTALLED: ' + result.skill + '. ' + result.path + ' is ' + result.existing + ', so the harness uses that one.');
     }
   }
-  const unusable = results.filter(result => ['blocked', 'folder-is-link', 'backup-is-link', ...(check ? ['missing'] : [])].includes(result.state));
-  if (unusable.some(result => result.state === 'blocked')) {
+  const unusable = results.filter(result => ['blocked', 'folder-is-link', 'backup-is-link', 'backup-is-file', 'not-moved', ...(check ? ['missing'] : [])].includes(result.state));
+  if (!replaceBlocked && unusable.some(result => result.state === 'blocked')) {
     console.log('\nSome skills are blocked by ones already there. Run "node install.mjs --replace" to move those aside (into each harness\'s ai-sdlc-backups folder, nothing is deleted) and install these.');
   }
   if (check || unusable.length) return unusable.length ? 1 : 0;

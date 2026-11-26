@@ -513,3 +513,43 @@ test('skills copied for a harness find the Command Center in the extension folde
   const facts = JSON.parse(execFileSync(process.execPath, [copied, 'detect', home], { encoding: 'utf8' }));
   assert.equal(realpathSync(facts.commandCenterPath), realpathSync(join(home, '.copilot', 'extensions', 'ai-sdlc-console')));
 });
+
+test('the --replace hint is not printed after --replace already ran and failed on a linked backup folder', t => {
+  const { root } = fixture(t);
+  const home = join(root, 'cli-home');
+  mkdirSync(join(home, '.claude', 'skills', 'jarvis'), { recursive: true });
+  const outside = join(root, 'outside');
+  mkdirSync(outside);
+  symlinkSync(outside, join(home, '.claude', 'ai-sdlc-backups'), 'junction');
+  const plain = cli(home, 'claude-code');
+  assert.equal(plain.status, 1);
+  assert.match(plain.output, /node install\.mjs --replace/);
+  const replaced = cli(home, '--replace', 'claude-code');
+  assert.equal(replaced.status, 1);
+  assert.doesNotMatch(replaced.output, /Run "node install\.mjs --replace"/);
+  assert.deepEqual(readdirSync(outside), []);
+});
+
+test('a backup folder that is a regular file is reported, not a crash', t => {
+  const { home, skillsDir } = copilotFixture(t);
+  copilot(home, skillsDir, { stamp: 1 });
+  writeFileSync(join(home, '.copilot', 'skills', 'jarvis', 'SKILL.md'), '# The owner\'s edit');
+  const file = join(home, '.copilot', 'ai-sdlc-backups');
+  writeFileSync(file, 'not a folder');
+  const results = copilot(home, skillsDir, { stamp: 2 });
+  assert.deepEqual(results.filter(result => result.state === 'backup-is-file').map(result => result.path), [file]);
+  assert.equal(readFileSync(join(home, '.copilot', 'skills', 'jarvis', 'SKILL.md'), 'utf8'), '# The owner\'s edit');
+  assert.equal(readFileSync(file, 'utf8'), 'not a folder');
+});
+
+test('an item that needs a move and meets a linked backup folder still shows in the results', t => {
+  const { root, home, skillsDir } = copilotFixture(t);
+  copilot(home, skillsDir, { stamp: 1 });
+  writeFileSync(join(home, '.copilot', 'skills', 'jarvis', 'SKILL.md'), '# The owner\'s edit');
+  const outside = join(root, 'outside');
+  mkdirSync(outside);
+  symlinkSync(outside, join(home, '.copilot', 'ai-sdlc-backups'), 'junction');
+  const results = copilot(home, skillsDir, { stamp: 2 });
+  assert.equal(row(results, 'jarvis').state, 'not-moved');
+  assert.equal(row(results, 'grill-me').state, 'current');
+});
