@@ -13,7 +13,7 @@ The owner answers questions, approves plans and asks for changes in the Command 
 - `deliverPending` exists for decisions recorded outside the dashboard, or ones that did not arrive.
 - `messageWorker` keeps, per session, a promise for the turn this process started (`turns`), and waits for it and for `options.after` before starting a new turn. `startWorker` registers the kickoff turn there too. The daemon passes `supervisor.idle(story)` as `after`, which waits for a turn an earlier daemon left running (ADR 0003).
 - `onTurn` reports a turn as soon as its process exists, before the turn has settled, so a daemon that restarts in between finds it in the store.
-- A decision that cannot reach a worker stays pending in the store and goes to Jarvis, who tells the owner what to do next (`deliver` resolves to `'worker'`, `'coordinator'` or `'nobody'`, and logs the reason).
+- A decision that cannot reach a worker stays pending in the store and goes to Jarvis, who tells the owner what to do next (`deliver` resolves to `'worker'`, `'coordinator'` or `'nobody'`, and logs the reason; `/api/deliver` answers `nobody` with a `reason` when the story has no worker, see [0024](0024-a-story-with-nobody-working-on-it-wakes-jarvis-once.md)).
 - The dashboard polls the store every second because the CLI, Jarvis and workers write to it from other processes.
 - In the Copilot app the extension's `onDecision` wakes the Jarvis chat directly, since workers there are started in-app.
 

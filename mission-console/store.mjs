@@ -5,7 +5,7 @@ import { extname, isAbsolute } from 'node:path';
 import { documentTypes, mediaTypes } from './media.mjs';
 import { harnessKey, phases, roles } from './roles.mjs';
 
-export const workerPhases = new Set(['scout', 'planning', 'testing', 'red', 'building', 'gates', 'mutation', 'review', 'comparison', 'diagram', 'ci', 'retro', 'pr-review']);
+export const workerPhases = new Set(['scout', 'planning', 'testing', 'red', 'building', 'gates', 'mutation', 'review', 'comparison', 'diagram', 'publishing', 'ci', 'retro', 'pr-review']);
 const transitions = {
   scout: 'planning',
   testing: 'red',
@@ -341,7 +341,7 @@ function apply(story, input, now) {
       story.phase = 'pr-review';
       return 'Hawkeye started PR review · ' + story.prReview.detail;
     case 'return-to-build':
-      requireThat(['review', 'gates', 'comparison', 'pr-review'].includes(story.phase), 'Return to build from review, the deterministic gates, the comparison, or PR review.', 409);
+      requireThat(['review', 'gates', 'comparison', 'publishing', 'pr-review'].includes(story.phase), 'Return to build from review, the deterministic gates, the comparison, publishing, or PR review.', 409);
       if (story.phase === 'review') story.reviewRounds = (story.reviewRounds ?? 0) + 1;
       if (story.phase === 'pr-review') markSeen(story, input.seen);
       story.phase = 'building';
