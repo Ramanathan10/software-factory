@@ -16,7 +16,7 @@ Before a story is handed back, the factory checks its work item in the owner's t
 - `check-story.mjs` resolves to what was found, or to what the caller must do next; a story id may carry a prefix such as `ABC-123`.
 
 ## Consequences
-- On Windows `az` is a script and is run through a shell; issue #15 tracks doing that safely. A profile that cannot be parsed is treated as no tracker; issue #14 tracks that.
+- On Windows `az` is a script and is run through a shell; 0023 says how that is made safe. A profile that cannot be parsed is treated as no tracker; issue #14 tracks that.
 
 ## Where
 - `readiness-sync/engine.mjs`, `readiness-sync/trackers.mjs`, `readiness-sync/check-story.mjs`
