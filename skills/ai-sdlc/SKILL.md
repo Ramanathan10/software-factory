@@ -95,7 +95,7 @@ Read and follow `ponytail` at the profile's implementation level, in the story w
 
 If the ladder's first step says an approved part should not exist, return to phase 1 for that decision before continuing.
 
-Turn the valid red test green without weakening or deleting its assertion. If the test encodes the wrong contract, return to the test author or phase 1 rather than silently changing it. Run the focused tests, then the relevant broader tests.
+Turn the valid red test green without weakening or deleting its assertion. If the test encodes the wrong contract, return to the test author or phase 1 rather than silently changing it. Run the focused tests, then the relevant broader tests. Before handing off, check the change against each acceptance criterion in the spec. A criterion it does not meet is unfinished work, never a limitation to write into an ADR, a skill or the handoff: fix it, or return to phase 1 to change the criterion.
 
 A story returned from publishing with a merge conflict starts by merging the remote default branch and resolving it.
 
