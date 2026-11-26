@@ -8,6 +8,7 @@ import { isAlive } from './supervisor.mjs';
 const decisions = new Set(['answer', 'approve', 'plan-feedback', 'comparison-choice', 'request-cleanup']);
 const notice = 'action-jarvis-';
 const noNewsTurn = 'No-news turn. ';
+const intakeGrace = 12;
 const choices = ['Done - Jarvis can run again', 'Hold - not now'];
 const reasons = {
   'turn-ended': 'a worker turn needs a look',
@@ -235,7 +236,8 @@ export function createCoordinator({ service, launch, adapters, kickoff, busy = (
       }
       for (const story of service.snapshot()) {
         const news = needs(story, pending);
-        if (Date.now() - Date.parse(story.updatedAt) < quietMs) continue;
+        const intake = story.phase === 'scout' && !news.length && !service.store.history(story.id).some(event => event.type === 'assign-worker');
+        if (Date.now() - Date.parse(story.updatedAt) < (intake ? quietMs * intakeGrace : quietMs)) continue;
         if (!unhandled(story, news).length && !unstaffed(story, pending)) continue;
         const pendingWake = unhandled(story, news).length ? wake(story, news) : stuck(story);
         if (!pendingWake) continue;

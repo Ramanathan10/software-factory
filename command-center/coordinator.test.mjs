@@ -703,11 +703,37 @@ test('a story created and never worked on is woken once and then put to the owne
   assert.equal(rig.story().phase, 'scout');
   assert.equal(rig.history().length, 1, 'the story has only its create event');
   await rig.open();
-  await until('a background Jarvis turn', () => rig.story().jarvis?.turn);
+  await until('a background Jarvis turn', () => rig.story().jarvis?.turn, 15000);
   rig.jarvis[0].end(0);
   await until('the action question', () => stuckNotice(rig.story()));
   await settle();
   assert.equal(rig.jarvisTurns(), 1);
+});
+
+test('a freshly created scout story gets a grace of twelve quiet periods before Jarvis is woken', async t => {
+  const quietMs = 100;
+  const rig = coordinated(t, { quietMs });
+  assert.equal(rig.history().length, 1, 'the story has only its create event');
+  await rig.open();
+  await pause(quietMs * 3);
+  assert.equal(rig.jarvisTurns(), 0, 'no wake while the owner may still be starting the daemon');
+  await pause(quietMs * 3);
+  assert.equal(rig.jarvisTurns(), 0, 'still no wake halfway through the grace');
+  await until('a background Jarvis turn after the grace', () => rig.jarvis.length, 4000);
+  assert.ok(rig.history().filter(event => event.type === 'jarvis-woken').length === 1);
+  assert.equal(rig.jarvisTurns(), 1);
+});
+
+test('a scout story whose worker was released keeps the plain quiet period', async t => {
+  const quietMs = 100;
+  const rig = coordinated(t, { quietMs });
+  rig.recorder.recordEvent({ story: 'tl-1', type: 'assign-worker', session: 'scout-1' });
+  rig.recorder.recordEvent({ story: 'tl-1', type: 'release-worker', assignment: rig.story().worker.id, detail: 'Scout stopped.' });
+  assert.equal(rig.story().phase, 'scout');
+  rig.ackAll();
+  await rig.open();
+  await pause(quietMs * 5);
+  assert.equal(rig.jarvisTurns(), 1, 'woken well before twelve quiet periods');
 });
 
 test('Hold on the stuck question stops every wake and question until something new happens on the story', async t => {
