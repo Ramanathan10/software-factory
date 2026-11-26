@@ -16,6 +16,7 @@ description: Check a change to the story store's lifecycle against every story s
 | A worker exists only in a worker phase, and no event changes the phase under it | A worker keeps running on a phase that is no longer its own | |
 | A story awaiting cleanup never changes phase | Cleanup races with work on the same story | |
 | Every event the Jarvis phase table names is accepted in or into that row's phases | Jarvis is told to record an event the store refuses | d989158: the owner's change request on the comparison had no `return-to-build` |
+| `diagram-start` is accepted only in publishing, ci or merge and returns there; it is refused in review and comparison | A story reaches the pull request without a review verdict or the owner's acceptance of the comparison | DIAG-1 #51: `diagram-start` in review or comparison returned to publishing |
 
 ## Run it
 
