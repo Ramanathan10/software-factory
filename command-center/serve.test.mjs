@@ -119,7 +119,8 @@ test('an answer to a worker that released before asking is handed to the backgro
     const question = jarvisConnection.recordEvent({ story: 'tl-1', type: 'question', question: 'bash', prompt: 'Repair Bash?', options: ['Yes', 'Hold'], recommended: 0 });
     const answer = jarvisConnection.recordEvent({ story: 'tl-1', type: 'answer', question: 'bash', answer: 0 });
 
-    assert.deepEqual(await requestDelivery('tl-1', port), { story: 'tl-1', seqs: [answer.seq], told: 'coordinator' });
+    assert.deepEqual(await requestDelivery('tl-1', port), { story: 'tl-1', seqs: [answer.seq], told: 'nobody',
+      reason: 'No worker is assigned to tl-1, so no worker was told; the decisions stay pending. Staff the phase, then deliver.' });
     assert.equal(sent.length, 0);
     assert.ok(!logged.mock.calls.some(call => /no worker is assigned/.test(call.arguments[0])), 'an answer with no worker is no longer only logged');
     assert.deepEqual((await heard(question.seq)).map(event => [event.type, event.seq]), [['answer', answer.seq]], 'Jarvis hears the answer nobody could take');
@@ -260,7 +261,9 @@ test('ordinary answers without a worker cannot start tests without plan approval
   recorder.recordEvent({ story: 'tl-1', type: 'answer', question: 'scope', answer: 1 });
   let launched = 0;
   const center = await open({ launch: async input => { if (input.phase === 'testing') launched += 1; return { session: 'wrong' }; } });
-  assert.equal((await requestDelivery('tl-1', Number(new URL(center.url).port))).told, 'coordinator', 'the answer is handed to the background Jarvis');
+  const reply = await requestDelivery('tl-1', Number(new URL(center.url).port));
+  assert.equal(reply.told, 'nobody', 'no worker is assigned, so nobody was told');
+  assert.match(reply.reason, /^No worker is assigned to tl-1, so no worker was told; the decisions stay pending./);
   assert.equal(launched, 0);
 });
 

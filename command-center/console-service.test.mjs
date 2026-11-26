@@ -254,3 +254,44 @@ test('/api/history returns every event of a story, beyond the 40 the snapshot ke
   assert.equal((await fetch(url + 'api/history?story=missing')).status, 404);
   assert.equal((await fetch(url + 'api/history?story=' + encodeURIComponent('../x'))).status, 400);
 });
+
+function deliverFixture(t, told) {
+  const handed = [];
+  const directory = mkdtempSync(join(tmpdir(), 'console-deliver-'));
+  const service = createConsoleService({ dbPath: join(directory, 'stories.db'), onDecision: async decision => { handed.push(...decision.seqs); return told; } });
+  t.after(() => { service.close(); rmSync(directory, { recursive: true, force: true }); });
+  service.createStory({ story: 'tl-1', title: 'T', detail: 'B', branch: 'b', worktree: '/w', harness: 'Codex' });
+  service.recordEvent({ story: 'tl-1', type: 'question', question: 'q', prompt: 'Which?', options: ['a', 'b'], recommended: 0 });
+  const answer = service.recordEvent({ story: 'tl-1', type: 'answer', question: 'q', answer: 0 });
+  return { service, handed, answer };
+}
+
+test('delivering to a story with no worker says nobody was told, why, and leaves the decision pending', async t => {
+  const { service, handed, answer } = deliverFixture(t, 'coordinator');
+  const reply = await service.deliverPending('tl-1');
+  assert.deepEqual(reply, { story: 'tl-1', seqs: [answer.seq], told: 'nobody',
+    reason: 'No worker is assigned to tl-1, so no worker was told; the decisions stay pending. Staff the phase, then deliver.' });
+  assert.ok(service.pending().some(event => event.seq === answer.seq), 'the answer stays pending');
+  assert.equal((await service.deliverPending('tl-1')).told, 'nobody');
+  assert.deepEqual(handed, [answer.seq, answer.seq], 'it is handed again on the next delivery');
+});
+
+test('delivering to a story with a worker keeps the coordinator reply and adds no reason', async t => {
+  const { service, handed, answer } = deliverFixture(t, 'coordinator');
+  service.recordEvent({ story: 'tl-1', type: 'assign-worker', session: 'worker-1' });
+  const reply = await service.deliverPending('tl-1');
+  assert.deepEqual(reply, { story: 'tl-1', seqs: [answer.seq], told: 'coordinator' });
+  assert.deepEqual(handed, [answer.seq]);
+});
+
+test('delivering with nothing pending or a worker told keeps today\'s replies', async t => {
+  const { service, answer } = deliverFixture(t, 'worker');
+  service.recordEvent({ story: 'tl-1', type: 'assign-worker', session: 'worker-1' });
+  assert.deepEqual(await service.deliverPending('tl-1'), { story: 'tl-1', seqs: [answer.seq], told: 'worker' });
+  assert.deepEqual(await service.deliverPending('tl-1'), { story: 'tl-1', seqs: [], told: 'nobody' });
+});
+
+test('a delivery that onDecision already reports as nobody carries no invented reason', async t => {
+  const { service, answer } = deliverFixture(t, 'nobody');
+  assert.deepEqual(await service.deliverPending('tl-1'), { story: 'tl-1', seqs: [answer.seq], told: 'nobody' });
+});
