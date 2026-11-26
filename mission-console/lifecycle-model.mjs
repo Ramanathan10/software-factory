@@ -90,7 +90,7 @@ export function eventInputs(evidence) {
     ...HEADS.map(head => ['pr-ready', { ...detail, head }]),
     ['pr-recheck', detail],
     ['merged', detail],
-    ...HEADS.flatMap(head => ['failed', 'passed', 'merged'].map(status => ['pr-observed', {
+    ...HEADS.flatMap(head => ['failed', 'passed', 'merged', 'running', 'no-checks', 'closed'].map(status => ['pr-observed', {
       url: PR, observation: { head, status, failedCount: status === 'failed' ? 1 : 0, failures: status === 'failed' ? ['test'] : [] },
     }])),
     ...HEADS.flatMap(head => [true, false].map(blocked => ['pr-observed', {

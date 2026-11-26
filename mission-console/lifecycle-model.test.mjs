@@ -115,6 +115,20 @@ test('readiness is refused while the observed review blocks it, and allowed once
   assert.ok(clear.some(ready), 'pr-ready is never accepted once the review is clear');
 });
 
+test('readiness with a head needs a passed observation of that head, and without one only works before any observation', () => {
+  const ci = live.filter(([, { state }]) => state.phase === 'ci' && !state.worker && !state.blocked && !state.cleanup);
+  const accepted = (node, headed) => node.edges.filter(edge => edge.type === 'pr-ready' && Boolean(edge.input.head) === headed && states.get(edge.to).state.phase === 'merge');
+  const wrong = ci.flatMap(([, node]) => accepted(node, true).filter(edge => {
+    const seen = node.state.prObservation;
+    return !(seen && seen.status === 'passed' && seen.head === edge.input.head);
+  }).map(() => story(node)));
+  assert.deepEqual(wrong, [], 'pr-ready with a head was accepted without a passed observation of that head');
+  assert.ok(ci.some(([, node]) => node.state.prObservation?.status === 'passed' && node.state.prObservation.blocking === false && accepted(node, true).length),
+    'pr-ready is never accepted from a ci state with a passed, clear observation');
+  const headless = ci.filter(([, node]) => accepted(node, false).length && node.state.prObservation);
+  assert.deepEqual(headless.map(([, node]) => story(node)), [], 'pr-ready without a head was accepted after an observation');
+});
+
 test('diagram work starts only from publishing, ci or merge and always returns to the phase it started from', () => {
   const open = ['publishing', 'ci', 'merge'];
   const started = live.flatMap(([, node]) => node.edges.filter(edge => edge.type === 'diagram-start').map(edge => ({ node, next: states.get(edge.to).state })));
