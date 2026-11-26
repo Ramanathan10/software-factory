@@ -65,6 +65,7 @@ const turn = { pid: 1, log: 'x.log', at: now() };
 const fixtures = {
   busy: { ...base, id: 'BUSY-1', repo: 'acme/one', phase: 'testing', worker: { id: 'w1', role: 'tester', session: 's1', turn } },
   idle: { ...base, id: 'IDLE-1', repo: 'acme/two', phase: 'testing', worker: { id: 'w2', role: 'tester', session: 's2', lastTurn: { outcome: 'ended', at: now(), code: 0 } } },
+  publisher: { ...base, id: 'PUBL-1', repo: 'acme/one', phase: 'publishing', worker: { id: 'w5', role: 'watcher', session: 's5', lastTurn: { outcome: 'ended', at: now(), code: 0 } } },
   waiting: { ...base, id: 'WAIT-1', repo: 'acme/one', phase: 'approval', events: [{ seq: 1, at: now(), type: 'plan', detail: 'Plan ready.' }] },
   blocked: { ...base, id: 'BLOCK-1', repo: 'acme/two', phase: 'building', blocked: true, worker: { id: 'w3', role: 'implementer', session: 's3', turn }, events: [{ seq: 2, at: now(), type: 'blocked', detail: 'Stuck.' }] },
 };
@@ -173,6 +174,12 @@ test('the bottom row shows status words only when the story is not busy, and the
     assert.ok(row && rows.indexOf(row) > rows.findIndex(child => child.tag === 'h3'), 'the ' + state + ' card time is not below the title');
     assert.equal(walk(row).at(-1), time, 'the ' + state + ' card time is not at the right of its row');
   }
+});
+
+test('an unstaffed publishing card says no publisher session is active, not that it waits on a release pipeline', () => {
+  const text = card('publisher').textContent;
+  assert.ok(text.includes('Idle · no publisher session active'), 'the publishing card says: ' + text);
+  assert.ok(!text.includes('release pipeline'), 'the publishing card still mentions a release pipeline');
 });
 
 test('app.css keeps no rule for the repository line, the phase pill or the pulse dot', () => {

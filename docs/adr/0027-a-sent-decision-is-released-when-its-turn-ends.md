@@ -1,4 +1,4 @@
-# 0024. A sent decision is released when its turn ends
+# 0027. A sent decision is released when its turn ends
 
 Status: Accepted
 Date: 2026-11-26

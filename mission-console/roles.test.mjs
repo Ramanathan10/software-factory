@@ -57,3 +57,9 @@ test('shipped stories sit in the Archive lane, which no other phase shares', () 
   assert.deepEqual(lanes(phases, 2).find(lane => lane.name === 'Archive')?.phases, ['closed']);
   assert.ok(!lanes(phases, 2).some(lane => lane.name === 'Done'));
 });
+
+test('Hawkeye runs publishing in the Ship lane, and Open pull request is a skill of Hawkeye', () => {
+  assert.deepEqual(phases.publishing, ['watcher', 'Open pull request', 'Ship', 'PR']);
+  assert.ok(roles.watcher.skills.includes('Open pull request'), 'Hawkeye\'s skills name Open pull request');
+  assert.ok(roles.watcher.skills.includes('PR review'), 'Hawkeye keeps PR review');
+});

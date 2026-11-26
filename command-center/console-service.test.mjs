@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync } from 'node:fs';
+import { Agent, request as httpRequest } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
@@ -308,7 +309,7 @@ test('a stale decision that finds no worker is handed on with no session, and is
   const answer = service.recordEvent({ story: 'tl-1', type: 'answer', question: 'q', answer: 0 });
   const result = await service.deliverPending('tl-1');
   assert.deepEqual([calls[1].session, calls[1].assignment], [undefined, undefined]);
-  assert.deepEqual([result.told, result.seqs], ['coordinator', [answer.seq]]);
+  assert.deepEqual([result.told, result.seqs], ['nobody', [answer.seq]]);
   assert.ok(service.pending().some(event => event.seq === answer.seq), 'the answer is still pending');
   service.recordEvent({ story: 'tl-1', type: 'assign-worker', session: 'worker-2' });
   const again = await service.deliverPending('tl-1');
@@ -509,4 +510,132 @@ test('a decision delivered, acknowledged and released before the dashboard batch
   ends[0](0);
   await new Promise(resolve => setTimeout(resolve, 150));
   assert.deepEqual(calls, [[posted.seq]]);
+});
+
+function deliverFixture(t, told) {
+  const handed = [];
+  const directory = mkdtempSync(join(tmpdir(), 'console-deliver-'));
+  const service = createConsoleService({ dbPath: join(directory, 'stories.db'), onDecision: async decision => { handed.push(...decision.seqs); return told; } });
+  t.after(() => { service.close(); rmSync(directory, { recursive: true, force: true }); });
+  service.createStory({ story: 'tl-1', title: 'T', detail: 'B', branch: 'b', worktree: '/w', harness: 'Codex' });
+  service.recordEvent({ story: 'tl-1', type: 'question', question: 'q', prompt: 'Which?', options: ['a', 'b'], recommended: 0 });
+  const answer = service.recordEvent({ story: 'tl-1', type: 'answer', question: 'q', answer: 0 });
+  return { service, handed, answer };
+}
+
+test('delivering to a story with no worker says nobody was told, why, and leaves the decision pending', async t => {
+  const { service, handed, answer } = deliverFixture(t, 'coordinator');
+  const reply = await service.deliverPending('tl-1');
+  assert.deepEqual(reply, { story: 'tl-1', seqs: [answer.seq], told: 'nobody',
+    reason: 'No worker is assigned to tl-1, so no worker was told; the decisions stay pending. Staff the phase, then deliver.' });
+  assert.ok(service.pending().some(event => event.seq === answer.seq), 'the answer stays pending');
+  assert.equal((await service.deliverPending('tl-1')).told, 'nobody');
+  assert.deepEqual(handed, [answer.seq, answer.seq], 'it is handed again on the next delivery');
+});
+
+test('delivering to a story with a worker keeps the coordinator reply and adds no reason', async t => {
+  const { service, handed, answer } = deliverFixture(t, 'coordinator');
+  service.recordEvent({ story: 'tl-1', type: 'assign-worker', session: 'worker-1' });
+  const reply = await service.deliverPending('tl-1');
+  assert.deepEqual(reply, { story: 'tl-1', seqs: [answer.seq], told: 'coordinator' });
+  assert.deepEqual(handed, [answer.seq]);
+});
+
+test('delivering with nothing pending or a worker told keeps today\'s replies', async t => {
+  const { service, answer } = deliverFixture(t, 'worker');
+  service.recordEvent({ story: 'tl-1', type: 'assign-worker', session: 'worker-1' });
+  assert.deepEqual(await service.deliverPending('tl-1'), { story: 'tl-1', seqs: [answer.seq], told: 'worker' });
+  assert.deepEqual(await service.deliverPending('tl-1'), { story: 'tl-1', seqs: [], told: 'nobody' });
+});
+
+test('a delivery that onDecision already reports as nobody carries no invented reason', async t => {
+  const { service, answer } = deliverFixture(t, 'nobody');
+  assert.deepEqual(await service.deliverPending('tl-1'), { story: 'tl-1', seqs: [answer.seq], told: 'nobody' });
+});
+
+function streamPost(url, path, size, { agent = false, type = 'application/json' } = {}) {
+  return new Promise((resolve, reject) => {
+    const request = httpRequest(url + path, {
+      method: 'POST',
+      agent,
+      headers: { Origin: url.slice(0, -1), 'Content-Type': type, 'Content-Length': size },
+    }, response => {
+      const parts = [];
+      response.on('data', part => parts.push(part));
+      response.on('error', reject);
+      response.on('end', () => resolve({ status: response.statusCode, text: Buffer.concat(parts).toString('utf8'), reusedSocket: request.reusedSocket }));
+    });
+    request.on('error', reject);
+    const chunk = Buffer.alloc(65536, 0x61);
+    let sent = 0;
+    const pump = () => {
+      while (sent < size) {
+        const length = Math.min(chunk.length, size - sent);
+        sent += length;
+        if (!request.write(chunk.subarray(0, length))) {
+          request.once('drain', pump);
+          return;
+        }
+      }
+      request.end();
+    };
+    pump();
+  });
+}
+
+function getJson(url, path, agent) {
+  return new Promise((resolve, reject) => {
+    const request = httpRequest(url + path, { agent }, response => {
+      const parts = [];
+      response.on('data', part => parts.push(part));
+      response.on('error', reject);
+      response.on('end', () => resolve({ status: response.statusCode, reusedSocket: request.reusedSocket }));
+    });
+    request.on('error', reject);
+    request.end();
+  });
+}
+
+test('an oversized decision gets 413 on a fresh connection, not a reset', async t => {
+  const service = fixture(t);
+  service.createStory(base);
+  const { url, close } = await service.startServer(0);
+  t.after(close);
+  for (const size of [200 * 1000, 5 * 1000 * 1000, 5 * 1000 * 1000, 5 * 1000 * 1000]) {
+    const reply = await streamPost(url, 'api/decision', size);
+    assert.equal(reply.status, 413, 'size ' + size);
+    assert.deepEqual(JSON.parse(reply.text), { error: 'Decision exceeds 32 KiB.' });
+  }
+});
+
+test('an oversized screenshot gets 413 on a fresh connection, not a reset', async t => {
+  const service = fixture(t);
+  service.createStory(base);
+  const { url, close } = await service.startServer(0);
+  t.after(close);
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const reply = await streamPost(url, 'api/attachment?story=tl-1', 11 * 1024 * 1024, { type: 'image/png' });
+    assert.equal(reply.status, 413, 'attempt ' + attempt);
+    assert.deepEqual(JSON.parse(reply.text), { error: 'Screenshot exceeds 10 MiB.' });
+  }
+});
+
+test('after an oversized body the keep-alive connection is reused for the next request', async t => {
+  const service = fixture(t);
+  service.createStory(base);
+  const { url, close } = await service.startServer(0);
+  const agent = new Agent({ keepAlive: true, maxSockets: 1 });
+  t.after(async () => {
+    agent.destroy();
+    await close();
+  });
+  await getJson(url, 'api/stories', agent);
+  for (let round = 0; round < 3; round += 1) {
+    const rejected = await streamPost(url, 'api/decision', 5 * 1000 * 1000, { agent });
+    assert.equal(rejected.status, 413, 'round ' + round);
+    assert.equal(rejected.reusedSocket, true, 'oversized post reused the socket in round ' + round);
+    const next = await getJson(url, 'api/stories', agent);
+    assert.equal(next.status, 200, 'round ' + round);
+    assert.equal(next.reusedSocket, true, 'follow-up reused the socket in round ' + round);
+  }
 });
