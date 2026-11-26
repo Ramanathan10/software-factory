@@ -25,7 +25,7 @@ export const roles = {
     fill: '#6b42b8', accent: '#4fd18b', ink: '#ffffff', ring: 'arc', motion: 'slide',
     glyph: 'M5 4h14a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1zM6.5 10.5l3 3M9.5 10.5l-3 3M14 12.2l1.6 1.6l2.6-2.8',
     move: 'M12 4v16' } },
-  watcher: { job: 'PR watcher', alias: 'Hawkeye', skills: ['PR checks · Current-head checks and feedback', 'PR review'], badge: {
+  watcher: { job: 'PR watcher', alias: 'Hawkeye', skills: ['PR checks · Current-head checks and feedback', 'PR review', 'Open pull request'], badge: {
     fill: '#4a2a7c', accent: '#b38cff', ink: '#e9dcff', ring: 'tick', motion: 'sweep',
     glyph: circle9 + 'M12 12m-4.5 0a4.5 4.5 0 1 0 9 0a4.5 4.5 0 1 0 -9 0', move: 'M12 12L18.4 5.6' } },
   diagrammer: { job: 'Architecture diagram designer', alias: 'Rocket', skills: ['Diagram Design'], badge: {
@@ -53,7 +53,7 @@ export const phases = {
   'comparison-choice': ['approver', 'Before-and-after decision', 'Verify', 'Before & after'],
   comparison: ['verifier', 'Capture before and after', 'Verify', 'Before & after'],
   diagram: ['diagrammer', 'Design architecture diagram', 'Verify', 'Architecture'],
-  publishing: ['coordinator', 'Open pull request', 'Ship', 'PR'],
+  publishing: ['watcher', 'Open pull request', 'Ship', 'PR'],
   ci: ['watcher', 'Watching checks', 'Ship', 'PR'],
   merge: ['watcher', 'PR ready to merge', 'Ship', 'PR'],
   retro: ['coordinator', 'Retro', 'Ship', 'PR'],

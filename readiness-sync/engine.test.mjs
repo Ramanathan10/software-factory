@@ -32,6 +32,71 @@ test('unestimated effort asks for effort instead of handoff', () => {
   assert.deepEqual(evaluate(snapshot, settings).questions.map(question => question.rule), ['effort']);
 });
 
+const withPrs = (prs, extra = {}) => ({ ...base(), prs, ...extra });
+const abandoned = (extra = {}) => ({ id: 6, status: 'abandoned', target: 'main', linked: true, ...extra });
+const done = (extra = {}) => ({ id: 5, status: 'completed', target: 'main', linked: true, ...extra });
+const met = (result, id) => result.checklist.find(item => item.id === id).met;
+const rules = result => result.questions.map(question => question.rule);
+
+test('an abandoned PR beside one completed into the target does not block readiness', () => {
+  const result = evaluate(withPrs([abandoned(), done()]), settings);
+  assert.equal(met(result, 'prMergedToTarget'), true);
+  assert.deepEqual(rules(result), ['doneDone']);
+});
+
+test('an abandoned PR beside a completed one still asks for effort when effort is unset', () => {
+  const snapshot = withPrs([abandoned(), done()]);
+  snapshot.story.effort = -1;
+  assert.deepEqual(rules(evaluate(snapshot, settings)), ['effort']);
+});
+
+test('a story whose only PR is abandoned has no merged work and asks nothing', () => {
+  const result = evaluate(withPrs([abandoned()]), settings);
+  assert.equal(met(result, 'prMergedToTarget'), false);
+  assert.deepEqual(result.questions, []);
+});
+
+test('a story whose only PR is abandoned asks nothing about effort when effort is unset', () => {
+  const snapshot = withPrs([abandoned()]);
+  snapshot.story.effort = -1;
+  assert.deepEqual(evaluate(snapshot, settings).questions, []);
+});
+
+test('a story whose only PR is abandoned and confirmed as no PR does not ask for handoff', () => {
+  const result = evaluate(withPrs([abandoned()], { noPrConfirmed: true }), settings);
+  assert.deepEqual(rules(result), []);
+});
+
+test('a story whose only PR is abandoned meets the PR checks when the owner confirmed no PR', () => {
+  const result = evaluate(withPrs([abandoned()], { noPrConfirmed: true }), settings);
+  assert.equal(met(result, 'prMergedToTarget'), true);
+  assert.equal(met(result, 'prLinked'), true);
+});
+
+test('an active PR beside a completed one still blocks and asks nothing', () => {
+  const result = evaluate(withPrs([{ id: 7, status: 'active', target: 'main', linked: true }, done()]), settings);
+  assert.equal(met(result, 'prMergedToTarget'), false);
+  assert.deepEqual(result.questions, []);
+});
+
+test('a completed PR into another branch stays unmet beside an abandoned one', () => {
+  const result = evaluate(withPrs([abandoned(), done({ target: 'dev' })]), settings);
+  assert.equal(met(result, 'prMergedToTarget'), false);
+});
+
+test('an unlinked abandoned PR does not stop the linked check passing', () => {
+  const result = evaluate(withPrs([abandoned({ linked: false }), done()]), settings);
+  assert.equal(met(result, 'prLinked'), true);
+});
+
+test('an unlinked live PR still fails the linked check', () => {
+  assert.equal(met(evaluate(withPrs([abandoned(), done({ linked: false })]), settings), 'prLinked'), false);
+});
+
+test('a story whose only PR is abandoned fails the linked check', () => {
+  assert.equal(met(evaluate(withPrs([abandoned()]), settings), 'prLinked'), false);
+});
+
 test('a story owned by someone else is untouched', () => {
   const snapshot = base(); snapshot.story.assignee = 'Other';
   const result = evaluate(snapshot, settings);
@@ -96,6 +161,7 @@ test('Azure DevOps: the story, its child tasks and its linked pull requests beco
     story: { id: 1, assignee: 'owner@example.test', effort: 5 },
     tasks: [{ id: 10, title: 'Build', state: 'Closed', assignee: 'sam@example.test', assigneeName: 'Sam' }],
     prs: [{ id: 77, status: 'completed', target: 'main', linked: true }],
+    skippedRelations: [],
   });
 });
 
