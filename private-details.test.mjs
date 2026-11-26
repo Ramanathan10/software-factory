@@ -14,18 +14,23 @@ const generic = /^(github|dependabot|claude|actions|bot|noreply|web-flow|users)$
 function privateWords({ owner, names = [], extra = '' }) {
   if (!owner) throw new Error('No owner to check for: add an origin remote or set GITHUB_REPOSITORY_OWNER.');
   const words = new Set(extra.split(',').map(word => word.trim()).filter(Boolean));
+  const ascii = new Set();
   for (const word of owner.split(/[^A-Za-z]+/).filter(word => word.length >= 3 && !generic.test(word)))
-    for (let end = 3; end <= word.length; end += 1) words.add(word.slice(0, end));
+    for (let end = 3; end <= word.length; end += 1) ascii.add(word.slice(0, end));
+  for (const word of ascii) words.add(word);
   for (const name of names.filter(name => !/\[bot\]/.test(name) && name.toLowerCase() !== owner.toLowerCase()).map(name => name.split(/[^\p{L}\p{N}]+/u).filter(Boolean)))
     if (name.join('').length >= 3 && !name.every(word => generic.test(word))) words.add(name.join(' '));
-  return [...words];
+  return Object.assign([...words], { ascii });
 }
 
 const alnum = '[\\p{L}\\p{N}]';
 
 function lineMatcher(words) {
   const escape = word => word.split(' ').map(part => part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('[^\\p{L}\\p{N}]+');
-  const bounded = word => (new RegExp('^' + alnum, 'u').test(word) ? '(?<!' + alnum + ')' : '') + escape(word) + (new RegExp(alnum + '$', 'u').test(word) ? '(?!' + alnum + ')' : '');
+  const bounded = word => {
+    const edge = words.ascii?.has(word) ? '[A-Za-z0-9]' : alnum;
+    return (new RegExp('^' + alnum, 'u').test(word) ? '(?<!' + edge + ')' : '') + escape(word) + (new RegExp(alnum + '$', 'u').test(word) ? '(?!' + edge + ')' : '');
+  };
   return new RegExp('(' + words.map(bounded).join('|') + ')', 'iu');
 }
 
@@ -67,6 +72,10 @@ test('an owner login counts as a whole word and so does each prefix of 3+ letter
   const sources = { owner: 'quillfern', names: [] };
   for (const line of ['by quillfern', 'by quill', 'by QUI today', 'x/quil/y']) assert.ok(hits(sources, line), line);
   for (const line of ['a quiet room', 'qu alone', 'quillferns']) assert.ok(!hits(sources, line), line);
+});
+
+test('owner login prefixes keep ASCII word edges, so accented text around them is still caught', () => {
+  for (const [owner, line] of [['renee', 'Renée wrote'], ['jose', 'José wrote'], ['quillfern', 'équill']]) assert.ok(hits({ owner, names: [] }, line), line);
 });
 
 test('each word of a hyphenated owner login gets prefixes', () => {
