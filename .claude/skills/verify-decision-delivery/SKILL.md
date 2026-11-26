@@ -80,7 +80,7 @@ Before you treat a failure as a bug, check that the step it names still matches 
 - The kickoff turn of a replacement worker, a replacement whose session string repeats a released one (the code compares assignment ids, and `serve.test.mjs` pins that case), and a release or assignment during a restart.
 - A restart after a replacement is assigned while the released worker's turn lives on, and an assignment after a restart while a turn adopted from the earlier daemon lives on. `supervisor.idle` waits on adopted turns only for the assigned worker, so the replacement's turn can run beside the released one. The model's `Restart` and `Assign` steps are withheld in those states, so `OneTurnPerWorktree` does not hold there.
 - Enforcing that a worker ends its turn promptly after releasing, and a delivered turn that fails after the settle window (issue #49).
-- Whether Jarvis is woken for a decision no worker is left to take. The model lets `Assign` happen at any time; `coordinator.test.mjs` pins the wake through the seqs owed to Jarvis, even when an earlier Jarvis turn already saw the answer.
+- Whether Jarvis is woken for a decision no worker is left to take. The model releases and assigns freely except while an adopted turn lives on; `coordinator.test.mjs` pins the wake through the seqs owed to Jarvis, even when an earlier Jarvis turn already saw the answer.
 - A restart while a kickoff turn settles. The story has no worker recorded until `startWorker` returns, so no decision can be handed to it, but Jarvis could start a second worker for the story.
 
 ## Coverage record

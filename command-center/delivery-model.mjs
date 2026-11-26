@@ -97,7 +97,7 @@ export function steps(state, fix) {
   if (state.assign === null && state.replaced < REPLACEMENTS && !state.turns.some(turn => turn.adopted)) {
     step('Assign', next => { next.replaced += 1; next.assign = next.replaced; });
   }
-  if (state.restarts < RESTARTS && state.turns.every(turn => turn.session === state.assign)) {
+  if (state.restarts < RESTARTS && state.turns.every(turn => state.assign === null || turn.session === state.assign)) {
     step('Restart', next => {
       next.restarts += 1;
       next.sent.fill(false);
