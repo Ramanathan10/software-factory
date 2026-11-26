@@ -24,7 +24,7 @@ From the interview:
 5. **Diagram (r1-diagram, r2-diagram-step, r2-diagram-once):** as its first step, before the merge and gates, the publisher checks whether a diagram is due: the profile's `architectureDiagram` is `always`, or the spec asks for one, and `story.diagram.completedAt` is not set. If so it records `release-worker`, then `diagram-start` with the spec's scope, and ends its turn. Jarvis staffs Rocket; Rocket's `handoff` returns the story to `publishing` and wakes Jarvis, which starts a new publisher. A diagram is drawn once per story: `replan` already clears `story.diagram`, a second pass after PR review does not redraw.
 6. **Idle text (r1-idle):** `command-center/ui/app.js:155` publishing becomes 'no publisher session active'.
 7. **E2E (r1-e2e):** change `e2e/scenarios/story-to-pull-request.mjs` so a publishing turn opens the PR, not the reviewer. No second scenario.
-8. **Docs (r1-docs):** a `### Publishing` subsection in ai-sdlc phase 8; Jarvis phase-table rows 7 and 8; Hawkeye's line in the Roles table; ADR 0023. No edits to `BACKGROUND.md` or the RUNBOOK kickoff template.
+8. **Docs (r1-docs):** a `### Publishing` subsection in ai-sdlc phase 8; Jarvis phase-table rows 7 and 8; Hawkeye's line in the Roles table; ADR 0026. No edits to `BACKGROUND.md` or the RUNBOOK kickoff template.
 9. **Stories already in publishing (r1-stuck):** no special handling. Answering their open question wakes Jarvis, which can then start the publisher.
 10. **Architecture diagram (r1-arch, r2-arch-form):** this PR carries a small Mermaid state diagram of publishing's exits in its body.
 11. **Leftover comparison choice (r3-choice):** starting the publisher is what handles the `comparison-choice` that sent the story to publishing. Whoever starts the publisher, Jarvis or the scripted Jarvis, acks that event before delivering pending decisions, so the publisher never gets a second turn after it has released. The rule lives in the ai-sdlc Publishing subsection; `e2e/scripted.mjs` follows it. No store or delivery code changes.
@@ -92,7 +92,7 @@ The reviewer's turn ends at its `handoff` and `comparison-choice`. A new turn `{
 8. The lifecycle-model tests pass, including the phase-table check with rows 7 and 8 rewritten, and the new properties above.
 9. `node e2e/run.mjs`: `story-to-pull-request` passes with exactly one publisher turn (no resumed turn after it releases), with the PR opened by the publishing turn and no push in the reviewer's turn; the changed scenario fails on unchanged `main`.
 10. The delivery model (`.claude/skills/verify-decision-delivery/SKILL.md`) passes unchanged.
-11. Docs: ai-sdlc has the `### Publishing` subsection (with the authorization and ack rules), the new no-browser sentence and the phase 3 conflict sentence; the Jarvis phase table and Roles table match decisions 5 and 8; ADR 0023 exists; `BACKGROUND.md` and the RUNBOOK kickoff template are untouched.
+11. Docs: ai-sdlc has the `### Publishing` subsection (with the authorization and ack rules), the new no-browser sentence and the phase 3 conflict sentence; the Jarvis phase table and Roles table match decisions 5 and 8; ADR 0026 exists; `BACKGROUND.md` and the RUNBOOK kickoff template are untouched.
 12. `node --test` and `gitleaks git --no-banner --log-opts=origin/main..HEAD` pass; no comments added to source (`comment-ratchet.json` unchanged or lower).
 
 ## Test level
