@@ -45,9 +45,9 @@ const declarations = (scope, selector) => {
 const headerRule = (scope, name) => ({ ...declarations(scope, name), ...declarations(scope, `.bar ${name}`) });
 
 const rightGroup = () => {
-  const match = header.match(/<(\w+) class="([\w-]+)"[^>]*>\s*<div class="stats">/);
-  assert.ok(match, 'the stats, Notify me and the clock must sit in one wrapper element with its own class');
-  return { className: match[2], html: header.slice(match.index), start: match.index };
+  const match = header.match(/<div class="([\w-]+)"[^>]*>\s*<div class="stats">/);
+  assert.ok(match, 'the stats, Notify me and the clock must sit in one wrapper div with its own class');
+  return { className: match[1], html: div(header, '<div class="' + match[1] + '"'), start: match.index };
 };
 
 test('the tablist sits in the header with its four tabs in order', () => {
