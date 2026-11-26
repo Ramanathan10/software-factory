@@ -69,7 +69,7 @@ Before you treat a failure as a bug, check that the step it names still matches 
 - A `messageWorker` that fails to start its program. The code releases the claimed seqs in that case, and `console-service.test.mjs` covers it, but the model has no failure step.
 - The order of decisions within one turn, the store's own transactions (see `verify-story-lifecycle`), and harnesses whose workers run in-app.
 - Several daemons running at once. `serve.mjs` refuses to start a second one on the same port.
-- A decision on a command-line story with no worker. `onDecision` hands it to nobody: it nudges the coordinator and returns `coordinator`, so `hand` releases its seqs and the decision stays pending until a background Jarvis turn handles it (ADR 0019). The background Jarvis's own turns go through `messageWorker` on a session no worker shares. `coordinator.test.mjs` covers both.
+- A decision on a command-line story with no worker. `onDecision` hands it to nobody: it nudges the coordinator and returns `coordinator`, so `hand` releases its seqs and the decision stays pending until a background Jarvis turn handles it (ADR 0019). `deliverPending` turns that reply into `nobody` with a reason when no worker is assigned, so Jarvis does not read it as handled (ADR 0023); the model keeps the `coordinator` state. The background Jarvis's own turns go through `messageWorker` on a session no worker shares. `coordinator.test.mjs` covers both.
 - A restart while a kickoff turn settles. The story has no worker recorded until `startWorker` returns, so no decision can be handed to it, but Jarvis could start a second worker for the story.
 
 ## Coverage record

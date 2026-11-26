@@ -107,7 +107,11 @@ export function createConsoleService({ dbPath = DEFAULT_DB_PATH, home = process.
     async deliverPending(story) {
       const records = store.pendingFor(story).filter(record => humanDecisions.has(record.type) && !sent.has(record.seq));
       if (!records.length || !onDecision) return { story, seqs: [], told: 'nobody' };
-      return { story, ...await hand(story, records.map(record => record.seq), [...new Set(records.map(record => record.type))]) };
+      const handed = await hand(story, records.map(record => record.seq), [...new Set(records.map(record => record.type))]);
+      if (handed.told === 'coordinator' && !store.snapshot().find(item => item.id === story)?.worker) {
+        return { story, ...handed, told: 'nobody', reason: 'No worker is assigned to ' + story + ', so no worker was told; the decisions stay pending. Staff the phase, then deliver.' };
+      }
+      return { story, ...handed };
     },
     listAttachments(story) {
       const folder = join(attachmentRoot, folderFor(story));

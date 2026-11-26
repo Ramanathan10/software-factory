@@ -50,7 +50,7 @@ export async function run(rig) {
   const staffed = await rig.step('with no worker, nothing pending and no open question, the daemon wakes Jarvis a third time and it staffs the planner', async () => {
     const woken = await rig.until('a third Jarvis wake', () => rig.jarvisWakes(story).length >= 3, 60000);
     expect(woken, 'Nobody woke Jarvis for the story left with no worker.');
-    const assigned = await rig.until('the planner to be assigned', () => rig.event(story, 'assign-worker'), 60000);
+    const assigned = await rig.until('the planner to be assigned', () => rig.event(story, 'assign-worker', item => item.worker?.role === 'planner'), 60000);
     expect(assigned.worker.role === 'planner', 'The next worker is a ' + assigned.worker.role + ', not the planner.');
     return assigned;
   });

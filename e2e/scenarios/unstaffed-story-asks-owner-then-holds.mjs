@@ -18,7 +18,7 @@ export async function run(rig) {
     const asked = await rig.until('the stuck-story question', () => rig.snapshot(story).questions.find(question => question.id.startsWith('action-jarvis-')), 60000);
     expect(rig.jarvisWakes(story).length === 2, 'Jarvis was woken ' + rig.jarvisWakes(story).length + ' times, not twice.');
     expect(/^Action for you: nobody is working on E2E-IDLE-HOLD in planning, and Jarvis's turn did not staff it\. /.test(asked.prompt), 'The question reads: ' + asked.prompt);
-    expect(/Then choose Done\.$/.test(asked.prompt), 'The question does not end with what to choose: ' + asked.prompt);
+    expect(/then choose Done\.$/.test(asked.prompt), 'The question does not end with what to choose: ' + asked.prompt);
     expect(/^Done/.test(asked.options[0]) && /^Hold/.test(asked.options[1]), 'The options are ' + JSON.stringify(asked.options) + '.');
     return asked;
   });

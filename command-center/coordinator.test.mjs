@@ -824,7 +824,7 @@ test('what Jarvis records while it staffs a story does not make the staffed stor
   const { port } = await rig.open();
   await until('a background Jarvis turn', () => rig.story().jarvis?.turn);
   await requestStart('tl-1', 'You are the planner for tl-1.', port);
-  rig.recorder.recordEvent({ story: 'tl-1', type: 'activity', detail: 'Jarvis started the planner.', by: 'jarvis' });
+  rig.recorder.recordEvent({ story: 'tl-1', type: 'activity', detail: 'Jarvis started the planner.', assignment: rig.story().worker.id, by: 'jarvis' });
   rig.jarvis[0].end(0);
   await rest(rig);
   await settle();

@@ -107,7 +107,8 @@ function jarvisKickoff(story, news, dbPath, port) {
   const serve = factoryFile('command-center/serve.mjs');
   return [
     'You are the background Jarvis for story ' + story.id + ' in ' + story.harness + '. The Command Center woke you because the story needs its coordinator. This is one turn: act on the news, then end the turn.',
-    'News (event seq: type): ' + news.map(event => event.seq + ': ' + event.type).join(', ') + '.',
+    news.length ? 'News (event seq: type): ' + news.map(event => event.seq + ': ' + event.type).join(', ') + '.'
+      : 'No news: nobody is working on ' + story.id + ' in ' + story.phase + ': no worker, nothing pending, no open question. Staff it, or record blocked or a question.',
     'Read first, completely, and follow: ' + factoryFile('skills/jarvis/BACKGROUND.md'),
     'Factory runbook: ' + factoryFile('skills/jarvis/RUNBOOK.md') + '\nAI SDLC skill: ' + factoryFile('skills/ai-sdlc/SKILL.md'),
     'Console CLI: node ' + factoryFile('mission-console/jarvis.mjs') + '\nConsole database: ' + dbPath,
