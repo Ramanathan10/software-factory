@@ -176,7 +176,7 @@ async function drive(rig, done, limit, tally) {
       last = await rig.decide({ story, type: 'approve' });
       waiting = 'the Command Center to start the test author after approval';
     } else if (!current.worker && workerPhases.has(current.phase)) {
-      await staff(rig);
+      if (current.phase !== 'publishing') await staff(rig);
       waiting = 'the worker Jarvis started for ' + current.phase;
     } else {
       throw new Error('The worker ended its turn in ' + current.phase + ' with nothing for the owner or Jarvis to do. Its log ends:\n' + rig.lastLog());
@@ -229,6 +229,12 @@ export async function run(rig) {
     const turns = rig.history(story).filter(item => item.type === 'turn-started' && item.phase === 'publishing');
     expect(turns.length === 1, 'Expected one worker turn in publishing, found ' + turns.length + '.');
     expect(rig.snapshot(story).pr, 'The story has no pull request.');
+    const [turn] = turns;
+    const released = rig.history(story).find(item => item.type === 'release-worker' && item.seq > turn.seq);
+    const later = rig.history(story).filter(item => item.type === 'turn-started' && item.seq > released.seq && item.worker.session === turn.worker.session);
+    expect(!later.length, 'The publisher session was resumed in ' + later.map(item => item.phase).join(', ') + ' after it released.');
+    const stale = rig.history(story).filter(item => item.type === 'comparison-choice' && !rig.acknowledged(story, item.seq));
+    expect(!stale.length, 'The comparison choice (seq ' + stale.map(item => item.seq).join(', ') + ') is still pending.');
   });
 
   const pull = await rig.step('one pull request is open from the story branch into main, and its description carries the spec and the gate results', () => {

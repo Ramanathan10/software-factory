@@ -11,7 +11,7 @@ const eventRoles = {
   create: 'coordinator', question: 'planner', 'draft-plan': 'planner', plan: 'planner',
   answer: 'approver', approve: 'approver', 'comparison-choice': 'approver', 'request-cleanup': 'approver',
   'assign-worker': 'coordinator', 'release-worker': 'coordinator', handoff: 'coordinator',
-  'pr-opened': 'coordinator', 'pr-observed': 'watcher', 'pr-ready': 'watcher', 'pr-review-start': 'watcher', merged: 'watcher',
+  'pr-opened': 'watcher', 'pr-observed': 'watcher', 'pr-ready': 'watcher', 'pr-review-start': 'watcher', merged: 'watcher',
 };
 
 let meta = { roles: {}, phases: {} };
