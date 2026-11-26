@@ -7,11 +7,20 @@ Date: 2026-11-23
 The repository is meant to be shared, so it must not carry the owner's name, other people's names, or work details such as a story prefix. A test that listed those words would itself carry them.
 
 ## Decision
-`private-details.test.mjs` works out the words at run time: the GitHub owner (from `GITHUB_REPOSITORY_OWNER` or the `origin` remote), the git identities in the history and the local `user.name`, and `PRIVATE_WORDS`, a comma-separated list set as a repository variable in CI. A nickname is usually the start of a name, so each name's first three or more letters count as a whole word too. Bots and generic words are skipped. A word edge applies only where the entry itself starts or ends with a letter or digit, so an entry such as `PCS-` still matches `PCS-12`. The licence and community files are exempt because they name the copyright holder and where to report a problem.
+`private-details.test.mjs` works out the words at run time from three sources: the GitHub owner's login (from `GITHUB_REPOSITORY_OWNER` or the `origin` remote), the git names in the history and the local `user.name`, and `PRIVATE_WORDS`, a comma-separated list set as a repository variable in CI.
+
+The owner's login is the only source that gets prefixes. A nickname is usually the start of the login, so each word of the login counts as a whole word, and so does each prefix of three or more letters. A nickname that is not the start of the login goes in `PRIVATE_WORDS`.
+
+Every other git name matches only as the whole full name, with its words in order, so a contributor named "Andrex Markwell" does not ban `mark`, `and` or `the`. Bots, and names made only of generic words, are skipped, and so is a git name that is the owner login itself. A word edge applies only where the entry itself starts or ends with a letter or digit, so an entry such as `PCS-` still matches `PCS-12`.
+
+With no `origin` remote and no `GITHUB_REPOSITORY_OWNER`, the test fails and asks for one of them, because without an owner it cannot tell what to protect. The licence and community files are exempt because they name the copyright holder and where to report a problem.
 
 ## Consequences
-- A short name produces short prefixes, which can match ordinary words; the generic list grows when that happens.
+- Contributors with common names no longer fail the test on ordinary words.
+- A contributor whose full name is one ordinary word still fails on that word, and a contributor's first name on its own is no longer caught.
+- An owner whose git name differs from their login gets no prefixes for the git name; list the nickname in `PRIVATE_WORDS`.
+- In a fork clone, `origin` names the contributor, so their login's prefixes apply locally; CI uses the base repository's owner.
 - Without `PRIVATE_WORDS` set, only names are checked.
 
 ## Where
-- `private-details.test.mjs` — `privateWords`, `exempt`, `bounded`
+- `private-details.test.mjs` — `privateWords`, `lineMatcher`, `exempt`
