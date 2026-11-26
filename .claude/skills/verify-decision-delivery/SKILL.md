@@ -62,7 +62,7 @@ The model's state mirrors the code: `assign` is the assignment now held, or null
 | `recordsAtSpawn` | `messageWorker` calls `onTurn`, which records `turn-started`, as soon as the process exists, before the turn settles | `harnesses.test.mjs`: "a message reports its turn as soon as the process exists, before the turn settles" |
 | `rechecksAssignment` | `messageWorker` calls `options.current()` after `await previous` with no `await` before it spawns; `serve.mjs` passes it only for worker deliveries, comparing the assignment `hand` captured with the one now assigned; a Jarvis resume gets none | `harnesses.test.mjs`: "a message the caller no longer wants is not started, and the session accepts the next message", "the caller is asked whether a message is still wanted after the earlier turn ends, not before"; `serve.test.mjs`: "an answer recorded while a worker is mid-turn goes to the worker assigned when the wait ends, not to the one that released"; `console-service.test.mjs`: "a decision whose delivery came back stale is handed again to the worker assigned by then, and is handed to nobody else" |
 
-When you change one of these behaviors, change the step in the model and its flag in `current` in the same pull request, and keep or replace the test that pins it.
+When you change one of these behaviors, change the step in the model and its flag in `current` in the same pull request, and keep or replace the test that pins it. A guard that withholds a step is a claim about the code too: match it to the code it stands for, no stricter and no looser, and when you change one, reread the invariant rows above and "What it does not cover" below against the new guard.
 
 ## Read a failure
 
