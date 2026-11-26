@@ -206,6 +206,115 @@ test('a decision that did not reach the worker is handed again on the next deliv
   assert.deepEqual(handed, [answer.seq, answer.seq]);
 });
 
+function released(service, story = 'tl-1') {
+  const worker = find(service, story).worker;
+  service.recordEvent({ story, type: 'release-worker', assignment: worker.id, detail: 'Done.' });
+  return worker;
+}
+
+function handing(t, onDecision) {
+  const directory = mkdtempSync(join(tmpdir(), 'console-deliver-'));
+  const service = createConsoleService({ dbPath: join(directory, 'stories.db'), decisionDelayMs: 5, onDecision });
+  t.after(() => { service.close(); rmSync(directory, { recursive: true, force: true }); });
+  service.createStory({ story: 'tl-1', title: 'T', detail: 'B', branch: 'b', worktree: '/w', harness: 'Codex' });
+  service.recordEvent({ story: 'tl-1', type: 'question', question: 'q', prompt: 'Which?', options: ['a', 'b'], recommended: 0 });
+  service.recordEvent({ story: 'tl-1', type: 'assign-worker', session: 'worker-1' });
+  return service;
+}
+
+test('a decision is handed with the session and the assignment of one snapshot of the story', async t => {
+  const calls = [];
+  const service = handing(t, async decision => { calls.push(decision); return 'worker'; });
+  const worker = find(service, 'tl-1').worker;
+  service.recordEvent({ story: 'tl-1', type: 'answer', question: 'q', answer: 0 });
+  await service.deliverPending('tl-1');
+  assert.deepEqual([calls[0].session, calls[0].assignment], ['worker-1', worker.id]);
+});
+
+test('a decision whose delivery came back stale is handed again to the worker assigned by then, and is handed to nobody else', async t => {
+  const calls = [];
+  let service;
+  const onDecision = async decision => {
+    calls.push({ ...decision });
+    if (calls.length === 1) {
+      released(service);
+      service.recordEvent({ story: 'tl-1', type: 'assign-worker', session: 'worker-2' });
+      return 'stale';
+    }
+    return 'worker';
+  };
+  service = handing(t, onDecision);
+  const first = find(service, 'tl-1').worker;
+  const answer = service.recordEvent({ story: 'tl-1', type: 'answer', question: 'q', answer: 0 });
+  const result = await service.deliverPending('tl-1');
+  const second = find(service, 'tl-1').worker;
+  assert.deepEqual(calls.map(call => [call.session, call.assignment, call.seqs]), [['worker-1', first.id, [answer.seq]], ['worker-2', second.id, [answer.seq]]]);
+  assert.deepEqual([result.told, result.seqs], ['worker', [answer.seq]]);
+  assert.deepEqual((await service.deliverPending('tl-1')).seqs, [], 'the answer the replacement has is not handed again');
+});
+
+test('a decision stays handed on through a second release before the first re-hand ends', async t => {
+  const calls = [];
+  let service;
+  const onDecision = async decision => {
+    calls.push({ ...decision });
+    if (calls.length <= 2) {
+      released(service);
+      service.recordEvent({ story: 'tl-1', type: 'assign-worker', session: 'worker-' + (calls.length + 1) });
+      return 'stale';
+    }
+    return 'worker';
+  };
+  service = handing(t, onDecision);
+  const answer = service.recordEvent({ story: 'tl-1', type: 'answer', question: 'q', answer: 0 });
+  const result = await service.deliverPending('tl-1');
+  assert.deepEqual(calls.map(call => call.session), ['worker-1', 'worker-2', 'worker-3']);
+  assert.deepEqual([result.told, result.seqs], ['worker', [answer.seq]]);
+});
+
+test('a delivery request while a stale decision is being handed again gets nothing, and no decision is handed twice', async t => {
+  const calls = [];
+  const overlapping = [];
+  let service;
+  const onDecision = async decision => {
+    calls.push({ ...decision });
+    if (calls.length === 1) {
+      released(service);
+      service.recordEvent({ story: 'tl-1', type: 'assign-worker', session: 'worker-2' });
+      return 'stale';
+    }
+    overlapping.push(await service.deliverPending('tl-1'));
+    return 'worker';
+  };
+  service = handing(t, onDecision);
+  const answer = service.recordEvent({ story: 'tl-1', type: 'answer', question: 'q', answer: 0 });
+  await service.deliverPending('tl-1');
+  assert.deepEqual(overlapping.map(result => result.seqs), [[]]);
+  assert.deepEqual(calls.map(call => call.seqs), [[answer.seq], [answer.seq]]);
+});
+
+test('a stale decision that finds no worker is handed on with no session, and is free to be handed again once one is assigned', async t => {
+  const calls = [];
+  let service;
+  const onDecision = async decision => {
+    calls.push({ ...decision });
+    if (calls.length === 1) {
+      released(service);
+      return 'stale';
+    }
+    return decision.session ? 'worker' : 'coordinator';
+  };
+  service = handing(t, onDecision);
+  const answer = service.recordEvent({ story: 'tl-1', type: 'answer', question: 'q', answer: 0 });
+  const result = await service.deliverPending('tl-1');
+  assert.deepEqual([calls[1].session, calls[1].assignment], [undefined, undefined]);
+  assert.deepEqual([result.told, result.seqs], ['coordinator', [answer.seq]]);
+  assert.ok(service.pending().some(event => event.seq === answer.seq), 'the answer is still pending');
+  service.recordEvent({ story: 'tl-1', type: 'assign-worker', session: 'worker-2' });
+  const again = await service.deliverPending('tl-1');
+  assert.deepEqual([again.told, again.seqs, calls[2].session], ['worker', [answer.seq], 'worker-2']);
+});
+
 test('/api/attachment stores a same-origin screenshot per story, serves it, and rejects non-images or other origins', async t => {
   const service = fixture(t);
   service.createStory(base);

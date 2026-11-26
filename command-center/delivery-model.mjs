@@ -1,28 +1,31 @@
-export const current = { filterSent: true, handReserves: true, startRegistersTurn: true, waitsForAdoptedTurns: true, recordsAtSpawn: true };
+export const current = { filterSent: true, handReserves: true, startRegistersTurn: true, waitsForAdoptedTurns: true, recordsAtSpawn: true, rechecksAssignment: true };
 
 const DECISIONS = 2;
 const JARVIS_CALLS = 2;
 const RESTARTS = 1;
+const REPLACEMENTS = 2;
 
 const initial = fix => ({
-  restarts: 0, jarvisCalls: 0, nextId: 1,
+  restarts: 0, jarvisCalls: 0, nextId: 1, assign: 0, replaced: 0, released: 0, resumedReleased: false,
+  live: Array(DECISIONS).fill(false), wasted: Array(DECISIONS).fill(false),
   recorded: Array(DECISIONS).fill(false), pending: Array(DECISIONS).fill(false),
   handed: Array(DECISIONS).fill(0), sent: Array(DECISIONS).fill(false), batch: Array(DECISIONS).fill(false),
   procs: [],
-  tail: fix.startRegistersTurn ? 0 : null,
-  turns: [{ id: 0, seqs: Array(DECISIONS).fill(false), adopted: false, recorded: true }],
+  tails: Array(REPLACEMENTS + 1).fill(null).map((tail, session) => (session === 0 && fix.startRegistersTurn ? 0 : null)),
+  turns: [{ id: 0, session: 0, seqs: Array(DECISIONS).fill(false), known: Boolean(fix.startRegistersTurn), recorded: true }],
 });
 
 const any = seqs => seqs.some(Boolean);
 const settledEntry = (state, id) => id === null || (!state.procs.some(proc => proc.id === id) && !state.turns.some(turn => turn.id === id));
 
 function hand(state, fix, seqs, via) {
+  if (state.assign === null) return null;
   const carried = fix.handReserves ? seqs.map((seq, d) => seq && !state.sent[d]) : seqs;
   if (!any(carried)) return null;
   const next = structuredClone(state);
   if (fix.handReserves) carried.forEach((seq, d) => { if (seq) next.sent[d] = true; });
-  next.procs.push({ id: next.nextId, via, seqs: carried, waitsFor: next.tail, spawned: false });
-  next.tail = next.nextId;
+  next.procs.push({ id: next.nextId, via, seqs: carried, session: state.assign, waitsFor: next.tails[state.assign], spawned: false });
+  next.tails[state.assign] = next.nextId;
   next.nextId += 1;
   return next;
 }
@@ -48,12 +51,29 @@ export function steps(state, fix) {
   }
   for (const proc of state.procs) {
     const at = state.procs.indexOf(proc);
-    const adoptedRunning = state.turns.some(turn => turn.adopted);
-    if (!proc.spawned && settledEntry(state, proc.waitsFor) && !(fix.waitsForAdoptedTurns && adoptedRunning)) {
+    const ready = !proc.spawned && settledEntry(state, proc.waitsFor) && !(fix.waitsForAdoptedTurns && state.turns.some(turn => turn.known && (!turn.adopted || turn.session === state.assign)));
+    if (ready && fix.rechecksAssignment && proc.session !== state.assign) {
+      step('Stale(' + proc.via + '#' + proc.id + ')', next => {
+        next.procs.splice(at, 1);
+        if (next.assign === null) {
+          if (fix.handReserves) proc.seqs.forEach((seq, d) => { if (seq) next.sent[d] = false; });
+          return;
+        }
+        next.procs.push({ ...proc, id: next.nextId, session: next.assign, waitsFor: next.tails[next.assign] });
+        next.tails[next.assign] = next.nextId;
+        next.nextId += 1;
+      });
+    } else if (ready) {
       step('Spawn(' + proc.via + '#' + proc.id + ')', next => {
         next.procs[at].spawned = true;
-        next.turns.push({ id: proc.id, seqs: proc.seqs, adopted: false, recorded: Boolean(fix.recordsAtSpawn) });
-        proc.seqs.forEach((seq, d) => { if (seq) next.handed[d] += 1; });
+        next.turns.push({ id: proc.id, session: proc.session, seqs: proc.seqs, known: true, recorded: Boolean(fix.recordsAtSpawn) });
+        if (proc.session !== state.assign && state.assign !== null) next.resumedReleased = true;
+        proc.seqs.forEach((seq, d) => {
+          if (!seq) return;
+          next.handed[d] += 1;
+          if (proc.session === state.assign) next.live[d] = true;
+          else next.wasted[d] = true;
+        });
       });
     }
     if (proc.spawned) {
@@ -67,26 +87,34 @@ export function steps(state, fix) {
   for (const turn of state.turns) {
     const at = state.turns.indexOf(turn);
     turn.seqs.forEach((seq, d) => {
-      if (seq && state.pending[d]) step('Ack(d' + d + ')', next => { next.pending[d] = false; });
+      if (seq && state.pending[d] && turn.session === state.assign) step('Ack(d' + d + ')', next => { next.pending[d] = false; });
     });
     step('TurnEnd(#' + turn.id + ')', next => { next.turns.splice(at, 1); });
   }
-  if (state.restarts < RESTARTS) {
+  if (state.assign !== null && state.released < REPLACEMENTS) {
+    step('Release', next => { next.assign = null; next.released += 1; });
+  }
+  if (state.assign === null && state.replaced < REPLACEMENTS && !state.turns.some(turn => turn.adopted)) {
+    step('Assign', next => { next.replaced += 1; next.assign = next.replaced; });
+  }
+  if (state.restarts < RESTARTS && state.turns.every(turn => state.assign === null || turn.session === state.assign)) {
     step('Restart', next => {
       next.restarts += 1;
       next.sent.fill(false);
       next.batch.fill(false);
       next.handed.fill(0);
       next.procs = [];
-      next.tail = null;
-      next.turns.forEach(turn => { turn.adopted = turn.recorded; });
+      next.tails.fill(null);
+      next.turns.forEach(turn => { turn.known = turn.recorded; turn.adopted = true; });
     });
   }
   return out;
 }
 
 export const invariants = {
-  OneTurnPerSession: state => state.turns.length <= 1,
+  OneTurnPerSession: state => new Set(state.turns.map(turn => turn.session)).size === state.turns.length,
+  OneTurnPerWorktree: state => state.turns.length <= 1,
+  ReleasedSessionNeverResumed: state => !state.resumedReleased,
   NoDuplicateDelivery: state => state.handed.every(count => count <= 1),
 };
 
@@ -105,6 +133,7 @@ export function check(fix = current, names = Object.keys(invariants)) {
     for (const name of names) if (!invariants[name](state)) return { invariant: name, trace: trace(key) };
     const next = steps(state, fix);
     if (!next.length && state.procs.length) return { stuck: true, trace: trace(key) };
+    if (!next.length && state.pending.some((pending, d) => pending && state.wasted[d] && !state.live[d])) return { lost: true, trace: trace(key) };
     for (const [label, after] of next) {
       const afterKey = JSON.stringify(after);
       if (!seen.has(afterKey)) {

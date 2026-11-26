@@ -42,6 +42,30 @@ test('when Jarvis cannot be told either, the decision is left pending and the re
   assert.match(logged[2], /no worker is assigned/);
 });
 
+const stale = () => Object.assign(new Error('The assignment changed before the message could be sent.'), { code: 'STALE_ASSIGNMENT' });
+
+test('a decision handed to a worker is sent with a way to ask whether that worker is still the one assigned', async () => {
+  const seen = [];
+  const current = () => true;
+  assert.equal(await deliver({ ...decision, current }, { messageWorker: async (message, options) => seen.push(options.current) }), 'worker');
+  assert.deepEqual(seen, [current]);
+});
+
+test('a message that went stale is reported as stale, not as a failure to reach the worker', async () => {
+  const told = [];
+  const logged = [];
+  const adapter = { messageWorker: async () => { throw stale(); }, wakeCoordinator: async message => told.push(message.prompt) };
+  assert.equal(await deliver({ ...decision, current: () => false }, adapter, line => logged.push(line)), 'stale');
+  assert.deepEqual([told, logged], [[], []], 'nobody was told the decision was undelivered; it is handed again');
+});
+
+test('an error that is not a stale assignment still sends the decision to Jarvis with its reason', async () => {
+  const told = [];
+  const adapter = { messageWorker: async () => { throw new Error('session closed'); }, wakeCoordinator: async message => told.push(message.prompt) };
+  assert.equal(await deliver({ ...decision, current: () => true }, adapter), 'coordinator');
+  assert.match(told[0], /could not be messaged \(session closed\)/);
+});
+
 function folder(t) {
   const directory = mkdtempSync(join(tmpdir(), 'factory-serve-'));
   t.after(() => rmSync(directory, { recursive: true, force: true }));
@@ -134,6 +158,116 @@ test('an answer to a worker that released before asking is handed to the backgro
     jarvisConnection.close();
     await center.close();
   }
+});
+
+function racing(directory) {
+  const dbPath = join(directory, 'stories.sqlite');
+  const attempts = [];
+  const gates = [];
+  const launched = [];
+  const send = async (message, options) => {
+    const attempt = { session: message.session, phase: message.phase, asked: Boolean(options?.current) };
+    attempts.push(attempt);
+    const gate = gates.shift();
+    if (gate) await gate;
+    if (options?.current && !options.current()) {
+      attempt.outcome = 'stale';
+      throw stale();
+    }
+    attempt.outcome = 'delivered';
+  };
+  const hold = () => {
+    let open;
+    gates.push(new Promise(resolve => { open = resolve; }));
+    return open;
+  };
+  const adapters = loadAdapters({ Codex: { workers: 'command-line' } }, send);
+  const launch = async input => {
+    launched.push(input);
+    return { session: 'jarvis-1' };
+  };
+  const waitFor = async (what, check) => {
+    for (let waited = 0; !check(); waited += 20) {
+      if (waited > 8000) throw new Error('Timed out waiting for ' + what + '.');
+      await new Promise(resolve => setTimeout(resolve, 20));
+    }
+  };
+  return { dbPath, attempts, launched, hold, adapters, launch, waitFor };
+}
+
+async function midTurn(t, session = 'worker-1') {
+  const directory = mkdtempSync(join(tmpdir(), 'factory-serve-'));
+  const race = racing(directory);
+  const center = await start({ port: 0, dbPath: race.dbPath, launch: race.launch, adapters: race.adapters, quietMs: 60000 });
+  const recorder = createConsoleService({ dbPath: race.dbPath });
+  t.after(async () => {
+    recorder.close();
+    await center.close();
+    rmSync(directory, { recursive: true, force: true });
+  });
+  recorder.createStory({ story: 'tl-1', title: 'Add export', detail: 'Export rows.', branch: 'tl-1', harness: 'Codex', worktree: '/work/tl-1' });
+  recorder.recordEvent({ story: 'tl-1', type: 'assign-worker', session });
+  recorder.recordEvent({ story: 'tl-1', type: 'question', question: 'scope', prompt: 'Which rows?', options: ['All', 'Selected'], recommended: 0 });
+  const swap = next => {
+    recorder.recordEvent({ story: 'tl-1', type: 'release-worker', assignment: recorder.snapshot()[0].worker.id, detail: 'Finished.' });
+    if (next) recorder.recordEvent({ story: 'tl-1', type: 'assign-worker', session: next });
+  };
+  return { ...race, recorder, swap, port: Number(new URL(center.url).port), assigned: () => recorder.snapshot()[0].worker?.id };
+}
+
+test('an answer recorded while a worker is mid-turn goes to the worker assigned when the wait ends, not to the one that released', async t => {
+  const mid = await midTurn(t);
+  const open = mid.hold();
+  const answer = mid.recorder.recordEvent({ story: 'tl-1', type: 'answer', question: 'scope', answer: 1 });
+  const delivery = requestDelivery('tl-1', mid.port);
+  await mid.waitFor('the message to the first worker to wait', () => mid.attempts.length === 1);
+  mid.swap('worker-2');
+  open();
+  assert.deepEqual(await delivery, { story: 'tl-1', seqs: [answer.seq], told: 'worker' });
+  assert.deepEqual(mid.attempts.map(attempt => [attempt.session, attempt.outcome]), [['worker-1', 'stale'], ['worker-2', 'delivered']]);
+  assert.deepEqual(mid.launched, [], 'a worker took the answer, so Jarvis was not woken');
+});
+
+test('an answer is handed on again when its replacement also released before the wait ended, and a delivery request meanwhile gets nothing', async t => {
+  const mid = await midTurn(t);
+  const first = mid.hold();
+  const second = mid.hold();
+  const answer = mid.recorder.recordEvent({ story: 'tl-1', type: 'answer', question: 'scope', answer: 1 });
+  const delivery = requestDelivery('tl-1', mid.port);
+  await mid.waitFor('the first message to wait', () => mid.attempts.length === 1);
+  mid.swap('worker-2');
+  first();
+  await mid.waitFor('the second message to wait', () => mid.attempts.length === 2);
+  assert.deepEqual((await requestDelivery('tl-1', mid.port)).seqs, [], 'the answer is still reserved while it is handed again');
+  mid.swap('worker-3');
+  second();
+  assert.deepEqual(await delivery, { story: 'tl-1', seqs: [answer.seq], told: 'worker' });
+  assert.deepEqual(mid.attempts.map(attempt => [attempt.session, attempt.outcome]), [['worker-1', 'stale'], ['worker-2', 'stale'], ['worker-3', 'delivered']]);
+});
+
+test('a new assignment that reuses the released session still counts as a change', async t => {
+  const mid = await midTurn(t, 'shared-session');
+  const open = mid.hold();
+  mid.recorder.recordEvent({ story: 'tl-1', type: 'answer', question: 'scope', answer: 1 });
+  const first = mid.assigned();
+  const delivery = requestDelivery('tl-1', mid.port);
+  await mid.waitFor('the message to wait', () => mid.attempts.length === 1);
+  mid.swap('shared-session');
+  assert.notEqual(mid.assigned(), first);
+  open();
+  assert.equal((await delivery).told, 'worker');
+  assert.deepEqual(mid.attempts.map(attempt => [attempt.asked, attempt.outcome]), [[true, 'stale'], [true, 'delivered']]);
+});
+
+test('an answer to a worker still assigned when the wait ends is delivered once, to that worker', async t => {
+  const mid = await midTurn(t);
+  const open = mid.hold();
+  const answer = mid.recorder.recordEvent({ story: 'tl-1', type: 'answer', question: 'scope', answer: 1 });
+  const delivery = requestDelivery('tl-1', mid.port);
+  await mid.waitFor('the message to wait', () => mid.attempts.length === 1);
+  open();
+  assert.deepEqual(await delivery, { story: 'tl-1', seqs: [answer.seq], told: 'worker' });
+  assert.deepEqual(mid.attempts.map(attempt => [attempt.session, attempt.asked, attempt.outcome]), [['worker-1', true, 'delivered']]);
 });
 
 test('each command-line harness in the table gets an adapter, found by the name stories record', async () => {

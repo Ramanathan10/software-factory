@@ -1,4 +1,4 @@
-# 0023. A story with nobody working on it wakes Jarvis once per idle spell
+# 0024. A story with nobody working on it wakes Jarvis once per idle spell
 
 Status: Accepted
 Date: 2026-11-26

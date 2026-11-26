@@ -474,7 +474,7 @@ test('Rocket diagram work returns to its original PR phase after a verified hand
   const store = fixture(t)();
   start(store, 'diagram');
   const record = writer(store, 'diagram');
-  assert.throws(() => record('diagram-start', { detail: 'Architecture delta.' }), /after review/);
+  assert.throws(() => record('diagram-start', { detail: 'Architecture delta.' }), /from publishing, CI or merge, after the review and the comparison/);
   record('plan', { detail: 'Plan.' });
   record('approve');
   record('handoff', { detail: 'Tests ready.' });
@@ -624,13 +624,22 @@ test('the owner can send a story back to build from the comparison', t => {
   assert.equal(store.snapshot()[0].reviewRounds, undefined);
 });
 
-test('Rocket can run straight after review and return to publishing', t => {
+test('Rocket diagram work is refused in review and comparison and round-trips from publishing', t => {
   const store = fixture(t)();
   start(store, 'early');
   const record = writer(store, 'early');
   toGreen(record);
   record('handoff', { detail: 'Gates passed.', command: 'npm run lint' });
   record('handoff', { detail: 'No survivors.', command: 'npx stryker run' });
+  assert.equal(store.snapshot()[0].phase, 'review');
+  assert.throws(() => record('diagram-start', { detail: 'Show the new flow.' }), error => error.status === 409 && /Start diagram work from publishing, CI or merge, after the review and the comparison./.test(error.message));
+  assert.equal(store.snapshot()[0].phase, 'review');
+  record('handoff', { detail: 'Reviewed.' });
+  record('comparison-choice', { run: true });
+  assert.throws(() => record('diagram-start', { detail: 'Show the new flow.' }), error => error.status === 409 && /Start diagram work from publishing, CI or merge, after the review and the comparison./.test(error.message));
+  assert.equal(store.snapshot()[0].phase, 'comparison');
+  record('handoff', { detail: 'Owner accepted the comparison.' });
+  assert.equal(store.snapshot()[0].phase, 'publishing');
   record('diagram-start', { detail: 'Show the new flow.' });
   assert.equal(store.snapshot()[0].phase, 'diagram');
   record('handoff', { detail: 'Diagram done.' });

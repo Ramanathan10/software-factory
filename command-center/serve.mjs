@@ -26,14 +26,15 @@ export function loadAdapters(table = harnesses, send = messageWorker) {
     .map(harness => [harnessKey(harness), { messageWorker: (message, options) => send({ harness, ...message }, options) }]));
 }
 
-export async function deliver({ story, seqs, types, session, worktree, phase, onTurn, after }, adapter, log = console.log) {
+export async function deliver({ story, seqs, types, session, worktree, phase, onTurn, after, current }, adapter, log = console.log) {
   const event = '[Mission Console event] The owner recorded ' + types.join(', ') + ' on story ' + story + ' (event seq ' + seqs.join(', ') + '). ';
   let reason = !adapter ? 'its harness has no adapter' : !session ? 'no worker is assigned' : '';
   if (!reason) {
     try {
-      await adapter.messageWorker({ session, worktree, phase, prompt: event + 'Read the console, act on these events, acknowledge them, and continue.' }, { onTurn, after });
+      await adapter.messageWorker({ session, worktree, phase, prompt: event + 'Read the console, act on these events, acknowledge them, and continue.' }, { onTurn, after, current });
       return 'worker';
     } catch (error) {
+      if (error.code === 'STALE_ASSIGNMENT') return 'stale';
       reason = 'the worker could not be messaged (' + error.message + ')';
     }
   }
@@ -191,12 +192,14 @@ export async function start({ port = DEFAULT_PORT, dbPath = DEFAULT_DB_PATH, ada
       }
       if (story && row(story.harness).workers === 'command-line') {
         const notices = coordinator.notices(story.id, decision.seqs);
+        if (decision.stale && !decision.session) coordinator.owe(story.id, decision.seqs);
         if (notices.length || !decision.session) coordinator.nudge();
         if (!decision.session || notices.length === decision.seqs.length) return 'coordinator';
         decision = { ...decision, seqs: decision.seqs.filter(seq => !notices.includes(seq)) };
       }
       const onTurn = turn => supervisor.track({ story: decision.story, ...turn });
-      return deliver({ ...decision, worktree: story?.worktree, phase: story?.phase, onTurn, after: supervisor.idle(decision.story) },
+      const current = () => service.snapshot().find(item => item.id === decision.story)?.worker?.id === decision.assignment;
+      return deliver({ ...decision, worktree: story?.worktree, phase: story?.phase, onTurn, after: supervisor.idle(decision.story), current },
         adapters.get(harnessKey(story?.harness)));
     },
     onStartWorker: beginWorker,
