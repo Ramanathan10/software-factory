@@ -185,7 +185,7 @@ function main(args) {
     for (const result of mine.filter(result => result.state === 'moved')) {
       console.log('  moved ' + result.path + ' to ' + result.movedTo + '.');
     }
-    if (count('old-backup')) console.log('  a plain run moves the old .bak- folders in the skills folders into ai-sdlc-backups.');
+    if (check && count('old-backup')) console.log('  a plain run moves the old .bak- folders in the skills folders into ai-sdlc-backups.');
     for (const result of mine.filter(result => result.state === 'backup-is-link')) {
       console.log('  NOT MOVED: ' + result.path + ' is a link, so nothing that needed moving aside was changed. Replace it with a real folder, then run this again.');
     }
