@@ -17,7 +17,7 @@ const inline = (text, el) => {
   return out;
 };
 
-const headingLine = /^\s*(#{1,6})\s+(.*?)\s*#*\s*$/;
+const headingLine = /^\s*(#{1,6})\s+(.*?)\s*#*$/;
 const listItem = /^(\s*)([-*+]|\d+[.)])\s+(.*)$/;
 const cells = line => line.trim().replace(/^\||\|$/g, '').split('|').map(cell => cell.trim());
 

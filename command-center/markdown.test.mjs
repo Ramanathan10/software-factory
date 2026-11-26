@@ -61,7 +61,7 @@ const headingCases = [
   ['a no-break space before ##', '\u00a0## Scope', [['h4', 'Scope']]],
   ['a byte order mark before #', '\uFEFF# Title', [['h3', 'Title']]],
   ['four spaces before ##', '    ## Scope', [['h4', 'Scope']]],
-  ['trailing space and closing hashes are trimmed from an indented heading', '  ###   Risks  ##  ', [['h5', 'Risks']]],
+  ['closing hashes after two spaces stay as in the first column', '  ###   Risks  ##  ', [['h5', 'Risks  ##']]],
 ];
 
 for (const [name, input, expected] of headingCases) {
@@ -93,6 +93,20 @@ test('lines before and after an indented heading stay their own paragraphs', () 
 
 test('a heading in the first column still renders as before', () => {
   assert.deepEqual(shape(bounded('intro\n### Risks')), [['p', 'intro'], ['h5', 'Risks']]);
+});
+
+test('a heading in the first column keeps its text before closing hashes and trailing space', () => {
+  assert.deepEqual(shape(bounded('### Risks ##  ')), [['h5', 'Risks ##']]);
+  assert.deepEqual(shape(bounded('### Risks ##')), [['h5', 'Risks']]);
+});
+
+test('a heading line with thousands of spaces renders in well under a second', () => {
+  for (const input of ['# a' + ' '.repeat(5000) + 'x', '   # a' + ' '.repeat(5000) + 'x']) {
+    const started = performance.now();
+    bounded(input);
+    const elapsed = performance.now() - started;
+    assert.ok(elapsed < 500, 'took ' + Math.round(elapsed) + ' ms');
+  }
 });
 
 test('every short sequence of lines from a fixed fragment set renders and ends', () => {
