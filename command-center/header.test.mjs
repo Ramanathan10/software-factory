@@ -15,6 +15,17 @@ const between = (text, open, close) => {
   return text.slice(start, end + close.length);
 };
 
+const div = (text, open) => {
+  const start = text.indexOf(open);
+  assert.ok(start >= 0, `${open} is missing`);
+  let depth = 0;
+  for (const tag of text.slice(start).matchAll(/<div|<\/div>/g)) {
+    depth += tag[0] === '</div>' ? -1 : 1;
+    if (depth === 0) return text.slice(start, start + tag.index + tag[0].length);
+  }
+  assert.fail(`${open} is never closed`);
+};
+
 const header = between(html, '<header class="bar">', '</header>');
 const boardWrap = between(html, '<section class="board-wrap">', '</section>');
 const tablist = '<div class="views" role="tablist" aria-label="Layout">';
@@ -59,9 +70,10 @@ test('the picker and the chip keep their ids, classes, labels and hidden state',
 });
 
 test('the picker and the chip sit together with the tabs in one toolbar in the header', () => {
-  const toolbar = between(header, '<div class="toolbar">', '<div class="filter" id="filter" hidden></div>');
+  const toolbar = div(header, '<div class="toolbar">');
   assert.ok(toolbar.includes(tablist));
   assert.ok(toolbar.includes('id="repo-filter"'));
+  assert.ok(toolbar.includes('<div class="filter" id="filter" hidden></div>'));
 });
 
 test('the main pane holds no toolbar, tabs, picker or chip', () => {
