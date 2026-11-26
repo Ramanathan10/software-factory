@@ -960,9 +960,12 @@ test('a worker can be assigned in publishing as Hawkeye and records its work the
   const { worker } = store.handover('pub-worker').story;
   assert.equal(worker.role, 'watcher');
   assert.equal(worker.session, 'publisher-session');
-  record('activity', { detail: 'Merged origin/main and reran the gates.' });
-  record('artifact', { kind: 'diagram', path: join(tmpdir(), 'publish-diagram.md'), detail: 'Publishing exits.' });
-  record('release-worker', { detail: 'Pull request opened.' });
+  record('activity', { assignment: worker.id, detail: 'Merged origin/main and reran the gates.' });
+  const evidence = join(mkdtempSync(join(tmpdir(), 'pub-')), 'publish-diagram.png');
+  writeFileSync(evidence, Buffer.from('89504e470d0a1a0a', 'hex'));
+  t.after(() => rmSync(join(evidence, '..'), { recursive: true, force: true }));
+  record('artifact', { assignment: worker.id, kind: 'diagram', path: evidence, detail: 'Publishing exits.' });
+  record('release-worker', { assignment: store.handover('pub-worker').story.worker.id, detail: 'Pull request opened.' });
   assert.equal(store.handover('pub-worker').story.worker, undefined);
 });
 
@@ -986,7 +989,7 @@ test('pr-opened is refused while a publisher is assigned and accepted after it r
   record('assign-worker', { session: 'publisher-session' });
   assert.throws(() => record('pr-opened', { url: REVIEW_PR }), error => error.status === 409);
   assert.equal(store.handover('pub-open').story.phase, 'publishing');
-  record('release-worker', { detail: 'Pushed and opened.' });
+  record('release-worker', { assignment: store.handover('pub-open').story.worker.id, detail: 'Pushed and opened.' });
   record('pr-opened', { url: REVIEW_PR });
   assert.equal(store.handover('pub-open').story.phase, 'ci');
 });
@@ -1004,7 +1007,7 @@ test('a second pass through publishing accepts the same pull request URL and ref
   assert.equal(store.handover('pub-twice').story.phase, 'publishing');
   record('assign-worker', { session: 'second-publisher' });
   assert.equal(store.handover('pub-twice').story.worker.role, 'watcher');
-  record('release-worker', { detail: 'Pushed to the open pull request.' });
+  record('release-worker', { assignment: store.handover('pub-twice').story.worker.id, detail: 'Pushed to the open pull request.' });
   assert.throws(() => record('pr-opened', { url: 'https://github.com/acme/widgets/pull/99' }), error => error.status === 409);
   record('pr-opened', { url: REVIEW_PR });
   assert.equal(store.handover('pub-twice').story.phase, 'ci');
@@ -1015,12 +1018,12 @@ test('a publisher releases, starts diagram work, and a new publisher is assigned
   const record = toPublishing(store, 'pub-diagram');
   record('assign-worker', { session: 'publisher-session' });
   assert.throws(() => record('diagram-start', { detail: 'Show the exits.' }), error => error.status === 409);
-  record('release-worker', { detail: 'A diagram is due.' });
+  record('release-worker', { assignment: store.handover('pub-diagram').story.worker.id, detail: 'A diagram is due.' });
   record('diagram-start', { detail: 'Show the exits.' });
   assert.equal(store.handover('pub-diagram').story.phase, 'diagram');
   record('assign-worker', { session: 'rocket-session' });
   assert.equal(store.handover('pub-diagram').story.worker.role, 'diagrammer');
-  record('release-worker', { detail: 'Diagram drawn.' });
+  record('release-worker', { assignment: store.handover('pub-diagram').story.worker.id, detail: 'Diagram drawn.' });
   record('handoff', { detail: 'Diagram done.' });
   assert.equal(store.handover('pub-diagram').story.phase, 'publishing');
   record('assign-worker', { session: 'publisher-again' });
