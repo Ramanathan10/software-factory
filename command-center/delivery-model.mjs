@@ -1,4 +1,4 @@
-export const current = { filterSent: true, handReserves: true, startRegistersTurn: true, waitsForAdoptedTurns: true, recordsAtSpawn: true, rechecksAssignment: true };
+export const current = { filterSent: true, handReserves: true, startRegistersTurn: true, waitsForAdoptedTurns: true, recordsAtSpawn: true, rechecksAssignment: true, releasesAtTurnEnd: true };
 
 const DECISIONS = 2;
 const JARVIS_CALLS = 2;
@@ -9,11 +9,16 @@ const initial = fix => ({
   restarts: 0, jarvisCalls: 0, nextId: 1, assign: 0, replaced: 0, released: 0, resumedReleased: false,
   live: Array(DECISIONS).fill(false), wasted: Array(DECISIONS).fill(false),
   recorded: Array(DECISIONS).fill(false), pending: Array(DECISIONS).fill(false),
-  handed: Array(DECISIONS).fill(0), sent: Array(DECISIONS).fill(false), batch: Array(DECISIONS).fill(false),
+  duplicated: false, sent: Array(DECISIONS).fill(false), batch: Array(DECISIONS).fill(false),
   procs: [],
   tails: Array(REPLACEMENTS + 1).fill(null).map((tail, session) => (session === 0 && fix.startRegistersTurn ? 0 : null)),
-  turns: [{ id: 0, session: 0, seqs: Array(DECISIONS).fill(false), known: Boolean(fix.startRegistersTurn), recorded: true }],
+  turns: [{ id: 0, token: 0, session: 0, seqs: Array(DECISIONS).fill(false), known: Boolean(fix.startRegistersTurn), recorded: true }],
 });
+
+const release = (next, token, seqs) => {
+  if (next.procs.some(proc => proc.token === token)) return;
+  seqs.forEach((seq, d) => { if (seq && next.sent[d] === token) next.sent[d] = false; });
+};
 
 const any = seqs => seqs.some(Boolean);
 const settledEntry = (state, id) => id === null || (!state.procs.some(proc => proc.id === id) && !state.turns.some(turn => turn.id === id));
@@ -23,8 +28,11 @@ function hand(state, fix, seqs, via) {
   const carried = fix.handReserves ? seqs.map((seq, d) => seq && !state.sent[d]) : seqs;
   if (!any(carried)) return null;
   const next = structuredClone(state);
-  if (fix.handReserves) carried.forEach((seq, d) => { if (seq) next.sent[d] = true; });
-  next.procs.push({ id: next.nextId, via, seqs: carried, session: state.assign, waitsFor: next.tails[state.assign], spawned: false });
+  carried.forEach((seq, d) => {
+    if (seq && (state.procs.some(proc => proc.seqs[d]) || state.turns.some(turn => turn.seqs[d] && !turn.adopted))) next.duplicated = true;
+  });
+  if (fix.handReserves) carried.forEach((seq, d) => { if (seq) next.sent[d] = next.nextId; });
+  next.procs.push({ id: next.nextId, token: next.nextId, via, seqs: carried, session: state.assign, waitsFor: next.tails[state.assign], spawned: false });
   next.tails[state.assign] = next.nextId;
   next.nextId += 1;
   return next;
@@ -66,11 +74,10 @@ export function steps(state, fix) {
     } else if (ready) {
       step('Spawn(' + proc.via + '#' + proc.id + ')', next => {
         next.procs[at].spawned = true;
-        next.turns.push({ id: proc.id, session: proc.session, seqs: proc.seqs, known: true, recorded: Boolean(fix.recordsAtSpawn) });
+        next.turns.push({ id: proc.id, session: proc.session, seqs: proc.seqs, known: true, recorded: Boolean(fix.recordsAtSpawn), token: proc.token });
         if (proc.session !== state.assign && state.assign !== null) next.resumedReleased = true;
         proc.seqs.forEach((seq, d) => {
           if (!seq) return;
-          next.handed[d] += 1;
           if (proc.session === state.assign) next.live[d] = true;
           else next.wasted[d] = true;
         });
@@ -81,6 +88,7 @@ export function steps(state, fix) {
         if (!fix.handReserves) proc.seqs.forEach((seq, d) => { if (seq) next.sent[d] = true; });
         next.turns.forEach(turn => { if (turn.id === proc.id) turn.recorded = true; });
         next.procs.splice(at, 1);
+        if (fix.releasesAtTurnEnd && fix.handReserves && !next.turns.some(turn => turn.id === proc.id)) release(next, proc.token, proc.seqs);
       });
     }
   }
@@ -89,7 +97,10 @@ export function steps(state, fix) {
     turn.seqs.forEach((seq, d) => {
       if (seq && state.pending[d] && turn.session === state.assign) step('Ack(d' + d + ')', next => { next.pending[d] = false; });
     });
-    step('TurnEnd(#' + turn.id + ')', next => { next.turns.splice(at, 1); });
+    step('TurnEnd(#' + turn.id + ')', next => {
+      next.turns.splice(at, 1);
+      if (fix.releasesAtTurnEnd && fix.handReserves) release(next, turn.token, turn.seqs);
+    });
   }
   if (state.assign !== null && state.released < REPLACEMENTS) {
     step('Release', next => { next.assign = null; next.released += 1; });
@@ -102,7 +113,6 @@ export function steps(state, fix) {
       next.restarts += 1;
       next.sent.fill(false);
       next.batch.fill(false);
-      next.handed.fill(0);
       next.procs = [];
       next.tails.fill(null);
       next.turns.forEach(turn => { turn.known = turn.recorded; turn.adopted = true; });
@@ -115,7 +125,8 @@ export const invariants = {
   OneTurnPerSession: state => new Set(state.turns.map(turn => turn.session)).size === state.turns.length,
   OneTurnPerWorktree: state => state.turns.length <= 1,
   ReleasedSessionNeverResumed: state => !state.resumedReleased,
-  NoDuplicateDelivery: state => state.handed.every(count => count <= 1),
+  NoDuplicateDelivery: state => !state.duplicated,
+  NeverBlocked: state => state.assign === null || state.pending.every((pending, d) => !pending || !state.sent[d] || state.procs.some(proc => proc.seqs[d]) || state.turns.some(turn => turn.seqs[d])),
 };
 
 export function check(fix = current, names = Object.keys(invariants)) {

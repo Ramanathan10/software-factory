@@ -83,20 +83,25 @@ export function createConsoleService({ dbPath = DEFAULT_DB_PATH, home = process.
     }, decisionDelayMs);
     batches.set(story, batch);
   };
-  const sent = new Set();
+  const sent = new Map();
   const hand = async (story, seqs, types) => {
     const carried = seqs.filter(seq => !sent.has(seq));
     if (!carried.length) return { seqs: [], told: 'nobody' };
-    for (const seq of carried) sent.add(seq);
+    const token = {};
+    const release = () => { for (const seq of carried) if (sent.get(seq) === token) sent.delete(seq); };
+    for (const seq of carried) sent.set(seq, token);
+    const turns = [];
+    const carriedBy = ended => { turns.push(Promise.resolve(ended).then(() => {}, () => {})); };
     let told;
     try {
       do {
         const worker = store.snapshot().find(item => item.id === story)?.worker;
-        told = await onDecision({ story, seqs: carried, types, session: worker?.session, assignment: worker?.id, stale: told === 'stale' });
+        told = await onDecision({ story, seqs: carried, types, session: worker?.session, assignment: worker?.id, stale: told === 'stale', carriedBy });
       } while (told === 'stale');
     } finally {
-      if (told !== 'worker') for (const seq of carried) sent.delete(seq);
+      if (told !== 'worker') release();
     }
+    if (told === 'worker' && turns.length) Promise.all(turns).then(release);
     return { seqs: carried, told };
   };
 

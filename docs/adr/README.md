@@ -27,3 +27,4 @@ Each record explains one decision the code cannot show by itself. Code in this r
 | [0021](0021-the-command-center-clears-shipped-stories.md) | The Command Center archives shipped stories and clears them itself, with fixed checks |
 | [0022](0022-end-to-end-checks-run-scripted-workers.md) | End-to-end checks run scripted workers and a scripted Jarvis, with no model |
 | [0023](0023-a-decision-goes-to-the-worker-assigned-when-it-is-delivered.md) | A decision goes to the worker assigned when it is delivered |
+| [0024](0024-a-sent-decision-is-released-when-its-turn-ends.md) | A sent decision is released when its turn ends, so a failed turn no longer blocks redelivery |

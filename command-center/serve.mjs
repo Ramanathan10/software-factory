@@ -52,7 +52,7 @@ export async function deliver({ story, seqs, types, session, worktree, phase, on
   return 'nobody';
 }
 
-export async function startStoryWorker({ story: id, prompt, expectedPhase }, { service, supervisor, launch = startWorker, prepare }) {
+export async function startStoryWorker({ story: id, prompt, expectedPhase, carriedBy }, { service, supervisor, launch = startWorker, prepare }) {
   const startable = () => {
     const story = service.snapshot().find(story => story.id === id);
     if (!story) throw new InputError('Story does not exist.', 404);
@@ -73,7 +73,7 @@ export async function startStoryWorker({ story: id, prompt, expectedPhase }, { s
   let turn;
   let started;
   try {
-    started = await launch({ harness: story.harness, worktree: story.worktree, prompt, phase: story.phase }, { onTurn: running => { turn = running; } });
+    started = await launch({ harness: story.harness, worktree: story.worktree, prompt, phase: story.phase }, { onTurn: running => { turn = running; carriedBy?.(running.ended); } });
   } catch (error) {
     throw Object.assign(error, { status: 502, expose: true });
   }
@@ -181,7 +181,7 @@ export async function start({ port = DEFAULT_PORT, dbPath = DEFAULT_DB_PATH, ada
       const story = service.snapshot().find(story => story.id === decision.story);
       if (!story?.worker && story?.phase === 'testing' && !story.blocked && !story.cleanup && decision.types.includes('approve') && row(story.harness).workers === 'command-line') {
         try {
-          await beginWorker({ story: story.id, expectedPhase: 'testing', automatic: true, prompt: 'Continue the approved test-first phase.' });
+          await beginWorker({ story: story.id, expectedPhase: 'testing', automatic: true, carriedBy: decision.carriedBy, prompt: 'Continue the approved test-first phase.' });
           return 'worker';
         } catch (error) {
           blockTestStart(story.id, error);
@@ -196,7 +196,10 @@ export async function start({ port = DEFAULT_PORT, dbPath = DEFAULT_DB_PATH, ada
         if (!decision.session || notices.length === decision.seqs.length) return 'coordinator';
         decision = { ...decision, seqs: decision.seqs.filter(seq => !notices.includes(seq)) };
       }
-      const onTurn = turn => supervisor.track({ story: decision.story, ...turn });
+      const onTurn = turn => {
+        supervisor.track({ story: decision.story, ...turn });
+        decision.carriedBy?.(turn.ended);
+      };
       const current = () => service.snapshot().find(item => item.id === decision.story)?.worker?.id === decision.assignment;
       return deliver({ ...decision, worktree: story?.worktree, phase: story?.phase, onTurn, after: supervisor.idle(decision.story), current },
         adapters.get(harnessKey(story?.harness)));

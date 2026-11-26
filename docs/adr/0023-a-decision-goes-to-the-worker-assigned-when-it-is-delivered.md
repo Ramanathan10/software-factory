@@ -1,6 +1,6 @@
 # 0023. A decision goes to the worker assigned when it is delivered
 
-Status: Accepted
+Status: Accepted. The last consequence is amended by ADR 0024.
 Date: 2026-11-26
 
 ## Context
@@ -18,7 +18,7 @@ Date: 2026-11-26
 - An answer given mid-turn reaches the worker assigned when the wait ends, or Jarvis if none is.
 - The delivery model grows from about 2,000 to about 100,000 states and takes a few seconds.
 - A worker that keeps its turn long after releasing still delays the wait. Ending the turn promptly is not enforced here.
-- A delivered turn that fails after the settle window still leaves its seq in `sent` (issue #49).
+- A delivered turn that fails after the settle window still left its seq in `sent` (issue #49), fixed by ADR 0024.
 
 ## Where
 - `adapters/harnesses.mjs` — `messageWorker`
