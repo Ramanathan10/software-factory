@@ -28,7 +28,7 @@ function turnControl() {
   return { ended, end };
 }
 
-function coordinated(t, { harness = 'Codex', quietMs = QUIET_MS } = {}) {
+function coordinated(t, { harness = 'Codex', quietMs = QUIET_MS, wrap } = {}) {
   const directory = mkdtempSync(join(tmpdir(), 'factory-coordinator-'));
   const dbPath = join(directory, 'stories.sqlite');
   const recorder = createConsoleService({ dbPath });
@@ -64,7 +64,8 @@ function coordinated(t, { harness = 'Codex', quietMs = QUIET_MS } = {}) {
     options?.onTurn?.({ session: name, pid: process.pid, log, ended: control.ended });
     return { session: name, log };
   };
-  const adapter = { messageWorker: async (message, options) => turn(message, options, messages) };
+  const base = { messageWorker: async (message, options) => turn(message, options, messages) };
+  const adapter = wrap ? wrap(base) : base;
   const adapters = new Map([[harness.toLowerCase(), adapter]]);
   let center;
   t.after(async () => {
@@ -187,6 +188,90 @@ test('a decision for a story with no worker is handed to the background Jarvis, 
   await until('a background Jarvis turn', () => rig.jarvis.length);
   assert.ok(rig.jarvis[0].input.prompt.includes(String(answer.seq)));
   assert.ok(rig.recorder.pending().some(event => event.seq === answer.seq));
+});
+
+function staleAnswer(t) {
+  const attempts = [];
+  const coordinatorOptions = [];
+  const delivered = [];
+  let open;
+  const gate = new Promise(resolve => { open = resolve; });
+  const rig = coordinated(t, { wrap: base => ({ messageWorker: async (message, options) => {
+    if (message.phase === 'coordinator') {
+      coordinatorOptions.push(options);
+      return base.messageWorker(message, options);
+    }
+    attempts.push(message.session);
+    await gate;
+    if (options?.current && !options.current()) throw Object.assign(new Error('The assignment changed.'), { code: 'STALE_ASSIGNMENT' });
+    delivered.push(message.session);
+  } }) });
+  rig.recorder.recordEvent({ story: 'tl-1', type: 'assign-worker', session: 'scout-1' });
+  rig.recorder.recordEvent({ story: 'tl-1', type: 'question', question: 'scope', prompt: 'Which rows?', options: ['All', 'Selected'], recommended: 0, by: 'jarvis' });
+  rig.ackAll();
+  const seen = () => {
+    const released = rig.recorder.recordEvent({ story: 'tl-1', type: 'release-worker', assignment: rig.story().worker.id, detail: 'Scout finished.' });
+    rig.recorder.recordEvent({ story: 'tl-1', type: 'jarvis-woken', handled: released.seq });
+    rig.recorder.recordEvent({ story: 'tl-1', type: 'jarvis-turn-started', session: 'jarvis-seen', pid: process.pid, log: join(rig.directory, 'seen.log') });
+  };
+  const endSeen = () => rig.recorder.recordEvent({ story: 'tl-1', type: 'jarvis-turn-ended', outcome: 'ended', code: 0, detail: 'Jarvis ended its turn.' });
+  return { rig, attempts, coordinatorOptions, delivered, open, seen, endSeen };
+}
+
+test('an answer whose delivery went stale with no worker left wakes Jarvis even though an earlier Jarvis turn already saw it', async t => {
+  const stale = staleAnswer(t);
+  const { rig } = stale;
+  const { port } = await rig.open();
+  const answer = rig.recorder.recordEvent({ story: 'tl-1', type: 'answer', question: 'scope', answer: 1 });
+  const delivery = requestDelivery('tl-1', port);
+  await until('the message to the worker to wait', () => stale.attempts.length === 1);
+  stale.seen();
+  stale.endSeen();
+  stale.open();
+  assert.deepEqual(await delivery, { story: 'tl-1', seqs: [answer.seq], told: 'coordinator' });
+  assert.deepEqual(stale.delivered, [], 'the released session was not resumed');
+  await until('a Jarvis turn carrying the answer', () => rig.jarvisMessages().length);
+  assert.ok(rig.jarvisMessages()[0].input.prompt.includes(String(answer.seq)), 'the wake names the answer');
+  assert.deepEqual(stale.coordinatorOptions.map(options => options?.current), [undefined], 'a Jarvis resume is never held back by a worker assignment');
+  assert.ok(rig.recorder.pending().some(event => event.seq === answer.seq), 'the answer stays pending until Jarvis handles it');
+});
+
+test('the answer a wake carried does not wake Jarvis again, and reaches the worker Jarvis staffs next', async t => {
+  const stale = staleAnswer(t);
+  const { rig } = stale;
+  const { port } = await rig.open();
+  const answer = rig.recorder.recordEvent({ story: 'tl-1', type: 'answer', question: 'scope', answer: 1 });
+  const delivery = requestDelivery('tl-1', port);
+  await until('the message to the worker to wait', () => stale.attempts.length === 1);
+  stale.seen();
+  stale.endSeen();
+  stale.open();
+  await delivery;
+  await until('a Jarvis turn carrying the answer', () => rig.jarvisMessages().length);
+  rig.jarvisMessages()[0].end(0);
+  await until('the Jarvis turn to end', () => !rig.story().jarvis?.turn);
+  await settle();
+  assert.equal(rig.jarvisTurns(), 1, 'a wake that carried the answer is not repeated for it');
+  rig.recorder.recordEvent({ story: 'tl-1', type: 'assign-worker', session: 'scout-2' });
+  assert.deepEqual(await requestDelivery('tl-1', port), { story: 'tl-1', seqs: [answer.seq], told: 'worker' });
+  assert.deepEqual(stale.delivered, ['scout-2']);
+});
+
+test('an answer owed to Jarvis while its turn is still running wakes it when that turn ends', async t => {
+  const stale = staleAnswer(t);
+  const { rig } = stale;
+  const { port } = await rig.open();
+  const answer = rig.recorder.recordEvent({ story: 'tl-1', type: 'answer', question: 'scope', answer: 1 });
+  const delivery = requestDelivery('tl-1', port);
+  await until('the message to the worker to wait', () => stale.attempts.length === 1);
+  stale.seen();
+  stale.open();
+  assert.equal((await delivery).told, 'coordinator');
+  await settle();
+  assert.equal(rig.jarvisMessages().length, 0, 'Jarvis is still in its turn');
+  stale.endSeen();
+  await until('a Jarvis turn carrying the answer', () => rig.jarvisMessages().length);
+  assert.ok(rig.jarvisMessages()[0].input.prompt.includes(String(answer.seq)));
 });
 
 test('a story whose worker is between clean turns is left to that worker', async t => {

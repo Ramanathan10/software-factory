@@ -39,6 +39,7 @@ export function createCoordinator({ service, launch, adapters, kickoff, busy = (
   const waking = new Set();
   const owned = new Set();
   const wakes = new Set();
+  const owed = new Set();
   let stopped = false;
   const find = id => service.snapshot().find(story => story.id === id);
 
@@ -67,7 +68,7 @@ export function createCoordinator({ service, launch, adapters, kickoff, busy = (
     return news;
   }
 
-  const unhandled = (story, news) => news.filter(event => event.seq > (story.jarvis?.handled ?? 0));
+  const unhandled = (story, news) => news.filter(event => event.seq > (story.jarvis?.handled ?? 0) || owed.has(event.seq));
 
   function ask(id, seq, what) {
     const text = what.replace(/[\s.]+$/, '').slice(0, 2000);
@@ -143,6 +144,7 @@ export function createCoordinator({ service, launch, adapters, kickoff, busy = (
     waking.add(id);
     try {
       record({ story: id, type: 'jarvis-woken', handled: Math.max(...news.map(event => event.seq)) });
+      for (const event of news) owed.delete(event.seq);
       const prompt = kickoff(story, news);
       let tracked = false;
       const onTurn = ({ session, pid, log: file, ended }) => {
@@ -220,6 +222,9 @@ export function createCoordinator({ service, launch, adapters, kickoff, busy = (
         wakes.add(pendingWake);
         pendingWake.finally(() => wakes.delete(pendingWake));
       }
+    },
+    owe(id, seqs) {
+      for (const seq of seqs) owed.add(seq);
     },
     nudge() {
       setImmediate(safely);

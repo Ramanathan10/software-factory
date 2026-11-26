@@ -184,6 +184,67 @@ test('a message waits for what the caller says is still running', async () => {
   calls[0].child.emit('close', 0);
 });
 
+test('a message the caller no longer wants is not started, and the session accepts the next message', async () => {
+  const { calls, spawnProcess } = fakeProgram();
+  let release;
+  const after = new Promise(resolve => { release = resolve; });
+  let wanted = true;
+  const stale = messageWorker({ harness: 'Codex', session: 'released', worktree: '.', prompt: 'old' }, { spawnProcess, settings: restricted, settleMs: 0, after, current: () => wanted });
+  const outcome = stale.then(() => 'sent', error => error);
+  wanted = false;
+  release();
+  const error = await outcome;
+  assert.equal(error.code, 'STALE_ASSIGNMENT');
+  assert.equal(calls.length, 0, 'a turn was started for a session its caller no longer wants');
+  await messageWorker({ harness: 'Codex', session: 'released', worktree: '.', prompt: 'next' }, { spawnProcess, settings: restricted, settleMs: 0 });
+  assert.deepEqual(calls.map(call => call.prompt), ['next']);
+  calls[0].child.emit('close', 0);
+});
+
+test('the caller is asked whether a message is still wanted after the earlier turn ends, not before', async () => {
+  const { calls, spawnProcess } = fakeProgram();
+  const asked = [];
+  const send = prompt => messageWorker({ harness: 'Claude Code', session: 'asked-late', worktree: '.', prompt }, {
+    spawnProcess, settings: restricted, settleMs: 0, current: () => { asked.push(prompt + ' after ' + calls.length + ' turns'); return true; },
+  });
+  await send('first');
+  const second = send('second');
+  await new Promise(resolve => setTimeout(resolve, 20));
+  assert.deepEqual(asked, ['first after 0 turns'], 'the second message asked while the first turn was still running');
+  calls[0].child.emit('close', 0);
+  await second;
+  assert.deepEqual(asked, ['first after 0 turns', 'second after 1 turns']);
+  calls[1].child.emit('close', 0);
+});
+
+test('a message that is still wanted starts its turn in the same step that asks, with nothing awaited between', async () => {
+  const order = [];
+  let yielded = false;
+  const spawnProcess = () => {
+    order.push('spawned after a yield: ' + yielded);
+    const child = new EventEmitter();
+    child.pid = 7000;
+    child.stdin = { on: () => child.stdin, end: () => {} };
+    setImmediate(() => child.emit('spawn'));
+    return child;
+  };
+  const current = () => {
+    order.push('asked');
+    queueMicrotask(() => { yielded = true; });
+    return true;
+  };
+  const sent = messageWorker({ harness: 'Codex', session: 'same-step', worktree: '.', prompt: 'x' }, { spawnProcess, settings: restricted, settleMs: 0, current });
+  await sent;
+  assert.deepEqual(order, ['asked', 'spawned after a yield: false']);
+});
+
+test('a message with no say over whether it is wanted always starts its turn', async () => {
+  const { calls, spawnProcess } = fakeProgram();
+  await messageWorker({ harness: 'Codex', session: 'jarvis-resume', worktree: '.', prompt: 'wake', phase: 'coordinator' }, { spawnProcess, settings: restricted, settleMs: 0 });
+  assert.equal(calls.length, 1);
+  calls[0].child.emit('close', 0);
+});
+
 test('a program that cannot be started is reported, and the session accepts the next message', async () => {
   const failing = () => {
     const child = new EventEmitter();

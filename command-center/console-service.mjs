@@ -91,8 +91,10 @@ export function createConsoleService({ dbPath = DEFAULT_DB_PATH, home = process.
     for (const seq of carried) sent.add(seq);
     let told;
     try {
-      const record = store.snapshot().find(item => item.id === story);
-      told = await onDecision({ story, seqs: carried, types, session: record?.worker?.session });
+      do {
+        const worker = store.snapshot().find(item => item.id === story)?.worker;
+        told = await onDecision({ story, seqs: carried, types, session: worker?.session, assignment: worker?.id, stale: told === 'stale' });
+      } while (told === 'stale');
     } finally {
       if (told !== 'worker') for (const seq of carried) sent.delete(seq);
     }
