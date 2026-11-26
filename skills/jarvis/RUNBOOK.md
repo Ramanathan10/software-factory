@@ -178,7 +178,8 @@ node <readiness> <story id> --repo <owner/name>
 | `checklist` and `questions` | The story was read. Record each question as a console `question` for the owner; report unmet checklist items with the story's status. |
 | `inApp` with `next` | Only the agent's own tools can read this tracker (Linear). Read the story with them, build the snapshot `next` describes, and run the same command again with `--snapshot` and that JSON on stdin. |
 | `skipped` | The repository has no tracker, or the story is assigned to someone else. Nothing to do. |
-| `problem` | A setting is missing. Fix it through `ai-sdlc-setup`. |
+| `problem` | A setting is missing or not valid, such as an organization that breaks Azure DevOps naming rules. Fix it through `ai-sdlc-setup`. |
+| `skippedRelations` beside `checklist` | The reader skipped relations it could not read safely. The checklist did not see them, so report each one to the owner with the story's status. |
 
 The trackers are the rows of `readiness-sync/trackers.mjs`, beside the `<readiness>` file. Nothing in the check writes to a tracker; changing a work item stays the owner's decision.
 
