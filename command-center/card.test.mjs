@@ -424,3 +424,15 @@ test('once the Jarvis turn ends and nothing waits on Jarvis, the story returns t
   assert.equal(tileState('coordinator'), 'idle');
   assert.ok(tile('coordinator').textContent.includes('standing by'));
 });
+
+test('the track view marks a story with no hold as idle and a story waiting on Jarvis as not idle', () => {
+  useView('track');
+  try {
+    show([hold.waiting, { ...base, id: 'JIDL-1', phase: 'building' }]);
+    const row = id => walk(ids.get('board')).find(node => node.tag === 'article' && node.classes().includes('track') && walk(node).some(child => child.classes?.().includes('id') && child.textContent === id));
+    assert.ok(row('JIDL-1').classes().includes('idle'), 'a story with no hold is not idle');
+    assert.ok(!row('JWAI-1').classes().includes('idle'), 'a story waiting on Jarvis is idle');
+  } finally {
+    useView('lanes');
+  }
+});
