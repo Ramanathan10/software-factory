@@ -553,3 +553,20 @@ test('an item that needs a move and meets a linked backup folder still shows in 
   assert.equal(row(results, 'jarvis').state, 'not-moved');
   assert.equal(row(results, 'grill-me').state, 'current');
 });
+
+for (const kind of ['link', 'file']) {
+  test('a plain run does not promise to move old backups right after a ' + kind + ' backup folder stopped the move', t => {
+    const { root } = fixture(t);
+    const home = join(root, 'cli-home');
+    mine(join(home, '.claude', 'skills', 'jarvis.bak-5'));
+    const base = join(home, '.claude', 'ai-sdlc-backups');
+    if (kind === 'link') {
+      const outside = join(root, 'outside');
+      mkdirSync(outside);
+      symlinkSync(outside, base, 'junction');
+    } else writeFileSync(base, 'not a folder');
+    const promise = /a plain run moves the old \.bak- folders/;
+    assert.doesNotMatch(cli(home, 'claude-code').output, promise);
+    assert.match(cli(home, '--check', 'claude-code').output, promise);
+  });
+}
