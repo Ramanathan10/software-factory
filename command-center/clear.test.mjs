@@ -103,6 +103,7 @@ async function fixture(t) {
       record(id, 'pr-ready', { head, detail: 'Checks passed for the head.' });
       record(id, 'pr-observed', { url: pr, observation: { head, status: 'merged', failedCount: 0, failures: [] } });
     } else if (mode === 'ready') {
+      record(id, 'pr-observed', { url: pr, observation: { head, status: 'passed', failedCount: 0, failures: [] } });
       record(id, 'pr-ready', { head, detail: 'Checks passed for the head.' });
     } else {
       record(id, 'pr-ready', { detail: 'Checks passed.' });

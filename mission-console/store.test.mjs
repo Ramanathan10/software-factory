@@ -430,6 +430,7 @@ test('the first watch detects a new head even when readiness predates the watche
   record('comparison-choice', { run: false });
   const url = 'https://github.com/example/repo/pull/31';
   record('pr-opened', { url });
+  record('pr-observed', { url, observation: { head: 'a'.repeat(40), status: 'passed', failedCount: 0, failures: [] } });
   record('pr-ready', { head: 'a'.repeat(40), detail: 'Head A reviewed.' });
   const observed = { head: 'b'.repeat(40), status: 'running', failedCount: 0, failures: [] };
   assert.throws(() => record('pr-observed', { url, observation: { ...observed, head: [observed.head] } }), /observed PR head/);
@@ -939,4 +940,56 @@ test('a review read failure during PR review records nothing and only warns', as
   assert.deepEqual(await watchOnce(store, { readPr: async () => { throw Error('GraphQL: rate limited'); }, warn: () => warnings++ }), []);
   assert.equal(warnings, 1, 'Hawkeye warns about a story it watches in pr-review');
   assert.equal(store.handover('unread').story.revision, before);
+});
+
+const observedStatus = (status, extra = {}) => ({
+  url: REVIEW_PR,
+  observation: { head: REVIEW_HEAD, status, failedCount: status === 'failed' ? 1 : 0, failures: status === 'failed' ? ['test'] : [], review: review([]), ...extra },
+});
+
+test('readiness is refused unless the observed head passed, and the refusal names the status', t => {
+  const labels = {
+    failed: /CI failed/, running: /Checks still running/, 'no-checks': /No checks reported/,
+    merged: /merged/i, closed: /closed without merge/i,
+  };
+  for (const [status, message] of Object.entries(labels)) {
+    const store = fixture(t)();
+    const record = toCi(store, 'status-' + status);
+    record('pr-observed', observedStatus(status));
+    assert.throws(() => record('pr-ready', { head: REVIEW_HEAD, detail: 'Checks passed.' }),
+      error => error.status === 409 && message.test(error.message) && /on the observed head/.test(error.message),
+      'pr-ready was accepted or refused with the wrong message after a ' + status + ' observation');
+    const stored = store.handover('status-' + status).story;
+    assert.equal(stored.phase, 'ci', 'the story stays in ci after a ' + status + ' observation');
+    assert.equal(stored.readyHead, undefined, 'no readyHead after a ' + status + ' observation');
+  }
+});
+
+test('readiness is accepted once the observed head passed with a clear review', t => {
+  const store = fixture(t)();
+  const record = toCi(store, 'passes');
+  record('pr-observed', observedStatus('running'));
+  assert.throws(() => record('pr-ready', { head: REVIEW_HEAD, detail: 'Too early.' }), error => error.status === 409);
+  record('pr-observed', observedStatus('passed'));
+  record('pr-ready', { head: REVIEW_HEAD, detail: 'Checks passed; review clear.' });
+  const story = store.handover('passes').story;
+  assert.equal(story.phase, 'merge');
+  assert.equal(story.readyHead, REVIEW_HEAD);
+});
+
+test('readiness that names a head is refused until Hawkeye has observed the pull request', t => {
+  const store = fixture(t)();
+  const record = toCi(store, 'unseen');
+  assert.throws(() => record('pr-ready', { head: REVIEW_HEAD, detail: 'Checks passed.' }),
+    error => error.status === 409 && /not observed/.test(error.message));
+  const story = store.handover('unseen').story;
+  assert.equal(story.phase, 'ci');
+  assert.equal(story.readyHead, undefined);
+});
+
+test('readiness with no head is accepted while there is no observation', t => {
+  const store = fixture(t)();
+  const record = toCi(store, 'unwatched');
+  record('pr-ready', { detail: 'The pull request is not on github.com.' });
+  assert.equal(store.handover('unwatched').story.phase, 'merge');
 });
