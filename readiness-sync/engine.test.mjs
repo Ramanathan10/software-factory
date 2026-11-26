@@ -56,6 +56,17 @@ test('a story whose only PR is abandoned has no merged work and asks nothing', (
   assert.deepEqual(result.questions, []);
 });
 
+test('a story whose only PR is abandoned asks nothing about effort when effort is unset', () => {
+  const snapshot = withPrs([abandoned()]);
+  snapshot.story.effort = -1;
+  assert.deepEqual(evaluate(snapshot, settings).questions, []);
+});
+
+test('a story whose only PR is abandoned and confirmed as no PR does not ask for handoff', () => {
+  const result = evaluate(withPrs([abandoned()], { noPrConfirmed: true }), settings);
+  assert.deepEqual(rules(result), []);
+});
+
 test('a story whose only PR is abandoned meets the PR checks when the owner confirmed no PR', () => {
   const result = evaluate(withPrs([abandoned()], { noPrConfirmed: true }), settings);
   assert.equal(met(result, 'prMergedToTarget'), true);
