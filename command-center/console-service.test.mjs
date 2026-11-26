@@ -308,7 +308,7 @@ test('a stale decision that finds no worker is handed on with no session, and is
   const answer = service.recordEvent({ story: 'tl-1', type: 'answer', question: 'q', answer: 0 });
   const result = await service.deliverPending('tl-1');
   assert.deepEqual([calls[1].session, calls[1].assignment], [undefined, undefined]);
-  assert.deepEqual([result.told, result.seqs], ['coordinator', [answer.seq]]);
+  assert.deepEqual([result.told, result.seqs], ['nobody', [answer.seq]]);
   assert.ok(service.pending().some(event => event.seq === answer.seq), 'the answer is still pending');
   service.recordEvent({ story: 'tl-1', type: 'assign-worker', session: 'worker-2' });
   const again = await service.deliverPending('tl-1');

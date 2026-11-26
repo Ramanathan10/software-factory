@@ -245,7 +245,7 @@ test('an answer whose delivery went stale with no worker left wakes Jarvis even 
   stale.seen();
   stale.endSeen();
   stale.open();
-  assert.deepEqual(await delivery, { story: 'tl-1', seqs: [answer.seq], told: 'coordinator' });
+  assert.deepEqual(await delivery, { story: 'tl-1', seqs: [answer.seq], told: 'nobody', reason: 'No worker is assigned to tl-1, so no worker was told; the decisions stay pending. Staff the phase, then deliver.' });
   assert.deepEqual(stale.delivered, [], 'the released session was not resumed');
   await until('a Jarvis turn carrying the answer', () => rig.jarvisMessages().length);
   assert.ok(rig.jarvisMessages()[0].input.prompt.includes(String(answer.seq)), 'the wake names the answer');
@@ -268,7 +268,7 @@ test('the answer a wake carried does not wake Jarvis again, and reaches the work
   rig.jarvisMessages()[0].end(0);
   await until('the Jarvis turn to end', () => !rig.story().jarvis?.turn);
   await settle();
-  assert.equal(rig.jarvisTurns(), 1, 'a wake that carried the answer is not repeated for it');
+  assert.equal(rig.jarvisMessages().filter(message => !message.input.prompt.includes('No news:')).length, 1, 'a wake that carried the answer is not repeated for it; only the no-news wake for the unstaffed story may follow');
   rig.recorder.recordEvent({ story: 'tl-1', type: 'assign-worker', session: 'scout-2' });
   assert.deepEqual(await requestDelivery('tl-1', port), { story: 'tl-1', seqs: [answer.seq], told: 'worker' });
   assert.deepEqual(stale.delivered, ['scout-2']);
@@ -283,7 +283,7 @@ test('an answer owed to Jarvis while its turn is still running wakes it when tha
   await until('the message to the worker to wait', () => stale.attempts.length === 1);
   stale.seen();
   stale.open();
-  assert.equal((await delivery).told, 'coordinator');
+  assert.equal((await delivery).told, 'nobody');
   await settle();
   assert.equal(rig.jarvisMessages().length, 0, 'Jarvis is still in its turn');
   stale.endSeen();
