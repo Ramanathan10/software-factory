@@ -126,8 +126,8 @@ export async function openRig({ entry, turnMs, tally, profile: overrides = {} })
     launcher,
     jarvisWakes: story => rig.history(story).filter(item => item.type === 'jarvis-woken'),
     quietMs,
-    playbook(story, { next = 'You are the next scripted worker for story ' + story + '.', turns = [] } = {}) {
-      writeFileSync(join(playbooks, story + '.json'), JSON.stringify({ story, db, console: consoleCli, serve: launcher, port, turnMs, next, turns }, null, 2));
+    playbook(story, { next = 'You are the next scripted worker for story ' + story + '.', turns = [], jarvis = [] } = {}) {
+      writeFileSync(join(playbooks, story + '.json'), JSON.stringify({ story, db, console: consoleCli, serve: launcher, port, turnMs, next, turns, jarvis }, null, 2));
     },
     gh: (...args) => ['node', standIn, github, ...args],
     calls: () => (existsSync(calls) ? readFileSync(calls, 'utf8').split(/\r?\n/).filter(Boolean).map(line => JSON.parse(line)) : []),

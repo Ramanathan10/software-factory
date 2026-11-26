@@ -67,7 +67,7 @@ No change. `AI_SDLC_ACTOR=jarvis` is set only for the literal phase `coordinator
   - Row 7: the publisher records `diagram-start` with the scope as its first step, before the pull request opens; Jarvis then staffs Rocket, and restaffs the publisher after Rocket's handoff.
   - Row 8: starts with Hawkeye's publisher (kickoff: run "Publishing" in phase 8 of `ai-sdlc`), which records `return-to-build` on a merge conflict or a story-caused gate failure, `blocked` and a `question` when the gate fails on the default branch too, and `pr-opened` with the URL; the rest of the row is unchanged.
   - Roles table, Hawkeye: "Opens the pull request; routes the owner's console decisions ...".
-- `docs/adr/0023-hawkeye-opens-the-pull-request.md`: why publishing is a worker phase run by Hawkeye and not by Jarvis (Jarvis stays read-only; Hawkeye already owns the ship lane and pushes in PR review); why the publisher, not Jarvis, records `diagram-start`.
+- `docs/adr/0026-hawkeye-opens-the-pull-request.md`: why publishing is a worker phase run by Hawkeye and not by Jarvis (Jarvis stays read-only; Hawkeye already owns the ship lane and pushes in PR review); why the publisher, not Jarvis, records `diagram-start`.
 
 ### Lifecycle model (`mission-console/lifecycle-model.mjs` and its test)
 
@@ -169,7 +169,7 @@ One set gates all of it. `workerPhases` in `mission-console/store.mjs:8` has no 
 
 - AGENTS.md: `node --test` before committing; no package dependencies; no comments in source files (`comment-ratchet.json`); no personal names or real work details in skills ("the owner"); harness-specific code only under `adapters/`; phase changes update store transitions, `roles.mjs` and the Jarvis phase table together; worker-start changes get an e2e scenario that fails without the fix.
 - Profile: gates `node --test` and `gitleaks git --no-banner --log-opts=origin/main..HEAD`; spec at `docs/specs/story/pub-1-publishing-worker.md` as the first commit; pipeline "Tests" runs `node e2e/run.mjs`; team rule: reply to every PR comment before resolving it.
-- ADR: next free number at publish time (0023 today), only if the change needs a reason the code cannot show.
+- ADR: next free number at publish time (0026: 0023 to 0025 were taken first), only if the change needs a reason the code cannot show.
 
 ## Commands
 

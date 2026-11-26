@@ -12,12 +12,15 @@ export function checkStory({ id, repo, snapshot, testsPass }, { profile, table =
   if (!tracker) return { problem: `"${settings.tracker}" is not a known tracker. Known: ${Object.keys(table).join(', ')}.` };
   const missing = tracker.needs.filter(name => !settings[name]);
   if (missing.length) return { problem: `readiness.${missing.join(' and readiness.')} must be set for ${settings.tracker}. Run the ai-sdlc-setup skill.` };
+  const invalid = tracker.invalid?.(settings);
+  if (invalid) return { problem: invalid };
   if (!snapshot) {
     if (tracker.reads === 'in-app') return { inApp: true, next: tracker.supply + ' Then run this again with --snapshot and that JSON on stdin.' };
     snapshot = tracker.read(id, settings, run);
   }
   if (testsPass) snapshot = { ...snapshot, testsPass: true };
-  return { tracker: settings.tracker, story: snapshot.story.id, ...evaluate(snapshot, settings) };
+  const { skippedRelations } = snapshot;
+  return { tracker: settings.tracker, story: snapshot.story.id, ...evaluate(snapshot, settings), ...(skippedRelations?.length ? { skippedRelations } : {}) };
 }
 
 if (isMain(import.meta.url)) {

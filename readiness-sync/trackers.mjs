@@ -17,17 +17,32 @@ export function readOnly(run) {
   };
 }
 
-function runJson(command, args) {
-  const shell = process.platform === 'win32' && command === 'az';
-  return JSON.parse(execFileSync(command, shell ? args.map(arg => `"${arg}"`) : args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], shell }));
+const safeArgument = /^[A-Za-z0-9._:/-]+$/;
+const outputOptions = { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] };
+
+export function runJson(command, args, { platform = process.platform, exec = execFileSync } = {}) {
+  if (platform === 'win32' && command === 'az') {
+    const unsafe = args.find(arg => !safeArgument.test(arg));
+    if (unsafe !== undefined) throw new Error(`Refused an az argument that a Windows shell could reinterpret: ${JSON.stringify(unsafe)}`);
+    return JSON.parse(exec(`az ${args.join(' ')}`, { ...outputOptions, shell: true }));
+  }
+  return JSON.parse(exec(command, args, { ...outputOptions, shell: false }));
 }
+
+const digits = /^[0-9]+$/;
+const organizationPattern = /^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?$/;
+const organizationName = { test: value => typeof value === 'string' && organizationPattern.test(value) };
 
 export const trackers = {
   'azure-devops': {
     reads: 'command-line',
     command: 'az',
     needs: ['organization', 'project'],
+    invalid: settings => organizationName.test(settings.organization) ? undefined
+      : `readiness.organization "${settings.organization}" is not a valid Azure DevOps organization name: use letters, digits and hyphens, starting and ending with a letter or digit. Run the ai-sdlc-setup skill.`,
     read(id, settings, run = runJson) {
+      if (!digits.test(String(id))) throw new Error(`The story id "${id}" is not all digits.`);
+      if (!organizationName.test(settings.organization)) throw new Error(`The organization "${settings.organization}" is not a valid Azure DevOps organization name.`);
       run = readOnly(run);
       const org = `https://dev.azure.com/${settings.organization}`;
       const az = (...args) => run('az', [...args, '--org', org, '-o', 'json']);
@@ -35,18 +50,30 @@ export const trackers = {
       const user = run('az', ['account', 'show', '--query', 'user.name', '-o', 'json']);
       const story = az('boards', 'work-item', 'show', '--id', String(id), '--expand', 'relations');
       const relations = story.relations ?? [];
+      const skippedRelations = [];
       const tail = url => url.split(/[/%]/).filter(Boolean).pop();
-      const tasks = relations.filter(relation => relation.rel === 'System.LinkTypes.Hierarchy-Forward').map(relation => {
-        const task = az('boards', 'work-item', 'show', '--id', tail(relation.url));
+      const taskId = url => { const last = tail(url); return digits.test(last ?? '') ? last : undefined; };
+      const prId = url => {
+        try { const last = decodeURIComponent(url).split('/').pop(); return digits.test(last) ? last : undefined; } catch { return undefined; }
+      };
+      const tasks = [];
+      for (const relation of relations.filter(relation => relation.rel === 'System.LinkTypes.Hierarchy-Forward')) {
+        const url = typeof relation.url === 'string' ? relation.url : null;
+        const number = url === null ? undefined : taskId(url);
+        if (number === undefined) { skippedRelations.push({ kind: 'task', url }); continue; }
+        const task = az('boards', 'work-item', 'show', '--id', number);
         const assigned = task.fields['System.AssignedTo'];
-        return { id: task.id, title: task.fields['System.Title'], state: task.fields['System.State'], assignee: who(assigned), assigneeName: assigned?.displayName };
-      });
-      const prs = relations.filter(relation => relation.url.includes('/Git/PullRequestId/')).map(relation => {
-        const pr = az('repos', 'pr', 'show', '--id', decodeURIComponent(relation.url).split('/').pop());
-        return { id: pr.pullRequestId, status: pr.status, target: pr.targetRefName.replace('refs/heads/', ''), linked: true };
-      });
+        tasks.push({ id: task.id, title: task.fields['System.Title'], state: task.fields['System.State'], assignee: who(assigned), assigneeName: assigned?.displayName });
+      }
+      const prs = [];
+      for (const relation of relations.filter(relation => typeof relation.url === 'string' && relation.url.includes('/Git/PullRequestId/'))) {
+        const number = prId(relation.url);
+        if (number === undefined) { skippedRelations.push({ kind: 'pr', url: relation.url }); continue; }
+        const pr = az('repos', 'pr', 'show', '--id', number);
+        prs.push({ id: pr.pullRequestId, status: pr.status, target: pr.targetRefName.replace('refs/heads/', ''), linked: true });
+      }
       const effort = story.fields[settings.effortField ?? 'Microsoft.VSTS.Scheduling.StoryPoints'];
-      return { user, story: { id, assignee: who(story.fields['System.AssignedTo']), effort: effort ?? settings.unestimatedValue ?? null }, tasks, prs };
+      return { user, story: { id, assignee: who(story.fields['System.AssignedTo']), effort: effort ?? settings.unestimatedValue ?? null }, tasks, prs, skippedRelations };
     },
   },
   github: {
