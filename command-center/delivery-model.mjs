@@ -51,7 +51,7 @@ export function steps(state, fix) {
   }
   for (const proc of state.procs) {
     const at = state.procs.indexOf(proc);
-    const ready = !proc.spawned && settledEntry(state, proc.waitsFor) && !(fix.waitsForAdoptedTurns && state.turns.some(turn => turn.known));
+    const ready = !proc.spawned && settledEntry(state, proc.waitsFor) && !(fix.waitsForAdoptedTurns && state.turns.some(turn => turn.known && (!turn.adopted || turn.session === state.assign)));
     if (ready && fix.rechecksAssignment && proc.session !== state.assign) {
       step('Stale(' + proc.via + '#' + proc.id + ')', next => {
         next.procs.splice(at, 1);
@@ -94,10 +94,10 @@ export function steps(state, fix) {
   if (state.assign !== null && state.released < REPLACEMENTS) {
     step('Release', next => { next.assign = null; next.released += 1; });
   }
-  if (state.assign === null && state.replaced < REPLACEMENTS) {
+  if (state.assign === null && state.replaced < REPLACEMENTS && !state.turns.some(turn => turn.adopted)) {
     step('Assign', next => { next.replaced += 1; next.assign = next.replaced; });
   }
-  if (state.restarts < RESTARTS) {
+  if (state.restarts < RESTARTS && state.turns.every(turn => turn.session === state.assign)) {
     step('Restart', next => {
       next.restarts += 1;
       next.sent.fill(false);
@@ -105,7 +105,7 @@ export function steps(state, fix) {
       next.handed.fill(0);
       next.procs = [];
       next.tails.fill(null);
-      next.turns.forEach(turn => { turn.known = turn.recorded; });
+      next.turns.forEach(turn => { turn.known = turn.recorded; turn.adopted = true; });
     });
   }
   return out;
