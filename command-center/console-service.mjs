@@ -49,9 +49,10 @@ async function readBody(request, limit, message) {
   const chunks = [];
   for await (const chunk of request) {
     size += chunk.length;
-    if (size > limit) throw new InputError(message, 413);
-    chunks.push(chunk);
+    if (size > limit) chunks.length = 0;
+    else chunks.push(chunk);
   }
+  if (size > limit) throw new InputError(message, 413);
   return Buffer.concat(chunks);
 }
 
