@@ -1,6 +1,6 @@
 # PRIV-1 spec: the private-details test fails for contributors with common names
 
-Work item: GitHub issue #56. Branch `story/priv-1-private-details-common-names`, cut from origin/main 88b9cce. Context pack: `C:/Users/trojanmini/.ai-sdlc/stories/PRIV-1/context-pack.md`.
+Work item: GitHub issue #56. Branch `story/priv-1-private-details-common-names`, cut from origin/main 88b9cce. Context pack: the story's context pack (`~/.ai-sdlc/stories/PRIV-1/`).
 
 ## Problem
 
@@ -8,15 +8,15 @@ Work item: GitHub issue #56. Branch `story/priv-1-private-details-common-names`,
 
 Reproduction on 88b9cce, Node 24.18.0, Windows 11, with `user.name` overridden per process:
 
-| user.name | Failing lines | Words that hit |
+| Name shape (original reproduction) | Failing lines | Words that hit |
 |---|---|---|
-| Andrex Markwell | 3,718 | and, marks, mark |
-| Thelwin | 5,957 | the |
-| Fordane | 2,174 | for |
-| Willowby | 54 | will, wil |
-| Mark | 72 | mark |
+| Two words, both ordinary words or starting with one | 3,718 | and, mark |
+| One word starting with "the" | 5,957 | the |
+| One word starting with "for" | 2,174 | for |
+| One word starting with "will" | 54 | will, wil |
+| One word that is itself an ordinary word | 72 | mark |
 
-With no `origin` remote and no `GITHUB_REPOSITORY_OWNER`, the test throws `Command failed: git remote get-url origin`. Evidence: `repro-*.txt` beside the context pack.
+With no `origin` remote and no `GITHUB_REPOSITORY_OWNER`, the test throws `Command failed: git remote get-url origin`. Evidence: the story's context pack.
 
 ## Settled decisions
 
@@ -25,8 +25,8 @@ With no `origin` remote and no `GITHUB_REPOSITORY_OWNER`, the test throws `Comma
 3. `PRIVATE_WORDS` is unchanged, including the edge rule for entries such as `ZZQ-`.
 4. With no `origin` remote and `GITHUB_REPOSITORY_OWNER` unset, the test fails with a clear message that asks for an `origin` remote or `GITHUB_REPOSITORY_OWNER`. It does not throw a raw git error.
 5. ADR 0016 is edited in place to state the new rule (owner login gets prefixes; other names match in full; the missing-owner failure) and its Consequences updated. No new ADR.
-7. The nickname catch stays tied to the owner's GitHub login only. ADR 0016 says that a nickname that is not the start of the login goes in `PRIVATE_WORDS` (the CI repository variable, or the environment locally).
 6. `privateWords` is refactored to take its sources (owner, git names, `PRIVATE_WORDS`) as input, so unit tests can feed invented values. The real test still reads git.
+7. The nickname catch stays tied to the owner's GitHub login only. ADR 0016 says that a nickname that is not the start of the login goes in `PRIVATE_WORDS` (the CI repository variable, or the environment locally).
 
 ## Acceptance criteria
 
@@ -74,20 +74,20 @@ Issue #56: the private-details test fails for contributors with common names. Br
 
 `user.name` overridden per process with `GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=user.name GIT_CONFIG_VALUE_0="<name>"`, so the shared repo config is untouched.
 
-| user.name | Failing lines | Banned words that hit |
+| Name shape (original reproduction) | Failing lines | Banned words that hit |
 |---|---|---|
 | (owner's own, baseline) | 0 (pass) | — |
-| Andrex Markwell | 3,718 | and 3,611, marks 64, mark 43 |
-| Thelwin | 5,957 | the |
-| Fordane | 2,174 | for |
-| Willowby | 54 | will 53, wil 1 |
-| Mark | 72 | mark (the whole name, not a prefix) |
+| Two words, both ordinary words or starting with one | 3,718 | and 3,611, mark 43 |
+| One word starting with "the" | 5,957 | the |
+| One word starting with "for" | 2,174 | for |
+| One word starting with "will" | 54 | will 53, wil 1 |
+| One word that is itself an ordinary word | 72 | mark (the whole name, not a prefix) |
 
-The `node --test private-details.test.mjs` run with "Andrex Markwell" fails with 3,618+ reported lines (`repro-andrex-markwell.txt`). The last row matters: matching whole names instead of prefixes does not fix the bug on its own. A contributor whose first name is an ordinary word still fails.
+The `node --test private-details.test.mjs` run with the two-word name fails with 3,618+ reported lines. The last row matters: matching whole names instead of prefixes does not fix the bug on its own. A contributor whose first name is an ordinary word still fails.
 
 Second symptom, confirmed by running it: in a clone with no `origin` remote and no `GITHUB_REPOSITORY_OWNER`, the test throws `Command failed: git remote get-url origin` instead of reaching a verdict (`repro-no-origin.txt`).
 
-Evidence: `C:\Users\trojanmini\.ai-sdlc\stories\PRIV-1\repro-*.txt`.
+Evidence: the story's context pack, `~/.ai-sdlc/stories/PRIV-1/`.
 
 ## Root cause
 
@@ -103,7 +103,7 @@ Matching is already whole-word (`bounded`), so the problem is which words are ba
 ## Relevant files
 
 - `private-details.test.mjs`: the whole check, two tests. `privateWords(env)` already takes `env` but reads git directly.
-- `docs/adr/0016-private-details-are-found-without-being-written-down.md`: records the prefix rule for every name. The fix changes that decision, so it needs a new ADR (next free number at publish time; currently 0023 would be next) that supersedes the prefix sentence.
+- `docs/adr/0016-private-details-are-found-without-being-written-down.md`: records the prefix rule for every name. The fix edits it in place (decision 5).
 - `AGENTS.md` line 31: describes the test (owner's name, nickname, `PRIVATE_WORDS`, profile/database). Wording stays true under the recommended fix.
 - `.github/workflows/test.yml`: CI sets `PRIVATE_WORDS` from a repo variable; `actions/checkout` at default depth 1, so CI `git log` holds only the merge commit. Approaches that diff against main's history are not available in CI.
 - `comment-ratchet.json`: `private-details.test.mjs` has no entry, so it must stay at zero comments.

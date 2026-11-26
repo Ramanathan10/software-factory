@@ -16,7 +16,7 @@ function privateWords({ owner, names = [], extra = '' }) {
   const words = new Set(extra.split(',').map(word => word.trim()).filter(Boolean));
   for (const word of owner.split(/[^A-Za-z]+/).filter(word => word.length >= 3 && !generic.test(word)))
     for (let end = 3; end <= word.length; end += 1) words.add(word.slice(0, end));
-  for (const name of names.filter(name => !/\[bot\]/.test(name)).map(name => name.split(/[^\p{L}]+/u).filter(Boolean)))
+  for (const name of names.filter(name => !/\[bot\]/.test(name) && name.toLowerCase() !== owner.toLowerCase()).map(name => name.split(/[^\p{L}\p{N}]+/u).filter(Boolean)))
     if (name.join('').length >= 3 && !name.every(word => generic.test(word))) words.add(name.join(' '));
   return [...words];
 }
@@ -36,7 +36,7 @@ function ownerFrom(env, readOrigin) {
   return /[:/]([^/]+)\/[^/]+?(?:\.git)?$/.exec(origin.replace(/^.*\/git\/(?=[^/]+\/[^/]+$)/, '/'))?.[1];
 }
 
-const exempt =/^(LICENSE|CODE_OF_CONDUCT\.md|SECURITY\.md|skills\/[^/]+\/LICENSE)$/;
+const exempt = /^(LICENSE|CODE_OF_CONDUCT\.md|SECURITY\.md|skills\/[^/]+\/LICENSE)$/;
 const text = file => !/\.(png|jpe?g|gif|webp|mp4|webm|ico|pdf|zip)$/i.test(file);
 
 test('no tracked file names the owner or other private details', () => {
@@ -134,9 +134,21 @@ test('hyphenated, apostrophe and oddly spaced contributor names match as written
 });
 
 test('non-ASCII contributor names keep their letters', () => {
-  const sources = { owner: 'quillfern', names: ['José García'] };
-  for (const line of ['by José García', 'by JOSÉ GARCÍA', 'by José-García']) assert.ok(hits(sources, line), line);
-  for (const line of ['Jos Garc a', 'by Josés García', 'by José Garcías']) assert.ok(!hits(sources, line), line);
+  const sources = { owner: 'quillfern', names: ['Ísolde Vexmoor'] };
+  for (const line of ['by Ísolde Vexmoor', 'by ÍSOLDE VEXMOOR', 'by Ísolde-Vexmoor']) assert.ok(hits(sources, line), line);
+  for (const line of ['Isolde Vexmoor', 'by Ísoldes Vexmoor', 'by Ísolde Vexmoors']) assert.ok(!hits(sources, line), line);
+});
+
+test('digits in a contributor name are kept', () => {
+  const sources = { owner: 'quillfern', names: ['quill99', 'Jo3n Vexmoor'] };
+  for (const line of ['by quill99', 'by Jo3n Vexmoor', 'by jo3n-vexmoor']) assert.ok(hits(sources, line), line);
+  for (const line of ['by quill', 'quill 99x', 'by Jon Vexmoor', 'Vexmoor alone']) assert.ok(!hits({ ...sources, owner: 'zzzzzz' }, line), line);
+});
+
+test('a git name equal to the owner login adds no whole-name entry', () => {
+  const sources = { owner: 'quill99', names: ['Quill99', 'Orla Venn'] };
+  assert.ok(!hits(sources, 'github.com/quill99/factory'));
+  assert.ok(hits(sources, 'by Orla Venn'));
 });
 
 test('a name with one generic word is still protected; a name of only generic words is skipped', () => {
