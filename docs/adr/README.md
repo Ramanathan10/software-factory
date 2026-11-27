@@ -31,3 +31,4 @@ Each record explains one decision the code cannot show by itself. Code in this r
 | [0025](0025-the-azure-reader-validates-instead-of-escaping.md) | The Azure DevOps reader validates what it sends to `az` instead of escaping it |
 | [0026](0026-hawkeye-opens-the-pull-request.md) | Hawkeye opens the pull request |
 | [0027](0027-a-sent-decision-is-released-when-its-turn-ends.md) | A sent decision is released when its turn ends, so a failed turn no longer blocks redelivery |
+| [0028](0028-start-up-delivers-waiting-decisions-to-every-staffed-story.md) | Start-up delivers waiting decisions to every staffed story |

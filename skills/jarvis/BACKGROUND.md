@@ -10,7 +10,7 @@ This file is short on purpose: the next role should be running within a minute. 
    - A released worker with no handoff, a failed or lost worker turn, or a decision with no worker: read the worker's log named in the event, then start a replacement with the handover, or record `blocked` with the reason.
    - A blocker or anything else only the owner can settle: record a console `question` (an `action-` question for something only they can do) and leave it.
 3. Staff a role with `node <serve.mjs> start <story> <port>` and the kickoff on stdin, written as the runbook's "Story worker kickoff template" says. The daemon records `assign-worker`; do not record it. A refusal because a worker is already assigned or starting means someone else staffed it: leave it.
-4. Hand pending decisions to an assigned worker with `node <serve.mjs> deliver <story> <port>`. A reply of `nobody` means nothing was delivered and the decisions are still pending: staff the phase or record why not.
+4. Hand pending decisions to an assigned worker with `node <serve.mjs> deliver <story> <port>`. A reply of `nobody` means nothing was delivered and the decisions are still pending: staff the phase or record why not. A reply of `acknowledged` means every carried decision was already acknowledged and nothing was spawned.
 5. `ack` each news event you handled, and only those. While the phase has no worker, never ack a release, a handoff or a decision unless this turn started a worker or recorded `blocked` or a question.
 6. End the turn.
 
