@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
+import { pullRequestUrl } from './pull-request-url.mjs';
 import { InputError } from './store.mjs';
 
 const run = promisify(execFile);
@@ -10,10 +11,8 @@ const completed = new Set(['SUCCESS', 'NEUTRAL', 'SKIPPED']);
 const failed = new Set(['FAILURE', 'ERROR', 'CANCELLED', 'TIMED_OUT', 'ACTION_REQUIRED', 'STARTUP_FAILURE', 'STALE']);
 
 export function githubPr(url) {
-  const parsed = URL.parse(url);
-  return parsed?.origin === 'https://github.com' && !parsed.username && !parsed.password &&
-    /^\/[\w.-]+\/[\w.-]+\/pull\/[1-9]\d*\/?$/.test(parsed.pathname)
-    ? parsed.origin + parsed.pathname.replace(/\/$/, '') : null;
+  const found = pullRequestUrl(url);
+  return found?.kind === 'github' ? found.canonical : null;
 }
 
 export function summarizePr(data) {
@@ -108,28 +107,141 @@ const reviewQuery = `query($owner: String!, $name: String!, $number: Int!) {
   }
 }`;
 
-export async function readGitHubPr(url, signal, posted = []) {
-  const canonical = githubPr(url);
-  if (!canonical) throw new Error('Unsupported PR URL.');
-  const options = {
-    cwd: fileURLToPath(new URL('.', import.meta.url)),
-    signal, timeout: 15000, maxBuffer: 16 * 1024 * 1024, windowsHide: true,
-    env: { ...process.env, GH_PROMPT_DISABLED: '1' },
-  };
-  const { stdout } = await run('gh', ['pr', 'view', canonical, '--json', 'url,state,headRefOid,statusCheckRollup'], options);
+const readOptions = signal => ({
+  cwd: fileURLToPath(new URL('.', import.meta.url)),
+  signal, timeout: 15000, maxBuffer: 16 * 1024 * 1024, windowsHide: true,
+  env: { ...process.env, GH_PROMPT_DISABLED: '1' },
+});
+
+export async function readGitHubPr(url, signal, posted = [], { run: runner = run } = {}) {
+  const found = pullRequestUrl(url);
+  if (found?.kind !== 'github') throw new Error('Unsupported PR URL.');
+  const options = readOptions(signal);
+  const { stdout } = await runner('gh', ['pr', 'view', found.canonical, '--json', 'url,state,headRefOid,statusCheckRollup'], options);
   const data = JSON.parse(stdout);
-  if (githubPr(data.url)?.toLowerCase() !== canonical.toLowerCase()) throw new Error('GitHub returned a different PR.');
+  if (pullRequestUrl(data.url)?.key !== found.key) throw new Error('GitHub returned a different PR.');
   const checks = summarizePr(data);
-  const [owner, name, , number] = new URL(canonical).pathname.split('/').filter(Boolean);
-  const answer = await run('gh', ['api', 'graphql', '-f', 'query=' + reviewQuery, '-f', 'owner=' + owner, '-f', 'name=' + name, '-F', 'number=' + number], options);
+  const [owner, name, , number] = new URL(found.canonical).pathname.split('/').filter(Boolean);
+  const answer = await runner('gh', ['api', 'graphql', '--hostname', found.host, '-f', 'query=' + reviewQuery, '-f', 'owner=' + owner, '-f', 'name=' + name, '-F', 'number=' + number], options);
   return { ...checks, review: summarizeReview(JSON.parse(answer.stdout).data?.repository?.pullRequest, { head: checks.head, posted }) };
 }
 
-export async function watchOnce(store, { readPr = readGitHubPr, signal, warn = console.error } = {}) {
+const azSafe = /^[A-Za-z0-9._:/=-]+$/;
+const azOrganization = /^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?$/;
+const guid = /^[0-9A-Fa-f-]{36}$/;
+const azureChecks = new Set(['Build', 'Status']);
+const azureFailed = new Set(['rejected', 'broken']);
+const azureGood = new Set(['approved', 'notApplicable']);
+const azureEnded = { completed: 'merged', abandoned: 'closed' };
+const approving = new Set([10, 5]);
+const objecting = new Set([-10, -5]);
+const unresolvedThread = thread => ['active', 'pending'].includes(thread?.status) && spoken(thread).length > 0;
+
+export async function runAz(file, args, { platform = process.platform, exec = run, ...options } = {}) {
+  const settings = { timeout: 15000, maxBuffer: 16 * 1024 * 1024, windowsHide: true, ...options };
+  if (platform !== 'win32') return exec(file, args, settings);
+  const unsafe = args.find(argument => typeof argument !== 'string' || !azSafe.test(argument));
+  if (unsafe !== undefined) throw new Error('Refused an az argument: ' + JSON.stringify(unsafe));
+  return exec([file, ...args].join(' '), { ...settings, shell: true });
+}
+
+export function summarizeAzureChecks(data, policies) {
+  const counts = { good: 0, failed: 0, pending: 0 };
+  const names = new Set();
+  for (const policy of policies) {
+    const name = policy?.configuration?.type?.displayName;
+    if (!azureChecks.has(name)) continue;
+    if (azureFailed.has(policy.status)) {
+      counts.failed += 1;
+      names.add(name);
+    } else if (azureGood.has(policy.status)) {
+      counts.good += 1;
+    } else {
+      counts.pending += 1;
+    }
+  }
+  return {
+    head: data.lastMergeSourceCommit.commitId.toLowerCase(),
+    status: azureEnded[data.status] ?? (counts.failed > 0 ? 'failed' : counts.pending > 0 ? 'running' : counts.good > 0 ? 'passed' : 'no-checks'),
+    failedCount: counts.failed, failures: [...names].sort().slice(0, 10),
+  };
+}
+
+const azureName = person => String(person?.uniqueName ?? person?.displayName ?? 'ghost');
+const spoken = thread => (Array.isArray(thread?.comments) ? thread.comments : []).filter(comment => comment && comment.commentType !== 'system');
+const stamp = comment => String(comment.lastUpdatedDate ?? comment.publishedDate);
+
+export function summarizeAzureReview(data, threads, { canonical, posted = [] }) {
+  const ours = new Set(posted);
+  const reviewers = Array.isArray(data.reviewers) ? data.reviewers : [];
+  const open = threads.filter(unresolvedThread);
+  const items = [];
+  for (const thread of open) {
+    const first = thread.comments[0];
+    const last = thread.comments.at(-1);
+    const key = thread.id + '/' + last.id;
+    if (ours.has(key)) continue;
+    const file = thread.threadContext?.filePath;
+    items.push({
+      key, kind: file ? 'thread' : 'comment', author: azureName(first.author), bot: !/^[^@\s]+@[^@\s]+$/.test(String(first.author?.uniqueName ?? '')),
+      path: file ?? undefined, line: file ? thread.threadContext.rightFileStart?.line : undefined,
+      excerpt: excerpt(first.content), url: canonical + '?discussionId=' + thread.id, at: stamp(last),
+    });
+  }
+  items.sort((a, b) => b.at.localeCompare(a.at));
+  const times = [data.creationDate, ...threads.flatMap(thread => spoken(thread).flatMap(comment => [comment.publishedDate, comment.lastUpdatedDate]))]
+    .filter(time => typeof time === 'string');
+  return {
+    approvals: reviewers.filter(reviewer => approving.has(reviewer.vote)).map(azureName),
+    changesRequested: reviewers.filter(reviewer => objecting.has(reviewer.vote)).map(azureName),
+    unresolved: open.length,
+    earlier: 0,
+    items: items.slice(0, 10).map(({ at, ...item }) => JSON.parse(JSON.stringify(item))),
+    keys: items.map(item => item.key),
+    more: false,
+    lastActivityAt: times.sort().at(-1),
+  };
+}
+
+export async function readAzurePr(url, signal, posted = [], { run: runner = runAz } = {}) {
+  const found = pullRequestUrl(url);
+  if (found?.kind !== 'azure-devops') throw new Error('Unsupported PR URL.');
+  if (!azOrganization.test(found.org)) throw new Error('Refused an Azure DevOps organization.');
+  const organization = found.host === 'dev.azure.com' ? 'https://dev.azure.com/' + found.org : 'https://' + found.host;
+  const options = { cwd: fileURLToPath(new URL('.', import.meta.url)), signal };
+  const az = async args => JSON.parse((await runner('az', [...args, '--org', organization, '-o', 'json'], options)).stdout);
+  const data = await az(['repos', 'pr', 'show', '--id', found.id]);
+  if (pullRequestUrl(data?.repository?.webUrl + '/pullrequest/' + data?.pullRequestId)?.key !== found.key) {
+    throw new Error('Azure DevOps returned a different PR.');
+  }
+  const commit = data.lastMergeSourceCommit?.commitId;
+  if (!['active', ...Object.keys(azureEnded)].includes(data.status) || typeof commit !== 'string' || !/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/i.test(commit)) {
+    throw new Error('Azure DevOps returned an incomplete PR observation.');
+  }
+  const repository = data.repository.id;
+  const project = data.repository.project?.id;
+  if (!guid.test(repository) || !guid.test(project)) throw new Error('Azure DevOps returned an incomplete PR observation.');
+  const policies = await az(['repos', 'pr', 'policy', 'list', '--id', found.id]);
+  const threads = await az(['devops', 'invoke', '--area', 'git', '--resource', 'pullRequestThreads', '--route-parameters',
+    'project=' + project, 'repositoryId=' + repository, 'pullRequestId=' + found.id, '--api-version', '7.1']);
+  if (!Array.isArray(policies) || !Array.isArray(threads?.value)) throw new Error('Azure DevOps returned an incomplete PR observation.');
+  return { ...summarizeAzureChecks(data, policies), review: summarizeAzureReview(data, threads.value, { canonical: found.canonical, posted }) };
+}
+
+const readers = { github: readGitHubPr, 'azure-devops': readAzurePr };
+const warnings = {
+  github: (story, found) => 'Hawkeye could not observe ' + story + '. Check GitHub CLI access to ' + found.host + ' and the next poll.',
+  'azure-devops': story => 'Hawkeye could not observe ' + story + '. Check Azure CLI access (az extension add --name azure-devops, then az login) and the next poll.',
+};
+
+export const readPullRequest = (url, signal, posted) => readers[pullRequestUrl(url)?.kind](url, signal, posted);
+
+export async function watchOnce(store, { readPr = readPullRequest, signal, warn = console.error } = {}) {
   const changed = [];
   for (const story of store.watchTargets()) {
     if (signal?.aborted) break;
-    if (!githubPr(story.pr) || story.prObservation?.status === 'merged') continue;
+    const found = pullRequestUrl(story.pr);
+    if (!(found?.kind in readers) || story.prObservation?.status === 'merged') continue;
     try {
       const observation = await readPr(story.pr, signal, story.prPosted ?? []);
       if (signal?.aborted) break;
@@ -141,7 +253,7 @@ export async function watchOnce(store, { readPr = readGitHubPr, signal, warn = c
     } catch (error) {
       if (signal?.aborted) break;
       if (error instanceof InputError && error.status === 409) continue;
-      warn('Hawkeye could not observe ' + story.id + '. Check GitHub CLI access and the next poll.');
+      warn(warnings[found.kind](story.id, found));
     }
   }
   return changed;

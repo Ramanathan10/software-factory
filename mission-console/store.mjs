@@ -3,6 +3,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { realpathSync, statSync } from 'node:fs';
 import { extname, isAbsolute } from 'node:path';
 import { documentTypes, mediaTypes } from './media.mjs';
+import { pullRequestUrl } from './pull-request-url.mjs';
 import { harnessKey, phases, roles } from './roles.mjs';
 
 export const workerPhases = new Set(['scout', 'planning', 'testing', 'red', 'building', 'gates', 'mutation', 'review', 'comparison', 'diagram', 'publishing', 'ci', 'retro', 'pr-review']);
@@ -399,11 +400,14 @@ function apply(story, input, now) {
         const parsed = URL.parse(url);
         requireThat(parsed?.protocol === 'https:' && parsed.pathname.length > 1 && !parsed.username && !parsed.password,
           'Use a complete HTTPS pull request URL.');
-        requireThat(!story.pr || story.pr === parsed.href, 'Continue on the existing pull request.', 409);
-        story.pr = parsed.href;
+        const found = pullRequestUrl(parsed.href);
+        requireThat(found?.kind !== 'not-a-pr', "Use the pull request's URL.");
+        requireThat(!story.pr || (found ? pullRequestUrl(story.pr)?.key === found.key : story.pr === parsed.href),
+          'Continue on the existing pull request.', 409);
+        story.pr ??= found?.canonical ?? parsed.href;
+        story.phase = 'ci';
+        return found ? story.pr : story.pr + '. Hawkeye does not watch ' + parsed.host + '; record pr-ready without a head once its checks pass.';
       }
-      story.phase = 'ci';
-      return story.pr;
     case 'pr-ready':
       samePhase(story, 'ci');
       if (input.head !== undefined || story.prObservation) {

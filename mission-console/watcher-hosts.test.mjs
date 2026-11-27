@@ -173,9 +173,11 @@ test('the head is the merge source commit, lowercased, and a missing one throws'
 
 test('a null head warns, and records nothing', async t => {
   const directory = mkdtempSync(join(tmpdir(), 'ado-null-'));
-  t.after(() => rmSync(directory, { recursive: true, force: true }));
   const store = openStore(join(directory, 'stories.db'));
-  t.after(() => store.close());
+  t.after(() => {
+    store.close();
+    rmSync(directory, { recursive: true, force: true });
+  });
   toCi(store, 'nullhead', ORG_URL);
   const before = store.handover('nullhead').story.revision;
   const warnings = [];
