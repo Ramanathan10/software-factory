@@ -443,3 +443,37 @@ test('the track view marks a story with no hold as idle and a story waiting on J
     useView('lanes');
   }
 });
+
+const held = {
+  idle: { ...base, id: 'HELD-1', repo: 'acme/one', phase: 'retro', pr: 'https://github.com/acme/one/pull/7',
+    retro: { returnPhase: 'ci', startedAt: ago(30), mergedAt: ago(5), detail: 'Merged.' },
+    worker: { id: 'w9', role: 'coordinator', session: 's9', lastTurn: { outcome: 'ended', at: now(), code: 0 } } },
+  asking: { ...base, id: 'HELD-2', repo: 'acme/one', phase: 'retro', pr: 'https://github.com/acme/one/pull/8',
+    retro: { returnPhase: 'ci', startedAt: ago(30), mergedAt: ago(5), detail: 'Merged.' },
+    questions: [{ id: 'retro-1', prompt: 'Keep the lesson?', options: ['Keep', 'Drop'], recommended: 0 }],
+    worker: { id: 'w10', role: 'coordinator', session: 's10', lastTurn: { outcome: 'ended', at: now(), code: 0 } } },
+  running: { ...base, id: 'HELD-3', repo: 'acme/one', phase: 'retro', pr: 'https://github.com/acme/one/pull/9',
+    retro: { returnPhase: 'ci', startedAt: ago(30) },
+    worker: { id: 'w11', role: 'coordinator', session: 's11', lastTurn: { outcome: 'ended', at: now(), code: 0 } } },
+};
+
+test('a story held in the retro after its merge is labelled as merged and finishing the retro, and an unmerged retro is not', () => {
+  show([held.idle, held.running]);
+  assert.ok(boardCard('HELD-1').textContent.includes('Merged · finishing retro'), 'the held story card does not say it is merged and finishing the retro: ' + boardCard('HELD-1').textContent);
+  assert.ok(!boardCard('HELD-3').textContent.includes('Merged · finishing retro'), 'a retro with no merge is labelled as merged');
+});
+
+test('a held retro is in Waiting on you only while a question is open, and it is not in the Archive until it closes', () => {
+  show([held.idle]);
+  assert.ok(!boardCard('HELD-1').classes().includes('waiting'), 'a held retro with no open question is waiting on the owner');
+  assert.equal(ids.get('stat-waiting').textContent, '0');
+  assert.equal(ids.get('stat-shipped').textContent, '0', 'a held retro is counted as shipped');
+  show([held.asking]);
+  assert.ok(boardCard('HELD-2').classes().includes('waiting'), 'a held retro with an open question is not waiting on the owner');
+  assert.equal(wordsOf('HELD-2'), 'Waiting on you');
+  assert.equal(ids.get('stat-waiting').textContent, '1');
+  assert.equal(ids.get('stat-shipped').textContent, '0', 'a held retro is counted as shipped');
+  show([{ ...held.asking, phase: 'closed' }]);
+  assert.equal(ids.get('stat-shipped').textContent, '1');
+  assert.equal(ids.get('stat-waiting').textContent, '0');
+});

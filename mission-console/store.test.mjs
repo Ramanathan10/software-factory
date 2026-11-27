@@ -663,7 +663,118 @@ test('the retro runs while the PR is open and may be followed by the merge', t =
   assert.equal(store.snapshot()[0].phase, 'ci');
   record('retro-start', { detail: 'Second pass.' });
   record('merged', { detail: 'Merged during the retro.' });
+  assert.equal(store.snapshot()[0].phase, 'retro', 'a merge during the retro holds the story in the retro');
+  record('handoff', { detail: 'Second lessons.' });
   assert.equal(store.snapshot()[0].phase, 'closed');
+});
+
+function toRetro(store, story, { returnPhase = 'ci' } = {}) {
+  start(store, story);
+  const record = writer(store, story);
+  toGreen(record);
+  record('handoff', { detail: 'Gates passed.', command: 'npm run lint' });
+  record('handoff', { detail: 'No survivors.', command: 'npx stryker run' });
+  record('handoff', { detail: 'Review passed.' });
+  record('comparison-choice', { run: false });
+  record('pr-opened', { url: 'https://github.com/example/repo/pull/9' });
+  if (returnPhase === 'merge') record('pr-ready', { detail: 'Checks passed.' });
+  record('retro-start', { detail: 'Review lessons.' });
+  return record;
+}
+
+const storyOf = (store, story) => store.snapshot().find(item => item.id === story);
+
+function holdWithWorkerAndQuestion(store, story) {
+  const record = toRetro(store, story);
+  record('assign-worker', { session: 'retro-session' });
+  const assignment = storyOf(store, story).worker.id;
+  record('question', { question: 'retro-1', prompt: 'Keep the lesson?', options: ['Keep', 'Drop'], recommended: 0, assignment });
+  record('merged', { detail: 'Merged at 1234abc.' });
+  return { record, assignment };
+}
+
+test('a merge during the retro keeps the phase and the retro worker, and records the merge on the retro', t => {
+  const store = fixture(t)();
+  const { assignment } = holdWithWorkerAndQuestion(store, 'held');
+  const held = storyOf(store, 'held');
+  assert.equal(held.phase, 'retro');
+  assert.equal(held.worker.id, assignment, 'the retro worker is still assigned');
+  assert.ok(Date.parse(held.retro.mergedAt) > 0, 'story.retro.mergedAt records when the merge was recorded');
+  assert.match(JSON.stringify(held.retro), /Merged at 1234abc\./, 'the merge evidence is kept on story.retro');
+});
+
+test('after a merge during the retro the owner can answer its open question and the worker can ask another', t => {
+  const store = fixture(t)();
+  const { record, assignment } = holdWithWorkerAndQuestion(store, 'asked');
+  record('answer', { question: 'retro-1', answer: 0 });
+  assert.equal(storyOf(store, 'asked').questions[0].answer, 'Keep');
+  record('question', { question: 'retro-2', prompt: 'Record it in the runbook?', options: ['Yes', 'No'], recommended: 0, assignment });
+  record('answer', { question: 'retro-2', answer: 1 });
+  assert.equal(storyOf(store, 'asked').questions[1].answer, 'No');
+  assert.equal(storyOf(store, 'asked').phase, 'retro');
+});
+
+test('the retro handoff on a merged retro closes the story and keeps the lessons', t => {
+  const store = fixture(t)();
+  const { record, assignment } = holdWithWorkerAndQuestion(store, 'closes');
+  record('answer', { question: 'retro-1', answer: 1 });
+  record('release-worker', { assignment, detail: 'Retro done.' });
+  record('handoff', { detail: 'Lesson: answer before the merge.' });
+  const closed = storyOf(store, 'closes');
+  assert.equal(closed.phase, 'closed');
+  assert.equal(closed.retro.detail, 'Lesson: answer before the merge.');
+  assert.ok(Date.parse(closed.retro.completedAt) > 0);
+});
+
+test('a retro handoff with no merge recorded still returns to the phase the retro started from', t => {
+  const store = fixture(t)();
+  const record = toRetro(store, 'unmerged', { returnPhase: 'merge' });
+  record('handoff', { detail: 'Lessons.' });
+  const back = storyOf(store, 'unmerged');
+  assert.equal(back.phase, 'merge');
+  assert.equal(back.retro.mergedAt, undefined);
+});
+
+test('a held retro refuses a second merge and refuses to reopen planning, while an unmerged retro can replan', t => {
+  const store = fixture(t)();
+  toRetro(store, 'plain')('replan', { detail: 'Scope changed.' });
+  assert.equal(storyOf(store, 'plain').phase, 'planning');
+
+  const record = toRetro(store, 'again');
+  record('merged', { detail: 'Merged.' });
+  assert.equal(storyOf(store, 'again').phase, 'retro');
+  assert.throws(() => record('merged', { detail: 'Merged again.' }), error => error.status === 409);
+  assert.throws(() => record('replan', { detail: 'Reopen.' }), error => error.status === 409);
+  assert.equal(storyOf(store, 'again').phase, 'retro');
+});
+
+test('a held retro whose worker is gone takes a new retro worker, whose handoff closes the story', t => {
+  const store = fixture(t)();
+  const { record, assignment } = holdWithWorkerAndQuestion(store, 'restaffed');
+  record('release-worker', { assignment, detail: 'The worker crashed.' });
+  assert.equal(storyOf(store, 'restaffed').phase, 'retro');
+  record('assign-worker', { session: 'retro-session-2' });
+  assert.equal(storyOf(store, 'restaffed').worker.session, 'retro-session-2');
+  record('answer', { question: 'retro-1', answer: 0 });
+  record('release-worker', { assignment: storyOf(store, 'restaffed').worker.id, detail: 'Retro done.' });
+  record('handoff', { detail: 'Lessons.' });
+  assert.equal(storyOf(store, 'restaffed').phase, 'closed');
+});
+
+test('a closed story refuses questions and answers, and a merge from ci, merge or pr-review still closes it', t => {
+  const store = fixture(t)();
+  for (const from of ['ci', 'merge', 'pr-review']) {
+    const story = 'from-' + from;
+    const record = toRetro(store, story);
+    record('handoff', { detail: 'Lessons.' });
+    if (from === 'merge') record('pr-ready', { detail: 'Checks passed.' });
+    if (from === 'pr-review') record('pr-review-start', { detail: 'Comment.' });
+    record('question', { question: 'open-1', prompt: 'Still open?', options: ['Yes', 'No'], recommended: 0 });
+    record('merged', { detail: 'Merged.' });
+    assert.equal(storyOf(store, story).phase, 'closed', 'merged from ' + from + ' closes the story');
+    assert.throws(() => record('answer', { question: 'open-1', answer: 0 }), error => error.status === 409 && /closed/.test(error.message));
+    assert.throws(() => record('question', { question: 'open-2', prompt: 'Another?', options: ['Yes', 'No'], recommended: 0 }), error => error.status === 409 && /closed/.test(error.message));
+  }
 });
 
 test('document evidence accepts markdown, json, and text only', t => {

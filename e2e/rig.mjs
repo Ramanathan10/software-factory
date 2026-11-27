@@ -145,6 +145,7 @@ export async function openRig({ entry, turnMs, tally, profile: overrides = {} })
       const created = store.record({ story, key: story + '-create', type: 'create', title: 'End-to-end check ' + story, detail: 'Exercise the factory with scripted workers.', branch: 'e2e', worktree, harness: entry.name, ...fields });
       if (scouted) store.record({ story, key: story + '-scout', type: 'handoff', revision: created.revision, detail: 'Context pack ready.' });
     },
+    record: (story, type, fields = {}) => store.record({ story, type, revision: rig.snapshot(story).revision, key: story + '-' + type + '-' + Date.now() + '-' + Math.random().toString(36).slice(2), ...fields }),
     start: (story, kickoff) => launch('start', story, kickoff),
     deliver: story => launch('deliver', story),
     async decide(body) {
