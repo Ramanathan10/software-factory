@@ -30,7 +30,7 @@ Open the file and read the comment with the code around it. Then pick one catego
 
 When a comment is both, an excuse beats a decision record: file the issue, and add an ADR only if the reason will still hold after the fix.
 
-A comment that carries real meaning but fits none of these, such as what a test's fixture represents, should become a better name: rename the test, the variable or the helper so the comment is redundant, then delete it. Keep that change behaviour-preserving. Before renaming anything in a file that `.claude/skills/verify-decision-delivery/SKILL.md` or `.claude/skills/verify-story-lifecycle/SKILL.md` names, read that skill: its model refers to the code by name.
+A comment that carries real meaning but fits none of these, such as what a test's fixture represents, should become a better name: rename the test, the variable or the helper so the comment is redundant, then delete it. Keep that change behaviour-preserving. Before renaming anything in a file that `.agents/skills/verify-decision-delivery/SKILL.md` or `.agents/skills/verify-story-lifecycle/SKILL.md` names, read that skill: its model refers to the code by name.
 
 If removing a comment would lose a warning that nothing else enforces and you cannot encode it in a name, a test or an ADR in this change, leave it. The baseline keeps it, and the next sweep picks it up.
 
