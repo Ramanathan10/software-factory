@@ -25,9 +25,9 @@ const ids = new Map();
 const now = new Date().toISOString();
 const base = { title: 'A story', branch: 'story/x', worktree: 'C:/w/x', harness: 'Claude Code', questions: [], artifacts: [], files: [], events: [], revision: 1, createdAt: now, updatedAt: now, pr: 'https://github.com/acme/widgets/pull/10' };
 const stories = [
-  { ...base, id: 'MRG-1', phase: 'retro', retro: { returnPhase: 'closed', startedAt: now, detail: 'The PR merged.' } },
-  { ...base, id: 'MRG-B', phase: 'retro', blocked: 'Waiting on the owner.', retro: { returnPhase: 'closed', startedAt: now, detail: 'The PR merged.' } },
-  { ...base, id: 'MRG-D', phase: 'retro', pendingDecision: { seq: 3 }, retro: { returnPhase: 'closed', startedAt: now, detail: 'The PR merged.' } },
+  { ...base, id: 'MRG-1', phase: 'retro', retro: { returnPhase: 'ci', startedAt: now, mergedAt: now, detail: 'The PR merged.' } },
+  { ...base, id: 'MRG-B', phase: 'retro', blocked: 'Waiting on the owner.', retro: { returnPhase: 'ci', startedAt: now, mergedAt: now, detail: 'The PR merged.' } },
+  { ...base, id: 'MRG-D', phase: 'retro', pendingDecision: { seq: 3 }, retro: { returnPhase: 'ci', startedAt: now, mergedAt: now, detail: 'The PR merged.' } },
   { ...base, id: 'RET-1', phase: 'retro', retro: { returnPhase: 'ci', startedAt: now, detail: 'Review lessons.' } },
 ];
 const filter = new Node('select');
@@ -46,9 +46,9 @@ await import('./console.mjs');
 
 const rows = () => Object.fromEntries(ids.get('overview').children.map(button => [button.children[0].textContent.split(' · ')[0], button.children[1].textContent]));
 
-test('the console labels a story in retro after its merge as merged with the retro in progress, owned by the coordinator', () => {
+test('the console labels a story in retro after its merge as merged with the finishing retro, owned by the coordinator', () => {
   const merged = rows()['MRG-1'];
-  assert.ok(merged.includes('Merged · retro in progress'), merged);
+  assert.ok(merged.includes('Merged · finishing retro'), merged);
   assert.ok(merged.startsWith('Jarvis'), merged);
 });
 
@@ -60,13 +60,13 @@ test('the console does not call a story in retro with its PR still open merged',
 test('a blocked merged retro shows Blocked, not merged', () => {
   const blocked = rows()['MRG-B'];
   assert.ok(blocked.includes('Blocked'), blocked);
-  assert.ok(!blocked.includes('Merged · retro in progress'), blocked);
+  assert.ok(!blocked.includes('Merged · finishing retro'), blocked);
 });
 
 test('a merged retro with a saved decision shows it is waiting for Jarvis, with an alert', () => {
   const waiting = rows()['MRG-D'];
   assert.ok(waiting.includes('Decision saved · waiting for Jarvis'), waiting);
-  assert.ok(!waiting.includes('Merged · retro in progress'), waiting);
+  assert.ok(!waiting.includes('Merged · finishing retro'), waiting);
   const button = ids.get('overview').children.find(each => each.children[0].textContent.startsWith('MRG-D'));
   assert.ok(String(button.children[1].className).includes('attention-text'), 'no alert on the decision row');
 });

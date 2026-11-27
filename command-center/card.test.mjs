@@ -81,7 +81,7 @@ const reviewed = {
 };
 const shipped = { ...base, id: 'DONE-1', repo: 'acme/one', phase: 'closed' };
 const retros = {
-  merged: { ...base, id: 'MRG-1', phase: 'retro', pr: 'https://github.com/acme/widgets/pull/10', retro: { returnPhase: 'closed', startedAt: now(), detail: 'The PR merged.' } },
+  merged: { ...base, id: 'MRG-1', phase: 'retro', pr: 'https://github.com/acme/widgets/pull/10', retro: { returnPhase: 'ci', startedAt: now(), mergedAt: now(), detail: 'The PR merged.' } },
   open: { ...base, id: 'RET-1', phase: 'retro', pr: 'https://github.com/acme/widgets/pull/11', retro: { returnPhase: 'ci', startedAt: now(), detail: 'Review lessons.' } },
 };
 sources.at(-1).listeners.stories({ data: JSON.stringify({ stories: [...Object.values(fixtures), shipped, ...Object.values(reviewed), ...Object.values(retros)] }) });
@@ -451,10 +451,10 @@ test('the track view marks a story with no hold as idle and a story waiting on J
 const laneNameOf = new Map(walk(ids.get('board')).filter(node => node.classes?.().includes('lane'))
   .flatMap(lane => walk(lane).filter(node => node.tag === 'article').map(article => [article, lane.children.find(child => child?.tag === 'h2')?.children[0]])));
 
-test('a merged story whose retro is running stays in the Ship lane labelled "Merged · retro in progress", and an open PR in retro does not', () => {
+test('a merged story whose retro is running stays in the Ship lane labelled "Merged · finishing retro", and an open PR in retro does not', () => {
   const merged = cards.get(retros.merged.id);
   assert.ok(merged, 'the board rendered no card for the merged story in retro');
-  assert.ok(merged.textContent.includes('Merged · retro in progress'), 'the merged card says: ' + merged.textContent);
+  assert.ok(merged.textContent.includes('Merged · finishing retro'), 'the merged card says: ' + merged.textContent);
   assert.equal(laneNameOf.get(merged), 'Ship');
   const open = cards.get(retros.open.id);
   assert.ok(open, 'the board rendered no card for the story in retro with its PR open');
@@ -462,11 +462,11 @@ test('a merged story whose retro is running stays in the Ship lane labelled "Mer
   assert.ok(!cards.has(shipped.id), 'a closed story has no card on the board');
 });
 
-const mergedWords = 'Merged · retro in progress';
+const mergedWords = 'Merged · finishing retro';
 const retroPair = [retros.merged, retros.open];
 const trackRow = id => walk(ids.get('board')).find(node => node.tag === 'article' && node.classes().includes('track') && walk(node).some(child => child.classes?.().includes('id') && child.textContent === id));
 
-test('the card glyph tooltip and accessible label say merged with the retro in progress, and an open PR in retro keeps the plain phase name', () => {
+test('the card glyph tooltip and accessible label say merged with the finishing retro, and an open PR in retro keeps the plain phase name', () => {
   show(retroPair);
   const glyph = id => walk(boardCard(id)).find(node => node.getAttribute?.('title'));
   assert.ok(glyph(retros.merged.id).getAttribute('title').endsWith(' · ' + mergedWords), glyph(retros.merged.id).getAttribute('title'));
@@ -474,7 +474,7 @@ test('the card glyph tooltip and accessible label say merged with the retro in p
   assert.ok(!glyph(retros.open.id).getAttribute('title').includes('Merged'), glyph(retros.open.id).getAttribute('title'));
 });
 
-test('the track view row and its current step say merged with the retro in progress, and an open PR in retro does not', () => {
+test('the track view row and its current step say merged with the finishing retro, and an open PR in retro does not', () => {
   useView('track');
   try {
     show(retroPair);
@@ -490,7 +490,7 @@ test('the track view row and its current step say merged with the retro in progr
   }
 });
 
-test('the story window heading and title say merged with the retro in progress, and an open PR in retro does not', async () => {
+test('the story window heading and title say merged with the finishing retro, and an open PR in retro does not', async () => {
   await detailRows(retros.merged);
   const heading = walk(ids.get('detail-body')).find(node => node.tag === 'small');
   assert.equal(heading.textContent, retros.merged.id + ' · ' + mergedWords);
@@ -499,4 +499,44 @@ test('the story window heading and title say merged with the retro in progress, 
   const openHeading = walk(ids.get('detail-body')).find(node => node.tag === 'small');
   assert.ok(!openHeading.textContent.includes('Merged'), openHeading.textContent);
   assert.ok(!document.getElementById('detail').querySelector('.win-title').textContent.includes('Merged'));
+});
+
+const held = {
+  idle: { ...base, id: 'HELD-1', repo: 'acme/one', phase: 'retro', pr: 'https://github.com/acme/one/pull/7',
+    retro: { returnPhase: 'ci', startedAt: ago(30), mergedAt: ago(5), detail: 'Merged.' },
+    worker: { id: 'w9', role: 'coordinator', session: 's9', lastTurn: { outcome: 'ended', at: now(), code: 0 } } },
+  asking: { ...base, id: 'HELD-2', repo: 'acme/one', phase: 'retro', pr: 'https://github.com/acme/one/pull/8',
+    retro: { returnPhase: 'ci', startedAt: ago(30), mergedAt: ago(5), detail: 'Merged.' },
+    questions: [{ id: 'retro-1', prompt: 'Keep the lesson?', options: ['Keep', 'Drop'], recommended: 0 }],
+    worker: { id: 'w10', role: 'coordinator', session: 's10', lastTurn: { outcome: 'ended', at: now(), code: 0 } } },
+  running: { ...base, id: 'HELD-3', repo: 'acme/one', phase: 'retro', pr: 'https://github.com/acme/one/pull/9',
+    retro: { returnPhase: 'ci', startedAt: ago(30) },
+    worker: { id: 'w11', role: 'coordinator', session: 's11', lastTurn: { outcome: 'ended', at: now(), code: 0 } } },
+};
+
+test('a story held in the retro after its merge is labelled as merged and finishing the retro, and an unmerged retro is not', () => {
+  show([held.idle, held.running]);
+  assert.ok(boardCard('HELD-1').textContent.includes('Merged · finishing retro'), 'the held story card does not say it is merged and finishing the retro: ' + boardCard('HELD-1').textContent);
+  assert.ok(!boardCard('HELD-3').textContent.includes('Merged · finishing retro'), 'a retro with no merge is labelled as merged');
+});
+
+test('only a story in the retro phase reads as merged and finishing the retro, even if it kept retro.mergedAt', () => {
+  show([{ ...held.idle, id: 'HELD-4', phase: 'ci' }]);
+  assert.ok(boardCard('HELD-4'), 'the story outside the retro has no card');
+  assert.ok(!boardCard('HELD-4').textContent.includes('Merged · finishing retro'), 'a story that left the retro is labelled as finishing it: ' + boardCard('HELD-4').textContent);
+});
+
+test('a held retro is in Waiting on you only while a question is open, and it is not in the Archive until it closes', () => {
+  show([held.idle]);
+  assert.ok(!boardCard('HELD-1').classes().includes('waiting'), 'a held retro with no open question is waiting on the owner');
+  assert.equal(ids.get('stat-waiting').textContent, '0');
+  assert.equal(ids.get('stat-shipped').textContent, '0', 'a held retro is counted as shipped');
+  show([held.asking]);
+  assert.ok(boardCard('HELD-2').classes().includes('waiting'), 'a held retro with an open question is not waiting on the owner');
+  assert.equal(wordsOf('HELD-2'), 'Waiting on you');
+  assert.equal(ids.get('stat-waiting').textContent, '1');
+  assert.equal(ids.get('stat-shipped').textContent, '0', 'a held retro is counted as shipped');
+  show([{ ...held.asking, phase: 'closed' }]);
+  assert.equal(ids.get('stat-shipped').textContent, '1');
+  assert.equal(ids.get('stat-waiting').textContent, '0');
 });

@@ -157,8 +157,8 @@ const idleReasons = {
   diagram: 'waiting for the diagram', publishing: 'no publisher session active',
   ci: 'waiting on pipeline checks', merge: 'waiting on reviewer approval and merge', 'pr-review': 'waiting for the PR review worker',
 };
-const mergedInRetro = story => story.phase === 'retro' && story.retro?.returnPhase === 'closed';
-const phaseLabel = (story, fallback = story.phase) => mergedInRetro(story) ? 'Merged · retro in progress' : meta.phases[story.phase]?.[1] ?? fallback;
+const mergedInRetro = story => story.phase === 'retro' && Boolean(story.retro?.mergedAt);
+const phaseLabel = (story, fallback = story.phase) => mergedInRetro(story) ? 'Merged · finishing retro' : meta.phases[story.phase]?.[1] ?? fallback;
 const idleReason = story => idleReasons[story.phase] ?? 'no active worker';
 function isBusy(story) {
   if (story.phase === 'closed' || story.blocked || waitingOnYou(story)) return false;

@@ -30,50 +30,28 @@ test('a story that is not being cleaned up can always still merge', () => {
   assert.deepEqual(stuck.map(([, node]) => story(node)), [], 'these stories can never reach closed');
 });
 
-const mergeClosing = (id, state) => {
-  const release = state.worker && state.phase !== 'retro' ? ['release-worker'] : [];
-  const held = follow(states, id, [...release, 'merged']);
-  if (!held || held.phase === 'closed') return held;
-  return follow(states, id, [...release, 'merged', ...(held.worker ? ['release-worker'] : []), 'handoff']);
-};
-const merging = live.filter(([, { state }]) => state.pr && state.phase !== 'closed' && !state.cleanup && state.retro?.returnPhase !== 'closed');
+test('the merge of a registered pull request closes the story from ci or merge', () => {
+  const refused = live.filter(([, { state }]) => state.pr && ['ci', 'merge'].includes(state.phase) && !state.cleanup)
+    .filter(([id, { state }]) => follow(states, id, [...(state.worker ? ['release-worker'] : []), 'merged'])?.phase !== 'closed');
+  assert.deepEqual(refused.map(([, node]) => story(node)), [], 'merged was refused after these events');
+});
 
-test('merged from an open phase with a registered PR closes the story when its retro has finished, and otherwise moves it to retro with return phase closed, whose handoff closes it', () => {
-  assert.ok(merging.some(([, { state }]) => state.phase === 'diagram') && merging.some(([, { state }]) => state.phase === 'building') &&
-    merging.some(([, { state }]) => state.retro?.completed), 'the explorer reaches diagram, building and a finished retro with a registered PR');
+const merging = live.filter(([, { state }]) => state.pr && state.phase !== 'closed' && !state.cleanup);
+const closesDirectly = state => ['ci', 'merge', 'pr-review'].includes(state.phase) || state.retro?.completed;
+
+test('merged during other work closes a story whose retro finished and otherwise holds it in retro until the retro handoff closes it', () => {
+  const midWork = merging.filter(([, { state }]) => state.phase !== 'retro' && !closesDirectly(state));
+  assert.ok(midWork.some(([, { state }]) => state.phase === 'diagram') && midWork.some(([, { state }]) => state.phase === 'building'), 'the explorer reaches diagram and building with a registered PR');
+  assert.ok(merging.some(([, { state }]) => !['ci', 'merge', 'pr-review', 'retro'].includes(state.phase) && state.retro?.completed), 'the explorer reaches open work after a finished retro');
   const wrong = [];
-  for (const [id, { state }] of merging) {
-    const release = state.worker && state.phase !== 'retro' ? ['release-worker'] : [];
+  for (const [id, { state }] of merging.filter(([, { state }]) => state.phase !== 'retro')) {
+    const release = state.worker ? ['release-worker'] : [];
     const held = follow(states, id, [...release, 'merged']);
     if (!held) wrong.push('merged was refused after ' + story(states.get(id)));
-    else if (state.retro?.completed ? held.phase !== 'closed'
-      : held.phase !== 'retro' || held.retro?.returnPhase !== 'closed' || held.blocked) wrong.push('merged did not hold or close the story after ' + story(states.get(id)));
-    else if (mergeClosing(id, state)?.phase !== 'closed') wrong.push('the retro handoff did not close the merged story after ' + story(states.get(id)));
+    else if (closesDirectly(state) ? held.phase !== 'closed' : held.phase !== 'retro' || !held.retro?.merged || held.worker || held.blocked) wrong.push('merged did not close or hold the story after ' + story(states.get(id)));
+    else if (!closesDirectly(state) && follow(states, id, [...release, 'merged', 'handoff'])?.phase !== 'closed') wrong.push('the retro handoff did not close the merged story after ' + story(states.get(id)));
   }
   assert.deepEqual(wrong, []);
-});
-
-test('merged in the retro is accepted with the retro worker assigned, which keeps its assignment', () => {
-  const staffed = merging.filter(([, { state }]) => state.phase === 'retro' && state.worker && state.retro?.returnPhase !== 'closed');
-  assert.ok(staffed.length, 'the explorer reaches the retro with a worker assigned');
-  const wrong = staffed.filter(([id]) => { const held = follow(states, id, ['merged']); return held?.phase !== 'retro' || held.retro.returnPhase !== 'closed' || !held.worker; });
-  assert.deepEqual(wrong.map(([, node]) => story(node)), [], 'merged was refused, or released the worker, after these events');
-});
-
-test('a retro of a merged story refuses replan and a second merge', () => {
-  const held = live.filter(([, { state }]) => state.phase === 'retro' && state.retro?.returnPhase === 'closed');
-  assert.ok(held.length, 'the explorer reaches a merged retro');
-  const wrong = held.flatMap(([id, node]) => ['replan', 'merged'].filter(type => edgeTo(id, type)).map(type => type + ' was accepted after ' + story(node)));
-  assert.deepEqual(wrong, []);
-});
-
-test('a merged story accepts the lessons handoff only once its worker is released', () => {
-  const merged = live.filter(([, { state }]) => state.phase === 'retro' && state.retro?.returnPhase === 'closed' && !state.blocked && !state.cleanup);
-  assert.ok(merged.some(([, { state }]) => state.worker) && merged.some(([, { state }]) => !state.worker), 'the explorer reaches a merged retro with and without a worker');
-  for (const [id, { state }] of merged) {
-    assert.equal(Boolean(edgeTo(id, 'handoff')), !state.worker, 'handoff and the worker disagree after ' + story(states.get(id)));
-    if (!state.worker) assert.equal(states.get(edgeTo(id, 'handoff')).state.phase, 'closed', 'the handoff did not close the merged story after ' + story(states.get(id)));
-  }
 });
 
 test('an observation of the registered PR is accepted in every open phase, and outside ci, merge and pr-review only a merged or closed one changes the story', () => {
@@ -87,6 +65,31 @@ test('an observation of the registered PR is accepted in every open phase, and o
     if (watching.includes(node.state.phase)) continue;
     for (const edge of [...seen('passed'), ...seen('failed')]) if (edge.to !== id) wrong.push(edge.input.observation.status + ' changed the story after ' + story(node));
     for (const edge of seen('merged')) if (states.get(edge.to).state.prObservation?.status !== 'merged') wrong.push('a merge was not stored after ' + story(node));
+  }
+  assert.deepEqual(wrong, []);
+});
+
+test('from retro, merged then the retro handoff closes the story, and a merged retro takes neither a second merge nor a replan', () => {
+  const after = (id, type) => states.get(id).edges.find(edge => edge.type === type)?.to;
+  const retros = live.filter(([, { state }]) => state.phase === 'retro' && state.pr && !state.cleanup && !state.blocked);
+  assert.ok(retros.some(([, { state }]) => state.worker) && retros.some(([, { state }]) => !state.worker), 'the explorer reaches retro with and without a worker');
+  const wrong = [];
+  for (const [id, { state }] of retros) {
+    const merged = state.retro?.merged;
+    if (merged) {
+      for (const type of ['merged', 'replan']) if (after(id, type)) wrong.push(type + ' was accepted on a merged retro after ' + story(states.get(id)));
+    } else {
+      const held = after(id, 'merged');
+      const heldState = held && states.get(held).state;
+      if (heldState?.phase !== 'retro' || !heldState.retro?.merged) wrong.push('merged did not hold the retro after ' + story(states.get(id)));
+      else if (Boolean(heldState.worker) !== Boolean(state.worker)) wrong.push('merged changed the retro worker after ' + story(states.get(id)));
+    }
+    if (merged || after(id, 'merged')) {
+      const held = merged ? id : after(id, 'merged');
+      const idle = states.get(held).state.worker ? after(held, 'release-worker') : held;
+      const closed = idle && after(idle, 'handoff');
+      if (!closed || states.get(closed).state.phase !== 'closed') wrong.push('the retro handoff did not close the story after ' + story(states.get(id)) + ' then merged');
+    }
   }
   assert.deepEqual(wrong, []);
 });
@@ -154,14 +157,14 @@ test('a background Jarvis turn changes nothing but its own record, is never refu
   assert.deepEqual(wrong, []);
 });
 
-test('PR review is reached from an open PR, a merge ends it through the retro, and a retro never starts from it', () => {
+test('PR review is reached from an open PR, a merge closes it, and a retro never starts from it', () => {
   const reviewing = live.filter(([, { state }]) => state.phase === 'pr-review');
   assert.ok(reviewing.length, 'no event moves a story into pr-review');
   const entries = live.flatMap(([, node]) => node.edges.filter(edge => states.get(edge.to).state.phase === 'pr-review' && node.state.phase !== 'pr-review')
     .map(edge => node.state.phase + ' ' + edge.type));
   assert.deepEqual([...new Set(entries)].sort(), ['ci pr-review-start', 'merge pr-review-start']);
-  const refused = reviewing.filter(([, { state }]) => !state.cleanup).filter(([id, { state }]) => mergeClosing(id, state)?.phase !== 'closed');
-  assert.deepEqual(refused.map(([, node]) => story(node)), [], 'a merge in pr-review did not reach closed through the retro after these events');
+  const refused = reviewing.filter(([, { state }]) => !state.cleanup).filter(([id, { state }]) => follow(states, id, [...(state.worker ? ['release-worker'] : []), 'merged'])?.phase !== 'closed');
+  assert.deepEqual(refused.map(([, node]) => story(node)), [], 'a merge in pr-review did not close the story after these events');
   const retro = reviewing.filter(([, node]) => node.edges.some(edge => edge.type === 'retro-start'));
   assert.deepEqual(retro.map(([, node]) => story(node)), [], 'a retro started from pr-review');
   const handoffs = new Set(reviewing.flatMap(([, node]) => node.edges.filter(edge => edge.type === 'handoff').map(edge => states.get(edge.to).state.phase)));

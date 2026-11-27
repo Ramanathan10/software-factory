@@ -74,7 +74,7 @@ function status(story) {
   if (story.blocked) return { owner: phases[story.phase][0], label: 'Blocked' };
   const [owner, label] = phases[story.phase];
   if (waitingForJarvis(story)) return { owner, label: 'Decision saved · waiting for Jarvis', alert: true };
-  if (story.phase === 'retro' && story.retro?.returnPhase === 'closed') return { owner: 'coordinator', label: 'Merged · retro in progress' };
+  if (story.phase === 'retro' && story.retro?.mergedAt) return { owner: 'coordinator', label: 'Merged · finishing retro' };
   const signal = story.prObservation?.status;
   if (['ci', 'merge'].includes(story.phase) && signal) {
     const review = reviewLabels(story, Date.now()).map(said => ' · ' + said).join('');

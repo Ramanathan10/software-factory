@@ -83,13 +83,13 @@ export async function run(rig) {
     const seen = rig.event(story, 'pr-observed', item => item.observation?.status === 'merged');
     expect(seen && seen.phase === 'diagram', 'No merged pr-observed event was recorded in diagram.');
   });
-  await rig.step('a background Jarvis releases Rocket, records the merge, and the story moves to the retro with return phase closed', async () => {
+  await rig.step('a background Jarvis releases Rocket, records the merge, and the story moves to the retro with the merge recorded', async () => {
     await rig.until('Jarvis to record the merge', () => rig.event(story, 'merged'), 60000);
     const merged = rig.event(story, 'merged');
     const released = rig.event(story, 'release-worker', item => item.worker?.role === 'diagrammer');
     expect(released && released.seq < merged.seq, 'Jarvis did not release Rocket before recording the merge.');
     const now = rig.snapshot(story);
-    expect(now.retro?.returnPhase === 'closed', 'The merge did not start the retro with return phase closed: ' + JSON.stringify(now.retro));
+    expect(now.phase === 'retro' && now.retro?.mergedAt, 'The merge did not start the retro with the merge recorded: ' + JSON.stringify(now.retro));
     expect(rig.jarvisWakes(story).some(wake => wake.seq < merged.seq), 'Jarvis was not woken before the merge was recorded.');
   });
   await rig.step('the retro runs and its handoff closes the story', async () => {
