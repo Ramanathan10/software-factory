@@ -759,6 +759,17 @@ test('a held retro refuses a second merge and refuses to reopen planning, while 
   assert.equal(storyOf(store, 'again').phase, 'retro');
 });
 
+test('a blocked held retro tells the owner to resume, since replan is refused there', t => {
+  const store = fixture(t)();
+  const record = toRetro(store, 'stuck-held');
+  record('merged', { detail: 'Merged.' });
+  record('blocked', { detail: 'Retro worker cannot reach the runbook.' });
+  assert.throws(() => record('handoff', { detail: 'Lessons.' }), error => error.status === 409 && /Resume the blocked story first/.test(error.message) && !/replan/i.test(error.message));
+  const unmerged = toRetro(store, 'stuck-open');
+  unmerged('blocked', { detail: 'Stuck.' });
+  assert.throws(() => unmerged('handoff', { detail: 'Lessons.' }), /Resume or replan/);
+});
+
 test('a held retro whose worker is gone takes a new retro worker, whose handoff closes the story', t => {
   const store = fixture(t)();
   const { record, assignment } = holdWithWorkerAndQuestion(store, 'restaffed');

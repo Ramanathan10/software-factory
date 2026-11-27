@@ -14,7 +14,7 @@ Run the steps in order. Steps 1 and 2 happen once per session, except that the p
 - [ ] 3. Intake: record the story and start its worker
 - [ ] 4. Route each decision the owner makes to the story's worker
 - [ ] 5. Check each handoff and keep the console current
-- [ ] 6. Close the story: release the worker and report
+- [ ] 6. Close the story: release the worker (a worker holding a merged retro releases itself with the lessons) and report
 
 The [factory runbook](RUNBOOK.md) gives the detail behind steps 3 to 6: the calls each harness uses, the worker kickoff, the event chain, and decision handling.
 
@@ -76,7 +76,7 @@ When a worker ends its turn, read the console and check the evidence it recorded
 | 7. Architecture diagram | `diagram` | When the profile or the spec asks for one: the publisher records `diagram-start` with the scope as its first step, before the pull request opens; staff Rocket, whose `artifact` of kind `diagram` and `handoff` return the story to publishing, then restaff the publisher |
 | 8. Pull request | `publishing`, `ci`, `merge`, `closed` | Before starting the publisher, acknowledge (the console's ack command) the story's pending `comparison-choice`, or the daemon delivers it and resumes the publisher after it releases. Start Hawkeye's publisher (kickoff: run "Publishing" in phase 8 of the ai-sdlc skill), which records `return-to-build` on a merge conflict or a story-caused gate failure, `blocked` and a `question` when the gate fails on the default branch too, and `pr-opened` with the URL; `activity` with `pipeline` for a required pipeline run; `pr-ready` for the reviewed head, and `pr-review-start` naming the threads when it is refused for unresolved threads; `pr-recheck` on a new head; `merged` |
 | 8. PR review | `pr-review` | `pr-review-start` naming the new feedback, then start Hawkeye's worker; the worker records `question` per comment, the owner's `answer`, `activity` with the posted comment ids, `handoff` back to ci with the review keys it read as seen, or, when an answer asks for more, a reply on that item that it is going back to build and `return-to-build` with the keys it read as seen |
-| 9. Retro | `retro` | `retro-start` while the pull request is open; `handoff` with the lessons. On a merge during the retro, record `merged` without `release-worker`: the retro worker keeps its assignment, gets the owner's answers, and its `handoff` closes the story |
+| 9. Retro | `retro` | `retro-start` while the pull request is open; `handoff` with the lessons. On a merge during the retro, record `merged` without `release-worker` and tell the retro worker with "Message a worker" that the PR merged: it keeps its assignment and gets the owner's answers. Once every retro question is answered it records `release-worker` with the lessons as its detail, and no `handoff`; the story stays in the retro with no worker, which wakes Jarvis, who checks the lessons, records the closing `handoff` with them, and reports |
 
 Keep the console honest while this happens:
 
@@ -89,7 +89,7 @@ Keep the console honest while this happens:
 
 ## 6. Close the story
 
-Release a worker with `release-worker` before changing phases or assigning a replacement, and when its story is merged or cleaned up. Report to the owner what was merged, the retro's lessons, and anything left open. The full event reference, the command line, recovery, and cleanup are in the Mission Console reference, the file at `commandCenter.reference`.
+Release a worker with `release-worker` before changing phases or assigning a replacement, and when its story is merged or cleaned up, except a story merged during its retro: that retro worker stays assigned until it releases itself with the lessons (phase 9 above). Report to the owner what was merged, the retro's lessons, and anything left open. The full event reference, the command line, recovery, and cleanup are in the Mission Console reference, the file at `commandCenter.reference`.
 
 ## Roles
 

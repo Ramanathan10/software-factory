@@ -1,6 +1,6 @@
 import { expect } from '../rig.mjs';
 
-export const title = 'A merge recorded while the retro worker is assigned keeps the retro open, so the owner\'s answer reaches the same worker and its handoff closes the story';
+export const title = 'A merge recorded while the retro worker is assigned keeps the retro open, so the owner\'s answer reaches the same worker, and the worker releases itself with the lessons and Jarvis closes the story';
 
 const story = 'E2E-RETRO';
 
@@ -20,17 +20,22 @@ export async function run(rig) {
     rig.record(story, 'retro-start', { detail: 'Review lessons.' });
     expect(rig.snapshot(story).phase === 'retro', 'The story is not in the retro.');
   });
-  rig.playbook(story, { turns: [
-    { role: 'coordinator', phase: 'retro', turn: 'first', steps: [
-      { record: { type: 'question', question: 'lesson', prompt: 'Keep the lesson?', options: ['keep', 'drop'], recommended: 0 } },
-    ] },
-    { role: 'coordinator', phase: 'retro', turn: 'resumed', steps: [
-      { record: { type: 'activity', detail: 'E2E answer received: {{answer:lesson}}' } },
-      { ack: ['answer'] },
-      { record: { type: 'release-worker', detail: 'Retro finished.' } },
-      { record: { type: 'handoff', detail: 'E2E lessons: {{answer:lesson}}' } },
-    ] },
-  ] });
+  rig.playbook(story, {
+    jarvis: [
+      { wake: 1, steps: [
+        { record: { type: 'handoff', detail: 'E2E lessons: {{answer:lesson}}', by: 'jarvis' } },
+      ] },
+    ],
+    turns: [
+      { role: 'coordinator', phase: 'retro', turn: 'first', steps: [
+        { record: { type: 'question', question: 'lesson', prompt: 'Keep the lesson?', options: ['keep', 'drop'], recommended: 0 } },
+      ] },
+      { role: 'coordinator', phase: 'retro', turn: 'resumed', steps: [
+        { record: { type: 'activity', detail: 'E2E answer received: {{answer:lesson}}' } },
+        { ack: ['answer'] },
+        { record: { type: 'release-worker', detail: 'E2E lessons: {{answer:lesson}}' } },
+      ] },
+    ] });
   const first = await rig.step(rig.harness + ' starts the retro worker, which asks its question', async () => {
     const started = await rig.start(story, 'You are the scripted retro worker for story ' + story + '.');
     await rig.worker(story, 1, 'the question', () => rig.event(story, 'question'));
@@ -48,7 +53,7 @@ export async function run(rig) {
     expect(rig.snapshot(story).questions.find(item => item.id === 'lesson')?.answer === 'drop', 'The answer was not recorded.');
     return recorded;
   });
-  await rig.step('the same worker receives the answer, acknowledges it and hands off the lessons, and the story closes', async () => {
+  await rig.step('the same worker receives the answer and releases itself with the lessons, and the woken Jarvis closes the story', async () => {
     const acted = await rig.worker(story, 2, 'acting on the answer', () => rig.event(story, 'activity', item => /E2E answer received: drop/i.test(item.detail)));
     expect(acted.worker.session === first.session, 'A different session acted on the answer.');
     await rig.until('the acknowledgement', () => rig.acknowledged(story, answer.seq));

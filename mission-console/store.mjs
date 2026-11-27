@@ -152,7 +152,7 @@ const jarvisNotice = input => input.type === 'question' && typeof input.question
 function apply(story, input, now) {
   requireThat(story.harness || ['select-harness', 'release-worker'].includes(input.type), 'Select the story harness first.', 409);
   requireThat(!story.blocked || jarvisNotice(input) || ['resume', 'answer', 'replan', 'assign-worktree', 'release-worker', 'select-harness', 'merged', 'turn-started', 'turn-ended', ...jarvisTurnEvents].includes(input.type),
-    'Resume or replan the blocked story first.', 409);
+    story.retro?.mergedAt ? 'Resume the blocked story first.' : 'Resume or replan the blocked story first.', 409);
   switch (input.type) {
     case 'select-harness':
       requireThat(!story.harness && !story.worker && story.phase !== 'closed',
