@@ -210,3 +210,12 @@ test('four underscores between spaces stay literal text with no strong element',
   assert.equal(text(para), 'a ____ b');
   assert.deepEqual(kids(para), ['a ____ b']);
 });
+
+test('double underscores stay literal when an underscore or a digit sits on either side', () => {
+  for (const source of ['___x__ y', '2__x__ y', '__x___ y', '__x__2 y']) {
+    const [para] = renderMarkdown(source, el);
+    assert.equal(strongs(para).length, 0, source + ' made a strong element');
+    assert.equal(text(para), source);
+    assert.deepEqual(kids(para), [source], source + ' was split into parts');
+  }
+});

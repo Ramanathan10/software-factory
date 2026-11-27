@@ -209,6 +209,8 @@ test('the Command Center inbox card shows injected HTML and a javascript: link a
   const result = await centerQuestion();
   assert.ok(result.found, 'no element holds the prompt, aria-labelledby is ' + result.id);
   assert.match(result.id, /^q-WEB-7-docs$/);
+  const holder = await evaluate(`document.getElementById(document.querySelector('.decision.grooming .question').getAttribute('aria-labelledby')).tagName`);
+  assert.equal(holder, 'DIV', 'the prompt block is a ' + holder + ', a p cannot hold lists');
   safe(result, 'inbox card');
 });
 
@@ -216,6 +218,7 @@ test('the legacy Mission Console question form formats the prompt, has no legend
   await open('http://127.0.0.1:' + legacy.address().port + '/');
   await until(`document.querySelector('#questions fieldset')`, 'the legacy question form');
   const result = await evaluate(readPrompt.replaceAll('GROUP', '#questions fieldset'));
+  assert.equal(result.id, 'prompt-WEB-7-docs', 'the legacy prompt id must carry the story id and the question id');
   shows(result, 'legacy form');
   safe(result, 'legacy form');
   assert.equal(result.legend, 0, 'the fieldset still has a legend');
