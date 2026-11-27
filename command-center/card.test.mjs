@@ -396,10 +396,9 @@ const keeps = {
   question: { story: { ...base, id: 'KEEP-3', phase: 'building', questions: [{ id: 'q', prompt: 'Which way?', options: [] }], jarvis: jarvisTurn, waitingOnJarvis: waitingFor }, role: 'approver', words: 'Waiting on you' },
   blocked: { story: { ...base, id: 'KEEP-4', phase: 'building', blocked: true, jarvis: jarvisTurn, waitingOnJarvis: waitingFor }, role: 'implementer', words: 'Blocked' },
   approval: { story: { ...base, id: 'KEEP-5', phase: 'approval', jarvis: jarvisTurn, waitingOnJarvis: waitingFor }, role: 'approver', words: 'Waiting on you' },
-  comparison: { story: { ...base, id: 'KEEP-6', phase: 'comparison-choice', jarvis: jarvisTurn, waitingOnJarvis: waitingFor }, role: 'approver', words: 'Waiting on you' },
 };
 
-test('an assigned worker, an open question, a blocker, approval and comparison-choice keep their owner while Jarvis checks or is waited on', () => {
+test('an assigned worker, an open question, a blocker and approval keep their owner while Jarvis checks or is waited on', () => {
   show(Object.values(keeps).map(each => each.story));
   for (const [name, { story, role }] of Object.entries(keeps)) {
     assert.equal(boardCard(story.id).attributes['data-role'], role, name + ' changed owner');
@@ -576,4 +575,138 @@ test('a held retro is in Waiting on you only while a question is open, and it is
   show([{ ...held.asking, phase: 'closed' }]);
   assert.equal(ids.get('stat-shipped').textContent, '1');
   assert.equal(ids.get('stat-waiting').textContent, '0');
+});
+
+const shown = { ...base, id: 'CMPN-1', phase: 'comparison-choice' };
+const cmp = {
+  waiting: { ...base, id: 'CMPW-1', phase: 'comparison-choice', waitingOnJarvis: waitingFor },
+  checking: { ...base, id: 'CMPC-1', phase: 'comparison-choice', jarvis: jarvisTurn },
+  waking: { ...base, id: 'CMPK-1', phase: 'comparison-choice', jarvis: { session: 'jarvis-1', handled: 1, waking: now() } },
+  failed: { ...base, id: 'CMPF-1', phase: 'comparison-choice', jarvis: jarvisTurn, waitingOnJarvis: waitingFor,
+    questions: [{ id: 'action-jarvis-9', prompt: 'The Jarvis turn failed.', options: ['Retry'], recommended: 0 }] },
+};
+const cardTitle = 'Before-and-after for A story: capture it or skip?';
+const cardHint = "Jarvis records the approved spec's choice itself. Answer here only if the spec left it open.";
+const inboxRows = () => walk(ids.get('decisions')).filter(node => node.classes?.().includes('pending-row'));
+const rowFor = id => inboxRows().find(row => row.textContent.startsWith(id + ' · '));
+const compareCards = () => walk(ids.get('decisions')).filter(node => node.attributes?.['data-kind'] === 'compare');
+const cardKinds = id => walk(ids.get('decisions')).filter(node => node.attributes?.['data-story'] === id && node.attributes['data-kind']).map(node => node.attributes['data-kind']);
+const inFocus = run => {
+  press(tile('approver'));
+  try { return run(); } finally { press(tile('approver')); }
+};
+const notices = [];
+globalThis.Notification = class { static permission = 'granted'; constructor(title, options) { notices.push({ title, options }); } };
+const noticesFor = id => notices.filter(notice => notice.options.tag === id);
+
+test('a comparison-choice story Jarvis waits on or checks has no card, no inbox row and no Waiting on you count', () => {
+  for (const key of ['waiting', 'checking', 'waking']) {
+    const story = cmp[key];
+    show([story]);
+    assert.ok(!rowFor(story.id), key + ': the inbox lists ' + story.id);
+    assert.equal(inboxRows().length, 0, key + ': the inbox has rows');
+    assert.equal(ids.get('stat-waiting').textContent, '0', key + ': the Waiting on you stat counts it');
+    assert.equal(document.title, 'AI SDLC Command Center', key + ': the tab title counts it: ' + document.title);
+    assert.ok(!boardCard(story.id).classes().includes('waiting'), key + ': the board card is waiting on you');
+    inFocus(() => assert.equal(compareCards().length, 0, key + ': the inbox shows the comparison card'));
+  }
+});
+
+test('a held comparison-choice story with no worker and no blocker shows Jarvis as its owner on the board', () => {
+  show([cmp.waiting, cmp.checking, cmp.waking]);
+  const expected = { 'CMPW-1': waitingWords, 'CMPC-1': 'Jarvis is checking', 'CMPK-1': 'Jarvis is checking' };
+  for (const [id, words] of Object.entries(expected)) {
+    assert.equal(boardCard(id).attributes['data-role'], 'coordinator', id + ' is not attributed to Jarvis');
+    assert.equal(wordsOf(id), words, id + ' card words');
+  }
+  assert.ok(tile('coordinator').textContent.includes('CMPW-1'), 'the Jarvis tile does not list the waiting story');
+  assert.ok(!tile('approver').textContent.includes('CMP'), 'the approver tile still lists a held story: ' + tile('approver').textContent);
+});
+
+test('a comparison-choice story with no hold waits on you, counts, and gets an inbox row and the neutral card', () => {
+  show([shown]);
+  assert.ok(rowFor(shown.id), 'the inbox has no row for ' + shown.id);
+  assert.ok(rowFor(shown.id).textContent.includes(cardTitle), 'the inbox row says: ' + rowFor(shown.id).textContent);
+  assert.equal(ids.get('stat-waiting').textContent, '1');
+  assert.equal(document.title, '(1) AI SDLC Command Center');
+  assert.equal(boardCard(shown.id).attributes['data-role'], 'approver');
+  assert.equal(wordsOf(shown.id), 'Waiting on you');
+  inFocus(() => {
+    const [found, ...rest] = compareCards();
+    assert.ok(found && !rest.length, 'expected one comparison card, found ' + compareCards().length);
+    assert.equal(walk(found).find(node => node.classes?.().includes('title')).textContent, cardTitle);
+    assert.equal(walk(found).find(node => node.classes?.().includes('hint')).textContent, cardHint);
+    assert.ok(walk(found).some(node => node.classes?.().includes('shots')), 'the baseline screenshot picker is gone');
+    const buttons = walk(found.querySelector('.send')).filter(node => node.tag === 'button');
+    assert.deepEqual(buttons.map(node => node.textContent), ['Capture it', 'Skip']);
+    for (const button of buttons) assert.ok(!button.classes().includes('primary'), button.textContent + ' is the primary button');
+  });
+});
+
+test('Capture it sends comparison-choice run true and Skip sends run false', async () => {
+  const realFetch = globalThis.fetch;
+  const sent = [];
+  globalThis.fetch = async (url, init) => { sent.push(JSON.parse(init.body)); return { ok: true, json: async () => ({}) }; };
+  try {
+    show([shown]);
+    for (const [label, run] of [['Capture it', true], ['Skip', false]]) {
+      inFocus(() => press(walk(compareCards()[0].querySelector('.send')).find(node => node.tag === 'button' && node.textContent === label)));
+      await new Promise(resolve => setTimeout(resolve, 0));
+      const event = sent.at(-1);
+      assert.equal(event?.type, 'comparison-choice', label + ' sent ' + JSON.stringify(event));
+      assert.equal(event.story, shown.id);
+      assert.equal(event.run, run);
+      show([shown]);
+    }
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+
+test('the notification for a comparison-choice story fires when no hold applies, and never while Jarvis holds it', () => {
+  notices.length = 0;
+  show([]);
+  show([cmp.waiting, cmp.checking]);
+  assert.equal(notices.length, 0, 'a held story raised a notification: ' + JSON.stringify(notices));
+  show([cmp.waiting, cmp.checking, shown]);
+  assert.equal(noticesFor(shown.id).length, 1, 'the story with no hold raised no notification');
+  assert.equal(noticesFor(cmp.waiting.id).length + noticesFor(cmp.checking.id).length, 0);
+});
+
+test('the notification fires when a hold ends', () => {
+  notices.length = 0;
+  show([]);
+  show([cmp.waiting]);
+  assert.equal(notices.length, 0);
+  show([{ ...cmp.waiting, waitingOnJarvis: undefined }]);
+  assert.equal(noticesFor(cmp.waiting.id).length, 1, 'the end of the hold raised no notification');
+  assert.equal(ids.get('stat-waiting').textContent, '1');
+});
+
+test('the inbox gains the card and its row when a hold clears, and loses them when a hold begins, with nothing else changed', () => {
+  const cleared = { ...cmp.waiting, waitingOnJarvis: undefined };
+  show([cmp.waiting]);
+  assert.equal(inboxRows().length, 0);
+  show([cleared]);
+  assert.ok(rowFor(cmp.waiting.id), 'the row did not appear when the hold cleared');
+  inFocus(() => assert.equal(compareCards().length, 1, 'the card did not appear when the hold cleared'));
+  inFocus(() => {
+    show([cleared]);
+    assert.equal(compareCards().length, 1);
+    show([cmp.waiting]);
+    assert.equal(compareCards().length, 0, 'the card stayed after a hold began');
+    show([cleared]);
+    assert.equal(compareCards().length, 1, 'the card did not return when the hold cleared in the open inbox');
+  });
+  show([cmp.waiting]);
+  assert.ok(!rowFor(cmp.waiting.id), 'the row stayed after a hold began');
+  assert.equal(ids.get('stat-waiting').textContent, '0');
+});
+
+test('a comparison-choice story with an open question waits on you even while Jarvis holds it, and shows only the question', () => {
+  show([cmp.failed]);
+  assert.equal(ids.get('stat-waiting').textContent, '1');
+  assert.equal(wordsOf(cmp.failed.id), 'Waiting on you');
+  assert.equal(boardCard(cmp.failed.id).attributes['data-role'], 'approver');
+  inFocus(() => assert.deepEqual(cardKinds(cmp.failed.id), ['grooming']));
 });
