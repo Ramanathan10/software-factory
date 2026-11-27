@@ -12,7 +12,7 @@ const says = (path, ...phrases) => {
 
 test('the console README says which hosts Hawkeye watches, with which CLIs, and what a failed read does', () => {
   says('mission-console/README.md',
-    'Hawkeye observes pull requests on GitHub, GitHub Enterprise and Azure DevOps after Jarvis registers them with `pr-opened`.',
+    'Hawkeye observes pull requests on GitHub, GitHub Enterprise and Azure DevOps once the publisher registers them with `pr-opened`.',
     'with the GitHub CLI signed in to each GitHub host and, for Azure DevOps, the Azure CLI with its `azure-devops` extension',
     'The watcher polls registered PRs on github.com, GitHub Enterprise and Azure DevOps',
     '`az repos pr show`, `az repos pr policy list` and one `az devops invoke` read of the threads, where only Build and Status policies count as checks',

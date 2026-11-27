@@ -29,7 +29,7 @@ Run every writer with the same database path. Keep the database and its SQLite s
 
 ## Hawkeye background wakeups
 
-Hawkeye observes pull requests on GitHub, GitHub Enterprise and Azure DevOps after Jarvis registers them with `pr-opened`. The Command Center does this itself every 30 seconds while it runs, with the GitHub CLI signed in to each GitHub host and, for Azure DevOps, the Azure CLI with its `azure-devops` extension. Without the Command Center, start the watcher in a separate terminal with the same database:
+Hawkeye observes pull requests on GitHub, GitHub Enterprise and Azure DevOps once the publisher registers them with `pr-opened`. The Command Center does this itself every 30 seconds while it runs, with the GitHub CLI signed in to each GitHub host and, for Azure DevOps, the Azure CLI with its `azure-devops` extension. Without the Command Center, start the watcher in a separate terminal with the same database:
 
 ```powershell
 node $console watch $missionDb
