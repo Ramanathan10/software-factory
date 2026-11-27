@@ -32,7 +32,7 @@ export function abstract(story) {
     ...(story.prObservation.review ? { blocking: blocking(story.prObservation.review) } : {}) };
   if (story.readyHead) state.readyHead = story.readyHead;
   if (story.diagram) state.diagram = { returnPhase: story.diagram.returnPhase };
-  if (story.retro) state.retro = { ...(story.retro.returnPhase ? { returnPhase: story.retro.returnPhase } : {}), ...(story.retro.completedAt ? { completed: true } : {}), ...(story.retro.mergedAt ? { merged: true } : {}) };
+  if (story.retro) state.retro = { ...(story.retro.returnPhase && !story.retro.completedAt ? { returnPhase: story.retro.returnPhase } : {}), ...(story.retro.completedAt ? { completed: true } : {}), ...(story.retro.mergedAt ? { merged: true } : {}) };
   if (story.prReview) state.prReview = { returnPhase: story.prReview.returnPhase };
   if (story.jarvis?.turn) state.jarvis = { turn: { pid: story.jarvis.turn.pid } };
   else if (story.jarvis?.waking) state.jarvis = { waking: true };
@@ -117,7 +117,7 @@ export function jarvisInputs(evidence) {
   ];
 }
 
-export function explore({ open = openStore, limit = 200000, inputs: choose = eventInputs } = {}) {
+export function explore({ open = openStore, limit = 240000, inputs: choose = eventInputs } = {}) {
   const folder = mkdtempSync(join(tmpdir(), 'lifecycle-model-'));
   const evidence = join(folder, 'after.png');
   writeFileSync(evidence, 'png');

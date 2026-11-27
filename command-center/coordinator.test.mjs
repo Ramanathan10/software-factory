@@ -491,6 +491,8 @@ test('a closed story is never woken', async t => {
   write('handoff', { detail: 'Review clean.' });
   write('comparison-choice', { run: false });
   write('pr-opened', { url: 'https://github.com/acme/widgets/pull/1' });
+  write('retro-start', { detail: 'Retro before the merge.' });
+  write('handoff', { detail: 'Lessons recorded.' });
   write('merged', { detail: 'Merged.' });
   assert.equal(rig.story().phase, 'closed');
   await rig.open();

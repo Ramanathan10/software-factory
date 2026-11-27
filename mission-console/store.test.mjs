@@ -1611,6 +1611,7 @@ test('a merge on a story with no retro holds it in retro with the merge recorded
     const id = 'plain-' + phase;
     const record = toCi(store, id);
     if (phase === 'merge') {
+      record('pr-observed', { url: REVIEW_PR, observation: { head: REVIEW_HEAD, status: 'passed', failedCount: 0, failures: [], review: review([]) } });
       record('pr-ready', { head: REVIEW_HEAD, detail: 'Current head is ready.' });
     }
     if (phase === 'pr-review') record('pr-review-start', { detail: 'One comment.' });

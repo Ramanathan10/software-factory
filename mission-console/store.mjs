@@ -433,7 +433,7 @@ function apply(story, input, now) {
         return story.retro.mergeDetail;
       }
       if (story.retro?.completedAt) {
-        if (story.retro) story.retro.mergedAt = now;
+        story.retro.mergedAt = now;
         story.phase = 'closed';
       } else {
         const detail = string(input.detail, 'merge evidence');
