@@ -101,4 +101,4 @@ Before you treat a failure as a bug, check that the step it names still matches 
 - `adapters/harnesses.mjs`: `messageWorker`, `startWorker`, `turns`
 - `command-center/supervisor.mjs`: `idle`, `sweep`, `adopted`
 
-Last confirmed to describe these files at the commit that last changed this skill: `git log -1 --format=%h -- .claude/skills/verify-decision-delivery/SKILL.md`. When any of them changes, rerun the model. Move this record forward to a new commit only after you have checked that the steps and `current` still match the code at that commit.
+Last confirmed to describe these files at the commit that last changed this skill: `git log -1 --format=%h -- .agents/skills/verify-decision-delivery/SKILL.md`. When any of them changes, rerun the model. Move this record forward to a new commit only after you have checked that the steps and `current` still match the code at that commit.

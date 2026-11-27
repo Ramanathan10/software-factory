@@ -151,7 +151,7 @@ function ownerOf(story) {
   return meta.phases[story.phase]?.[0] ?? 'coordinator';
 }
 const openQuestions = story => (story.questions ?? []).filter(question => !question.answer);
-const waitingOnYou = story => story.phase === 'approval' || story.phase === 'comparison-choice' || openQuestions(story).length > 0;
+const waitingOnYou = story => story.phase === 'approval' || (story.phase === 'comparison-choice' && !jarvisHold(story)) || openQuestions(story).length > 0;
 const jarvisHolds = story => !story.worker && !story.blocked && story.phase !== 'closed' && !waitingOnYou(story) && jarvisHold(story);
 const idleReasons = {
   scout: 'no scout session active', gates: 'waiting for the deterministic gates', mutation: 'waiting for the mutation check', retro: 'waiting for the retro',
@@ -621,15 +621,15 @@ function renderDecisions() {
           el('button', { type: 'button', class: 'primary', onclick: e => decide(story, { type: 'approve' }, e.currentTarget) }, 'Approve plan'),
           el('button', { type: 'button', onclick: () => openPlan(story) }, 'Read, comment or request changes'))));
     }
-    if (story.phase === 'comparison-choice') {
+    if (story.phase === 'comparison-choice' && !jarvisHold(story)) {
       if (!baselines.has(story.id)) baselines.set(story.id, []);
       cards.push(el('div', { class: 'decision', 'data-story': story.id, 'data-kind': 'compare' },
         el('header', {}, el('small', {}, story.id + ' · before and after'), el('button', { type: 'button', class: 'link', onclick: () => openDetail(story.id) }, 'Details')),
-        el('p', { class: 'title' }, 'Capture before-and-after evidence for ' + story.title + '?'),
-        el('p', { class: 'hint' }, 'Optional: attach baseline screenshots and Jarvis will use them as the "before".'),
+        el('p', { class: 'title' }, 'Before-and-after for ' + story.title + ': capture it or skip?'),
+        el('p', { class: 'hint' }, "Jarvis records the approved spec's choice itself. Answer here only if the spec left it open."),
         shotPicker(story, baselines.get(story.id), 'Baseline screenshot'),
         el('div', { class: 'send' },
-          el('button', { type: 'button', class: 'primary', onclick: e => decide(story, { type: 'comparison-choice', run: true }, e.currentTarget) }, 'Capture it'),
+          el('button', { type: 'button', onclick: e => decide(story, { type: 'comparison-choice', run: true }, e.currentTarget) }, 'Capture it'),
           el('button', { type: 'button', onclick: e => decide(story, { type: 'comparison-choice', run: false }, e.currentTarget) }, 'Skip'))));
     }
   }
@@ -841,7 +841,7 @@ function render() {
   if (changed('crew', [stories, busyKey, filterRole])) renderCrew();
   if (filterRepo && !repos().includes(filterRepo)) filterRepo = '';
   if (changed('toolbar', [view, filterRole, filterRepo, repos(), stories.length, visible().length])) renderToolbar();
-  const decisionKey = [filterRole === 'approver', stories.map(story => [story.id, story.phase, openQuestions(story).map(question => question.id), story.plan, story.draftPlan?.text])];
+  const decisionKey = [filterRole === 'approver', stories.map(story => [story.id, story.phase, openQuestions(story).map(question => question.id), story.plan, story.draftPlan?.text, waitingOnYou(story), story.phase === 'comparison-choice' && !jarvisHold(story)])];
   if (changed('decisions', decisionKey)) renderDecisions();
   if (changed('board', [stories, busyKey, stories.map(stalled), view, filterRole, filterRepo, [...clearing]])) renderBoard();
   if (changed('feed', [lastFrameAt > 0, stories.map(story => story.events?.[0]?.seq), filterRole, filterRepo, feedKeyword, feedStory])) renderFeed();
