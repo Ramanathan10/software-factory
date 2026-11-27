@@ -169,9 +169,9 @@ Run this when Jarvis starts the `pr-review` phase for new feedback on the open p
 
 ## 9. Retro
 
-Look back over this run for what went wrong or took avoidable effort: a returned phase, an invalid test, a failing gate, a surviving mutant, a review finding, a review-bot cycle, or a correction from the owner. Most runs produce no durable lesson; report that plainly instead of inventing one. A story whose PR merged before or during the retro still runs it, and its lessons handoff closes the story; commit any lesson for the target repository to a follow-up branch, since the PR branch has merged.
+Look back over this run for what went wrong or took avoidable effort: a returned phase, an invalid test, a failing gate, a surviving mutant, a review finding, a review-bot cycle, or a correction from the owner. Most runs produce no durable lesson; report that plainly instead of inventing one. A story whose PR merged before or during the retro still runs it, and its lessons handoff closes the story; commit any lesson for the target repository to a follow-up branch created in the story's own worktree, since the PR branch has merged. Clear refuses a worktree that is off the story branch, so switch back to the story branch before the lessons handoff.
 
-- For a lesson about the target repository, such as a convention, command, or setup gotcha, follow `learnings` and add it to that repository's guidance as its own commit on the PR branch. A gate or command that proved wrong is a profile change through `ai-sdlc-setup`.
+- For a lesson about the target repository, such as a convention, command, or setup gotcha, follow `learnings` and add it to that repository's guidance as its own commit on the PR branch, or on the follow-up branch when the PR has merged. A gate or command that proved wrong is a profile change through `ai-sdlc-setup`.
 - For a lesson about this workflow or one of its skills, follow `self-improvement` and propose the change to the skill that would have prevented the problem. Apply it with the owner's approval, under the rules of the repository that holds the skills.
 
 Report the lessons recorded and where, or that there were none.
