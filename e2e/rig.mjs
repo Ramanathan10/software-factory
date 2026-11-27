@@ -80,8 +80,17 @@ export async function openRig({ entry, turnMs, tally, profile: overrides = {} })
   const origin = 'http://127.0.0.1:' + port;
   const store = openStore(db);
   let daemonOutput = '';
-  const daemon = spawn(process.execPath, [daemonFile, String(port)], { env, stdio: ['ignore', 'pipe', 'pipe'] });
-  for (const stream of [daemon.stdout, daemon.stderr]) stream.on('data', chunk => { daemonOutput += chunk; });
+  let daemon;
+  const startDaemon = () => {
+    daemonOutput = '';
+    daemon = spawn(process.execPath, [daemonFile, String(port)], { env, stdio: ['ignore', 'pipe', 'pipe'] });
+    for (const stream of [daemon.stdout, daemon.stderr]) stream.on('data', chunk => { daemonOutput += chunk; });
+  };
+  const stopDaemon = async () => {
+    daemon.kill();
+    await new Promise(resolve => (daemon.exitCode === null && daemon.signalCode === null ? daemon.once('close', resolve) : resolve()));
+  };
+  startDaemon();
 
   const everyEvent = () => store.snapshot().flatMap(story => store.history(story.id));
   const turnsFile = join(home, 'scripted-turns.jsonl');
@@ -170,6 +179,11 @@ export async function openRig({ entry, turnMs, tally, profile: overrides = {} })
       }
     },
     worker: (story, turns, what, check) => rig.until(what, check, turnMs, () => rig.turnsEnded(story, turns)),
+    async restart() {
+      await stopDaemon();
+      startDaemon();
+      await rig.until('the Command Center to start again', () => daemonOutput.includes('Command Center: '), 15000);
+    },
     async step(label, body) {
       tally.steps += 1;
       const number = tally.steps;
@@ -222,9 +236,8 @@ export async function openRig({ entry, turnMs, tally, profile: overrides = {} })
           if (error.code !== 'ESRCH') console.log('# A worker process could not be stopped (' + error.message + ').');
         }
       }
-      daemon.kill();
+      await stopDaemon();
       store.close();
-      await new Promise(resolve => (daemon.exitCode === null ? daemon.once('close', resolve) : resolve()));
       if (keep) {
         console.log('# Kept for inspection: ' + root + '\n# Worker logs: ' + join(home, 'workers') + '\n# Command Center output:\n' + daemonOutput.trim().split('\n').map(line => '#   ' + line).join('\n'));
       } else {

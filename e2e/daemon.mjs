@@ -10,10 +10,7 @@ const turns = join(process.env.AI_SDLC_HOME, 'scripted-turns.jsonl');
 const note = (pid, event) => appendFileSync(turns, JSON.stringify({ pid, event }) + '\n');
 const spawnProcess = (command, args, options) => {
   const child = spawn(process.execPath, [scripted, command, ...args], options);
-  if (child.pid) {
-    note(child.pid, 'spawned');
-    child.once('exit', () => note(child.pid, 'exited'));
-  }
+  if (child.pid) note(child.pid, 'spawned');
   return child;
 };
 const settleMs = 2000;
