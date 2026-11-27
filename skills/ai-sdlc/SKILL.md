@@ -50,15 +50,15 @@ Parallel stories on one machine must not compete for the shared resources in the
 
 ### Scout
 
-Before asking the owner anything, investigate the repository read-only and write a context pack: the relevant files and entry points, the conventions and rules that apply (agent instruction files written for any harness, not only the one running this session, such as `AGENTS.md`, `CLAUDE.md`, `.cursor/rules`, and `.github/copilot-instructions.md`, lint configuration, naming, and every entry in the profile's team rules: open each web address, read each file, and take each written instruction as given), the focused and full test commands, similar earlier changes, and known risks. The context pack opens the draft plan, goes into the spec, and is given to every later subagent. Correct it when a later phase finds it wrong. Under the Command Center, the scout's handoff carries the context pack summary and ends its turn; the planner opens the draft plan.
+Before asking the owner anything, investigate the repository read-only and write a context pack: the relevant files and entry points, the conventions and rules that apply (agent instruction files written for any harness, not only the one running this session, such as `AGENTS.md`, `CLAUDE.md`, `.cursor/rules`, and `.github/copilot-instructions.md`, lint configuration, naming, and every entry in the profile's team rules: open each web address, read each file, and take each written instruction as given), the focused and full test commands, similar earlier changes, and known risks. Write the context pack in the Context pack shape of `references/plan-template.md`. The context pack opens the draft plan, is appended to the committed spec, and is given to every later subagent; the approved plan leaves it out. Correct it when a later phase finds it wrong. Under the Command Center, the scout's handoff carries the context pack summary and ends its turn; the planner opens the draft plan.
 
 ### Feature lane
 
-Read and follow the local `grill-me` skill for the interview. Interview until the frontier is empty.
+Read and follow the local `grill-me` skill for the interview. Interview until the frontier is empty. Write the plan with the Feature plan in `references/plan-template.md`.
 
 ### Bug lane
 
-Use this lane when the owner reports broken existing behavior. Reproduce the bug before asking anything: find the smallest steps, input, or command that shows it, and the root cause in the code. Ask the owner only for decisions the code cannot answer, such as the intended behavior or how far the fix should reach, using Grill Me's frontier format. A bug that cannot be reproduced is reported with what was tried; do not plan a fix for a guess.
+Use this lane when the owner reports broken existing behavior. Reproduce the bug before asking anything: find the smallest steps, input, or command that shows it, and the root cause in the code. Ask the owner only for decisions the code cannot answer, such as the intended behavior or how far the fix should reach, using Grill Me's frontier format. A bug that cannot be reproduced is reported with what was tried; do not plan a fix for a guess. Write the plan with the Bug plan in `references/plan-template.md`.
 
 ### Settle the run decisions
 
@@ -75,7 +75,7 @@ Write observable acceptance criteria and choose the lowest useful test level (un
 
 Stop and wait for the owner to approve the plan. Do not implement, edit the target repository, or open a pull request before approval.
 
-After approval, create the story worktree and branch. The spec holds the context pack, the problem (or bug reproduction and root cause), acceptance criteria, test level, out-of-scope items, settled decisions, and the run decisions above. When the profile gives a spec location, commit the spec there as `<branch-name>.md`, as the branch's first commit. When the spec location is `null`, keep the spec in the story's working notes outside the repository and put it in the pull request description. Later phases read the spec as the source of truth. When a later phase returns to phase 1, update the spec before continuing.
+After approval, create the story worktree and branch. The spec is the approved plan, in its template's shape, with the context pack appended as its last section, as `references/plan-template.md` says. When the profile gives a spec location, commit the spec there as `<branch-name>.md`, as the branch's first commit. When the spec location is `null`, keep the spec in the story's working notes outside the repository and put it in the pull request description. Later phases read the spec as the source of truth. When a later phase returns to phase 1, update the spec before continuing.
 
 ### Plan critique
 
@@ -84,6 +84,8 @@ Adapted from [GitHub Lever's cross-model-review skill](https://github.com/github
 Compare findings only after all reviews finish. Group agreement, single-reviewer findings, and contradictions; verify or falsify each against the requirements and code. Agreement is a lead, not proof. Do not call multiple agents on one provider a cross-model panel.
 
 ## 2. Test-first handoff
+
+When the profile gives a spec location and the spec is not committed yet, commit the approved plan with the story's registered context pack appended as `## Context pack`, as `references/plan-template.md` says. When the location is `null`, append the pack to the spec in the working notes instead.
 
 Assign a separate subagent to write only the tests and necessary fixtures for the approved behavior. Give it the spec, relevant production and test code, repository conventions, and a strict boundary: no production implementation, PR, deployment, or unrelated edits. For a bug, the test reproduces the reported failure. Do not start implementation while the test author is editing a shared workspace. Wait for its result in the same turn: never end a turn while a subagent you started is still running, because the harness may stop it when the turn ends. This holds for every subagent a phase starts, such as a review seat.
 
