@@ -1309,6 +1309,14 @@ test('every open phase with a registered PR is watched, and closed and cleanup s
   toReviewRetro(store, 'w-retro');
   toBuilding(store, 'w-building');
   toCi(store, 'w-ci');
+  const publishing = toBuilding(store, 'w-publishing');
+  publishing('handoff', { detail: 'Verified green.', command: 'npm test' });
+  publishing('handoff', { detail: 'Gates pass.', command: 'node --test' });
+  publishing('handoff', { detail: 'No survivors.', command: 'npx stryker run' });
+  publishing('handoff', { detail: 'Reviewed.' });
+  publishing('comparison-choice', { run: false });
+  assert.equal(store.handover('w-publishing').story.phase, 'publishing');
+  assert.equal(store.handover('w-publishing').story.pr, REVIEW_PR);
   start(store, 'w-bare');
   const done = toCi(store, 'w-done');
   done('retro-start', { detail: 'Review lessons.' });
@@ -1317,7 +1325,7 @@ test('every open phase with a registered PR is watched, and closed and cleanup s
   assert.equal(store.handover('w-done').story.phase, 'closed');
   const cleaning = toCi(store, 'w-cleanup');
   cleaning('request-cleanup');
-  assert.deepEqual(store.watchTargets().map(story => story.id).sort(), ['w-building', 'w-ci', 'w-diagram', 'w-retro']);
+  assert.deepEqual(store.watchTargets().map(story => story.id).sort(), ['w-building', 'w-ci', 'w-diagram', 'w-publishing', 'w-retro']);
 });
 
 test('a merged or closed PR seen in any open phase is recorded and wakes Jarvis, with or without a worker assigned', t => {
@@ -1487,4 +1495,39 @@ test('a merge that closes the story after a finished retro stores the merge time
   assert.equal(closed.phase, 'closed');
   assert.equal(closed.retro.mergedAt, mergedEvent.at);
   assert.equal(new Date(closed.retro.mergedAt).toISOString(), closed.retro.mergedAt);
+});
+
+test('a PR observation on an open story with no registered PR is refused', t => {
+  const store = fixture(t)();
+  start(store, 'no-pr');
+  const record = writer(store, 'no-pr');
+  assert.equal(store.handover('no-pr').story.pr, undefined);
+  assert.throws(() => record('pr-observed', {}), error => error.status === 409 && /no longer being watched/.test(error.message));
+});
+
+test('a merge on a story with no retro closes it and leaves story.retro unset', t => {
+  const store = fixture(t)();
+  for (const phase of ['ci', 'merge', 'pr-review']) {
+    const id = 'plain-' + phase;
+    const record = toCi(store, id);
+    if (phase === 'merge') {
+      record('pr-ready', { head: REVIEW_HEAD, detail: 'Current head is ready.' });
+    }
+    if (phase === 'pr-review') record('pr-review-start', { detail: 'One comment.' });
+    assert.equal(store.handover(id).story.phase, phase);
+    record('merged', { detail: 'Merged in ' + phase + '.' });
+    const story = store.handover(id).story;
+    assert.equal(story.phase, 'closed', phase);
+    assert.equal(story.retro, undefined, phase);
+  }
+});
+
+test('a merge seen outside the watching phases records the evidence detail as the merge detail on the retro', t => {
+  const store = fixture(t)();
+  const record = toDiagram(store, 'detail-diagram');
+  record('merged', { detail: 'Merged during the diagram.' });
+  const story = store.handover('detail-diagram').story;
+  assert.equal(story.phase, 'retro');
+  assert.equal(story.retro.mergeDetail, 'Merged during the diagram.');
+  assert.equal(story.retro.detail, 'Merged during the diagram.');
 });

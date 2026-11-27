@@ -501,6 +501,43 @@ test('the story window heading and title say merged with the finishing retro, an
   assert.ok(!document.getElementById('detail').querySelector('.win-title').textContent.includes('Merged'));
 });
 
+const strange = { ...base, id: 'ODD-1', repo: 'acme/one', phase: 'mystery' };
+
+test('a story in a phase the board does not know shows the raw phase name on its card and in the story window', async () => {
+  useView('agents');
+  try {
+    show([strange]);
+    const title = walk(boardCard(strange.id)).find(node => node.getAttribute?.('title')).getAttribute('title');
+    assert.ok(title.endsWith(' · mystery'), title);
+    await detailRows(strange);
+    const heading = walk(ids.get('detail-body')).find(node => node.tag === 'small');
+    assert.equal(heading.textContent, strange.id + ' · mystery');
+    assert.equal(document.getElementById('detail').querySelector('.win-title').textContent, strange.id + ' · mystery');
+  } finally {
+    useView('lanes');
+  }
+});
+
+test('the track view shows the raw phase name for an unknown phase and the column name when the phase has no label', () => {
+  useView('track');
+  const testing = meta.phases.testing;
+  try {
+    show([strange]);
+    const owner = walk(trackRow(strange.id)).find(node => node.classes?.().includes('owner'));
+    assert.ok(owner.textContent.startsWith('mystery'), owner.textContent);
+    const column = meta.columns.find(each => each.phases.includes('testing')).name;
+    delete meta.phases.testing;
+    show([{ ...strange, id: 'ODD-2', phase: 'testing' }]);
+    const unlabelled = walk(trackRow('ODD-2')).find(node => node.classes?.().includes('owner'));
+    assert.ok(unlabelled.textContent.startsWith(column), unlabelled.textContent);
+    const now = walk(trackRow('ODD-2')).find(node => node.tag === 'li' && node.classes().includes('now'));
+    assert.equal(now.textContent, column);
+  } finally {
+    meta.phases.testing = testing;
+    useView('lanes');
+  }
+});
+
 const held = {
   idle: { ...base, id: 'HELD-1', repo: 'acme/one', phase: 'retro', pr: 'https://github.com/acme/one/pull/7',
     retro: { returnPhase: 'ci', startedAt: ago(30), mergedAt: ago(5), detail: 'Merged.' },

@@ -28,6 +28,7 @@ const stories = [
   { ...base, id: 'MRG-1', phase: 'retro', retro: { returnPhase: 'ci', startedAt: now, mergedAt: now, detail: 'The PR merged.' } },
   { ...base, id: 'MRG-B', phase: 'retro', blocked: 'Waiting on the owner.', retro: { returnPhase: 'ci', startedAt: now, mergedAt: now, detail: 'The PR merged.' } },
   { ...base, id: 'MRG-D', phase: 'retro', pendingDecision: { seq: 3 }, retro: { returnPhase: 'ci', startedAt: now, mergedAt: now, detail: 'The PR merged.' } },
+  { ...base, id: 'LEFT-1', phase: 'ci', retro: { returnPhase: 'ci', startedAt: now, mergedAt: now, detail: 'The PR merged.' } },
   { ...base, id: 'RET-1', phase: 'retro', retro: { returnPhase: 'ci', startedAt: now, detail: 'Review lessons.' } },
 ];
 const filter = new Node('select');
@@ -69,4 +70,9 @@ test('a merged retro with a saved decision shows it is waiting for Jarvis, with 
   assert.ok(!waiting.includes('Merged · finishing retro'), waiting);
   const button = ids.get('overview').children.find(each => each.children[0].textContent.startsWith('MRG-D'));
   assert.ok(String(button.children[1].className).includes('attention-text'), 'no alert on the decision row');
+});
+
+test('a story that left the retro does not read as merged and finishing the retro, even if it kept retro.mergedAt', () => {
+  const left = rows()['LEFT-1'];
+  assert.ok(!left.includes('Merged · finishing retro'), left);
 });
