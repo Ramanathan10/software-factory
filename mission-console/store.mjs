@@ -424,10 +424,12 @@ function apply(story, input, now) {
     case 'merged':
       requireThat(story.pr && story.phase !== 'closed', 'There is no open PR to reconcile in this phase.', 409);
       requireThat(story.retro?.returnPhase !== 'closed', 'The merge is already recorded.', 409);
-      if (story.retro?.completedAt) story.phase = 'closed';
-      else {
+      if (story.retro?.completedAt) {
+        story.phase = 'closed';
+        story.retro.mergedAt = now;
+      } else {
         const detail = string(input.detail, 'merge evidence');
-        story.retro = { startedAt: now, detail, ...story.retro, returnPhase: 'closed' };
+        story.retro = { startedAt: now, detail, ...story.retro, returnPhase: 'closed', mergedAt: now };
         story.phase = 'retro';
       }
       delete story.blocked;

@@ -379,7 +379,7 @@ function renderTrack(items) {
     }));
 }
 
-const mergedAt = story => story.events?.find(event => event.type === 'merged')?.at ?? story.updatedAt;
+const mergedAt = story => story.retro?.mergedAt ?? story.events?.find(event => event.type === 'merged')?.at ?? story.updatedAt;
 const clearing = new Set();
 
 function renderArchive() {

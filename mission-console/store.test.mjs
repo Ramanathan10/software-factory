@@ -1227,7 +1227,8 @@ test('a merge during a running retro keeps the retro start and scope and only se
     record('merged', { detail: 'GitHub reports the PR merged.' });
     const story = store.handover(id).story;
     assert.equal(story.phase, 'retro');
-    assert.deepEqual(story.retro, { ...before, returnPhase: 'closed' });
+    assert.deepEqual(story.retro, { ...before, returnPhase: 'closed', mergedAt: story.retro.mergedAt });
+    assert.ok(story.retro.mergedAt);
     assert.equal(story.retro.detail, 'Retro scope for ' + id + '.');
   }
 });

@@ -60,13 +60,13 @@ test('the console does not call a story in retro with its PR still open merged',
 test('a blocked merged retro shows Blocked, not merged', () => {
   const blocked = rows()['MRG-B'];
   assert.ok(blocked.includes('Blocked'), blocked);
-  assert.ok(!blocked.includes('Merged · retro in progress'), blocked);
+  assert.ok(!blocked.includes('Merged Â· retro in progress'), blocked);
 });
 
 test('a merged retro with a saved decision shows it is waiting for Jarvis, with an alert', () => {
   const waiting = rows()['MRG-D'];
-  assert.ok(waiting.includes('Decision saved · waiting for Jarvis'), waiting);
-  assert.ok(!waiting.includes('Merged · retro in progress'), waiting);
+  assert.ok(waiting.includes('Decision saved Â· waiting for Jarvis'), waiting);
+  assert.ok(!waiting.includes('Merged Â· retro in progress'), waiting);
   const button = ids.get('overview').children.find(each => each.children[0].textContent.startsWith('MRG-D'));
   assert.ok(String(button.children[1].className).includes('attention-text'), 'no alert on the decision row');
 });
