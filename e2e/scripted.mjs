@@ -7,6 +7,7 @@ import { openStore, workerPhases } from '../mission-console/store.mjs';
 const decisions = new Set(['answer', 'approve', 'plan-feedback', 'comparison-choice', 'request-cleanup']);
 const [command, ...args] = process.argv.slice(2);
 const home = process.env.AI_SDLC_HOME;
+process.on('exit', () => appendFileSync(join(home, 'scripted-turns.jsonl'), JSON.stringify({ pid: process.pid, event: 'exited' }) + '\n'));
 const actor = process.env.AI_SDLC_ACTOR;
 const after = flag => (args.includes(flag) ? args[args.indexOf(flag) + 1] : undefined);
 const resumed = args.includes('--resume') || (args[0] === 'exec' && args[1] === 'resume');

@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { check, current, invariants } from './delivery-model.mjs';
 
-const version = (filterSent, handReserves, startRegistersTurn, waitsForAdoptedTurns, recordsAtSpawn = true, rechecksAssignment = true) => ({ filterSent, handReserves, startRegistersTurn, waitsForAdoptedTurns, recordsAtSpawn, rechecksAssignment });
+const version = (filterSent, handReserves, startRegistersTurn, waitsForAdoptedTurns, recordsAtSpawn = true, rechecksAssignment = true) => ({ filterSent, handReserves, startRegistersTurn, waitsForAdoptedTurns, recordsAtSpawn, rechecksAssignment, startupDelivers: true, rechecksPending: true });
 const skill = readFileSync(new URL('../.claude/skills/verify-decision-delivery/SKILL.md', import.meta.url), 'utf8');
 
 test('the code as it is: one turn per session, each decision handed once, no delivery stuck', () => {
@@ -98,4 +98,41 @@ test('hand keeps only decisions still pending, so none is reserved after it was 
   const result = check({ ...current, handsOnlyPending: false }, ['NoReserveAfterAck']);
   assert.equal(result.invariant, 'NoReserveAfterAck');
   for (const step of ['Ack', 'BatchFire']) assert.ok(result.trace.some(label => label.startsWith(step)), step + ' is not in the trace: ' + result.trace.join(' → '));
+});
+
+const violation = result => result.invariant ?? (result.unowned ? 'Unowned' : undefined);
+
+test('the code as it is delivers at start-up and rechecks what a delivery carries before it resumes the worker, and the model says so', () => {
+  assert.equal(current.startupDelivers, true);
+  assert.equal(current.rechecksPending, true);
+  const result = check(current);
+  assert.deepEqual([violation(result), result.lost, result.stuck], [undefined, undefined, undefined], JSON.stringify(result));
+  assert.ok(result.states > 1000, JSON.stringify(result));
+});
+
+test('without delivery at start-up, a decision pending on a worker assigned after a restart is carried by nobody, and the model reaches that state', () => {
+  const result = check({ ...current, startupDelivers: false });
+  assert.equal(violation(result), 'Unowned', JSON.stringify(result));
+  assert.ok(result.trace.some(label => label.startsWith('Restart')), 'Restart is not in the trace: ' + result.trace.join(' → '));
+  assert.ok(!result.trace.some(label => label.startsWith('StartupDeliver')), result.trace.join(' → '));
+});
+
+test('the verify-decision-delivery skill lists the StartupDeliver step, the Unowned check and the invariant for a resume that carries only acknowledged decisions', () => {
+  assert.match(skill, /[|] *`StartupDeliver` *[|]/, 'StartupDeliver is not in the table of steps in the skill');
+  assert.match(skill, /Unowned/);
+  assert.match(skill, /NoResumeForAcknowledged/);
+});
+
+test('without the recheck before a resume, a worker is resumed for decisions it had already acknowledged, and the model reaches that state', () => {
+  const result = check({ ...current, rechecksPending: false });
+  assert.ok(Object.keys(invariants).includes('NoResumeForAcknowledged'), 'NoResumeForAcknowledged is not one of the invariants');
+  assert.equal(result.invariant, 'NoResumeForAcknowledged', JSON.stringify(result));
+  for (const step of ['Ack', 'Spawn']) assert.ok(result.trace.some(label => label.startsWith(step)), step + ' is not in the trace: ' + result.trace.join(' → '));
+});
+
+test('a resume for acknowledged decisions is reachable without a restart, on the live path, when any running turn of the assigned session may acknowledge any pending decision', () => {
+  const result = check({ ...current, rechecksPending: false });
+  assert.equal(result.invariant, 'NoResumeForAcknowledged', JSON.stringify(result));
+  assert.ok(!result.trace.some(label => label.startsWith('Restart')), result.trace.join(' → '));
+  assert.ok(result.trace.some(label => label.startsWith('BatchFire')), result.trace.join(' → '));
 });

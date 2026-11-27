@@ -29,7 +29,7 @@ function lines(file) {
   }
 }
 
-const commandLine = story => {
+export const commandLine = story => {
   try {
     return row(story.harness).workers === 'command-line';
   } catch {
