@@ -1,5 +1,6 @@
 import { newlyWaiting, titleFor } from './attention.js';
 import { badgeSvg } from './badge.js';
+import { feedEntries, freshEntries } from './feed.js';
 import { jarvisHold, jarvisStatus } from './jarvis.js';
 import { renderMarkdown } from './markdown.js';
 
@@ -16,7 +17,9 @@ const eventRoles = {
 
 let meta = { roles: {}, phases: {} };
 let stories = [];
-let seenSeqs = null;
+let feedMaxSeq = null;
+let feedKeyword = '';
+let feedStory = null;
 let lastFrameAt = 0;
 const eventTimes = [];
 let filterRole = null;
@@ -669,23 +672,60 @@ $('feed-toggle').addEventListener('click', event => { event.stopPropagation(); s
 $('feed-panel').addEventListener('click', () => { if (feedMinimized()) setFeedMinimized(false); });
 setFeedMinimized(localStorage.getItem('aisdlc-feed-min') === '1');
 
+const feedFiltered = () => Boolean(feedKeyword.trim() || feedStory);
+
+function setFeedStory(id) {
+  feedStory = id;
+  renderFeed();
+  (id ? $('feed-story-clear') : $('feed-keyword')).focus();
+}
+
+function clearFeedFilters() {
+  feedKeyword = '';
+  $('feed-keyword').value = '';
+  setFeedStory(null);
+}
+
+$('feed-keyword').addEventListener('input', event => { feedKeyword = event.target.value; renderFeed(); });
+$('feed-keyword').addEventListener('keydown', event => {
+  if (event.key !== 'Escape') return;
+  event.stopPropagation();
+  feedKeyword = '';
+  event.target.value = '';
+  renderFeed();
+});
+$('feed-story-clear').addEventListener('click', () => setFeedStory(null));
+
 function renderFeed() {
   if (!lastFrameAt) return;
   const ids = new Set(visible().map(story => story.id));
-  const events = stories.filter(story => ids.has(story.id)).flatMap(story => (story.events ?? []).map(event => ({ ...event, story: story.id, title: story.title })))
-    .sort((a, b) => b.seq - a.seq).slice(0, 80);
-  const fresh = seenSeqs ? events.filter(event => !seenSeqs.has(event.seq)) : [];
-  seenSeqs = new Set(events.map(event => event.seq));
+  const shownStories = stories.filter(story => ids.has(story.id));
+  const events = feedEntries(shownStories, { keyword: feedKeyword, story: feedStory });
+  const fresh = freshEntries(events, feedMaxSeq);
+  const freshSeqs = new Set(fresh.map(event => event.seq));
+  feedMaxSeq = stories.reduce((top, story) => (story.events ?? []).reduce((each, event) => Math.max(each, event.seq), top), feedMaxSeq ?? 0);
   for (const event of fresh) eventTimes.push(Date.now());
   if (feedMinimized() && fresh.length) { unread += fresh.length; showUnread(); }
-  $('feed').replaceChildren(...events.map(event => {
+  $('feed-filtered').hidden = !feedFiltered();
+  $('feed-story').hidden = !feedStory;
+  $('feed-story-id').textContent = feedStory ?? '';
+  const rows = events.map(event => {
     const role = eventRoles[event.type] ?? meta.phases[event.phase]?.[0] ?? 'coordinator';
-    return el('li', { class: fresh.some(item => item.seq === event.seq) ? 'new' : '', 'data-role': role },
+    const picked = feedStory === event.story;
+    const pick = el('button', { type: 'button', class: 'feed-id', title: !picked ? 'Show only ' + event.story : 'Show all stories' }, event.story);
+    pick.addEventListener('click', click => { click.stopPropagation(); setFeedStory(picked ? null : event.story); });
+    return el('li', { class: freshSeqs.has(event.seq) ? 'new' : '', 'data-role': role },
       avatar(role, { small: true }),
       el('div', {},
-        el('div', { class: 'meta' }, el('b', {}, event.story), el('span', {}, event.type), el('time', { 'data-at': event.at }, ago(event.at))),
+        el('div', { class: 'meta' }, pick, el('span', {}, event.type), el('time', { 'data-at': event.at }, ago(event.at))),
         el('p', {}, event.detail ?? '')));
-  }));
+  });
+  if (!rows.length && feedFiltered()) {
+    const clear = el('button', { type: 'button' }, 'Clear');
+    clear.addEventListener('click', click => { click.stopPropagation(); clearFeedFilters(); });
+    rows.push(el('li', { class: 'feed-empty' }, el('span', {}, 'No entries match'), clear));
+  }
+  $('feed').replaceChildren(...rows);
 }
 
 const designOf = story => (story.artifacts ?? []).findLast(artifact => artifact.kind === 'document' && /design[^\\/]*\.md$/i.test(artifact.path));
@@ -804,7 +844,7 @@ function render() {
   const decisionKey = [filterRole === 'approver', stories.map(story => [story.id, story.phase, openQuestions(story).map(question => question.id), story.plan, story.draftPlan?.text, waitingOnYou(story), story.phase === 'comparison-choice' && !jarvisHold(story)])];
   if (changed('decisions', decisionKey)) renderDecisions();
   if (changed('board', [stories, busyKey, stories.map(stalled), view, filterRole, filterRepo, [...clearing]])) renderBoard();
-  if (changed('feed', [lastFrameAt > 0, stories.map(story => story.events?.[0]?.seq), filterRole, filterRepo])) renderFeed();
+  if (changed('feed', [lastFrameAt > 0, stories.map(story => story.events?.[0]?.seq), filterRole, filterRepo, feedKeyword, feedStory])) renderFeed();
 }
 
 function tick() {
