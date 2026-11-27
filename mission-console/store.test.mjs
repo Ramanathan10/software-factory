@@ -1201,6 +1201,37 @@ test('a merge in the retro is accepted with the retro worker assigned, which kee
   assert.equal(store.handover('held').story.phase, 'closed');
 });
 
+test('a merge or close seen in diagram or retro stores no review and marks no feedback seen, so the feedback still wakes in ci', t => {
+  const store = fixture(t)();
+  for (const status of ['merged', 'closed']) {
+    for (const phase of ['diagram', 'retro']) {
+      const id = 'unreviewed-' + phase + '-' + status;
+      const record = phase === 'diagram' ? toDiagram(store, id) : toRetro(store, id);
+      assert.equal(record('pr-observed', seenPr(status, { review: review(['IC_1', 'PRRT_2:PRRC_2']) })).wake, true);
+      const story = store.handover(id).story;
+      assert.equal(story.prObservation.status, status);
+      assert.equal(story.prObservation.review, undefined, status + ' in ' + phase + ' stores no review');
+      assert.equal(story.prSeen, undefined, status + ' in ' + phase + ' marks no key seen');
+    }
+  }
+});
+
+test('a merge during a running retro keeps the retro start and scope and only sets the return phase to closed', t => {
+  const store = fixture(t)();
+  for (const [id, from] of [['retro-from-ci', 'ci'], ['retro-from-merge', 'merge']]) {
+    const record = toCi(store, id);
+    if (from === 'merge') record('pr-ready', { detail: 'Checks and review are clean.' });
+    record('retro-start', { detail: 'Retro scope for ' + id + '.' });
+    const before = store.handover(id).story.retro;
+    assert.equal(before.returnPhase, from);
+    record('merged', { detail: 'GitHub reports the PR merged.' });
+    const story = store.handover(id).story;
+    assert.equal(story.phase, 'retro');
+    assert.deepEqual(story.retro, { ...before, returnPhase: 'closed' });
+    assert.equal(story.retro.detail, 'Retro scope for ' + id + '.');
+  }
+});
+
 test('the retro handoff returns an open PR to ci and a merged story to closed', t => {
   const store = fixture(t)();
   const open = toRetro(store, 'open-pr');

@@ -461,3 +461,42 @@ test('a merged story whose retro is running stays in the Ship lane labelled "Mer
   assert.ok(!open.textContent.includes('Merged'), 'the retro card with an open PR says: ' + open.textContent);
   assert.ok(!cards.has(shipped.id), 'a closed story has no card on the board');
 });
+
+const mergedWords = 'Merged · retro in progress';
+const retroPair = [retros.merged, retros.open];
+const trackRow = id => walk(ids.get('board')).find(node => node.tag === 'article' && node.classes().includes('track') && walk(node).some(child => child.classes?.().includes('id') && child.textContent === id));
+
+test('the card glyph tooltip and accessible label say merged with the retro in progress, and an open PR in retro keeps the plain phase name', () => {
+  show(retroPair);
+  const glyph = id => walk(boardCard(id)).find(node => node.getAttribute?.('title'));
+  assert.ok(glyph(retros.merged.id).getAttribute('title').endsWith(' · ' + mergedWords), glyph(retros.merged.id).getAttribute('title'));
+  assert.ok(glyph(retros.merged.id).getAttribute('aria-label').endsWith(' · ' + mergedWords));
+  assert.ok(!glyph(retros.open.id).getAttribute('title').includes('Merged'), glyph(retros.open.id).getAttribute('title'));
+});
+
+test('the track view row and its current step say merged with the retro in progress, and an open PR in retro does not', () => {
+  useView('track');
+  try {
+    show(retroPair);
+    const merged = trackRow(retros.merged.id);
+    const owner = walk(merged).find(node => node.classes?.().includes('owner'));
+    assert.ok(owner.textContent.startsWith(mergedWords), owner.textContent);
+    const now = walk(merged).find(node => node.tag === 'li' && node.classes().includes('now'));
+    assert.equal(now.textContent, mergedWords);
+    const open = trackRow(retros.open.id);
+    assert.ok(!open.textContent.includes('Merged'), open.textContent);
+  } finally {
+    useView('lanes');
+  }
+});
+
+test('the story window heading and title say merged with the retro in progress, and an open PR in retro does not', async () => {
+  await detailRows(retros.merged);
+  const heading = walk(ids.get('detail-body')).find(node => node.tag === 'small');
+  assert.equal(heading.textContent, retros.merged.id + ' · ' + mergedWords);
+  assert.equal(document.getElementById('detail').querySelector('.win-title').textContent, retros.merged.id + ' · ' + mergedWords);
+  await detailRows(retros.open);
+  const openHeading = walk(ids.get('detail-body')).find(node => node.tag === 'small');
+  assert.ok(!openHeading.textContent.includes('Merged'), openHeading.textContent);
+  assert.ok(!document.getElementById('detail').querySelector('.win-title').textContent.includes('Merged'));
+});
