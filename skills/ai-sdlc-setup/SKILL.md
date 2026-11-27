@@ -1,6 +1,6 @@
 ---
 name: ai-sdlc-setup
-description: Interview the owner once per machine and once per repository, then save the AI SDLC profile that tells the lifecycle who the owner is, how they work, and which checks must pass before a pull request opens. Also confirms the software the lifecycle needs, such as Stryker, gitleaks, and the video tools, is installed, and offers to install what is missing. Use when AI SDLC preflight reports a missing or invalid profile or a missing component, when the owner says "set up AI SDLC" or "redo AI SDLC setup", or when a story starts in a repository that has no profile yet.
+description: Interview the owner once per machine and once per repository, then save the AI SDLC profile that tells the lifecycle who the owner is, how they work, and which checks must pass before a pull request opens. Also confirms the software the lifecycle needs, such as Stryker, gitleaks, and the video tools, is installed, and offers to install what is missing. Use when AI SDLC preflight reports a missing or invalid profile or a missing component, when the owner says "set up AI SDLC", "change AI SDLC setup" or "redo AI SDLC setup", or when a story starts in a repository that has no profile yet.
 ---
 
 # AI SDLC Setup
@@ -37,11 +37,13 @@ The script cannot see what the agent host can do. Check your own tool list for t
 - Computer use or a desktop screenshot tool, for a desktop app or a window the browser cannot reach.
 - Screen recording, for a before-and-after recording of a transition. `ffmpeg` provides this when the host has no recorder of its own, so count it as present when detection found `ffmpeg`.
 
-When a profile exists, also run `node <this skill>/scripts/preflight.mjs check <repository> <harness>`, with the harness this session runs in, and ask only the questions it has no answer for: its `unanswered` list names each one with its number below, machine or repository, and a warning that the harness has no model choice recorded is the Models question for that harness. Ask every one of them, one at a time, and skip only the questions the profile already answers, unless the owner asked to redo setup.
+When a profile exists, also run `node <this skill>/scripts/preflight.mjs check <repository> <harness>`, with the harness this session runs in, and ask only the questions it has no answer for: its `unanswered` list names each one with its number below, machine or repository, and a warning that the harness has no model choice recorded is the Models question for that harness. Ask every one of them, one at a time, and skip only the questions the profile already answers, unless the owner asked to redo setup, in which case ask every question.
+
+When the profile has no section for this repository, `check` reports no repository section: run the repository interview first, as for a first answer, and do not show the change table until the asked answers are saved in 3. Save. Then, when nothing is unanswered, or after the asked questions are saved, run `node <this skill>/scripts/preflight.mjs answers <repository>`; if it prints problems, such as an invalid profile, fix them with the owner first. Show its rows as a numbered table by section, machine first, then this repository, each row with its question number, name and current answer. Ask which to change: one or more question numbers, a whole section, or "all". An answer of nothing ends setup with the report in 5. Hand off. Ask only the questions named, as in "Change an answer" below.
 
 ## 2. Interview
 
-Ask in rounds, each question with a recommended answer worded so "yes" accepts it. Use the host's question tool when it has one. Ask each numbered item below as its own question, with its own choices: never fold one item into another's question or carry its answer in another's option descriptions, because the owner then accepts a setting they were never shown as a choice. Every answer is the owner's own; do not copy another person's profile or infer preferences from their history.
+Ask in rounds, each question with a recommended answer worded so "yes" accepts it. Use the host's question tool when it has one. Ask each numbered item below as its own question, with its own choices: never fold one item into another's question or carry its answer in another's option descriptions, because the owner then accepts a setting they were never shown as a choice. When the profile already holds an answer, as in a change or a redo, recommend that current answer instead of the stock one, and when the two differ, name the stock recommendation in the question. Every answer is the owner's own; do not copy another person's profile or infer preferences from their history.
 
 ### Machine, once per machine
 
@@ -71,6 +73,29 @@ Ask in rounds, each question with a recommended answer worded so "yes" accepts i
 10. **Team rules.** How this repository's team works, for the agent to follow (`teamRules`): a list where each entry is a web address, a file path, or an instruction written out, such as how pull request comments are answered. Save the owner's entries as given; an empty list records that there are none.
 11. **Work tracker.** Where this repository's stories are tracked (`readiness.tracker`: `none`, `azure-devops`, `github`, or `linear`). Recommend the one detection suggests: `github` when the remote is on GitHub and its issues are used, otherwise `none`. For `none`, save only that and ask nothing more. Otherwise ask which checks apply (`checklist`: `testsPass`, `tasksClosed`, `prMergedToTarget`, `prLinked`, `effortSet`, `userConfirm`) and the branch pull requests merge into (`targetBranch`). For `azure-devops` also ask the `organization` and `project`, and offer the effort field, the value that means unestimated, the task states that count as closed, and the handoff task's title and assignee if the team uses one. GitHub issues carry no effort, so leave `effortSet` out there.
 
+## Change an answer
+
+Ask each answer the owner chose to change with its question's own wording and choices from 2. Interview, recommending the current answer, and verify it as 4. Verify does for what changed.
+
+- Before writing, keep a copy of the current `profile.json`. When the check then reports a new problem, or a changed gate fails on the unchanged remote default branch, show the output and ask whether to correct the new answer, keep the old one by restoring the copy, or, for a gate, save it as `null`. The old answer stays in force until the new one passes.
+- Re-ask only the dependents the change makes stale, each recommending its current answer:
+
+| Changed | Dependents |
+|---|---|
+| Gates | Missing tools for that gate's tool, and its run on the default branch |
+| Mutation testing | The Stryker install question |
+| Work tracker to `none` | Nothing is asked; every sub-answer is removed |
+| Work tracker to `github` or `linear` | Checklist and target branch are re-asked |
+| Work tracker to `azure-devops` | Checklist, target branch, organization and project are asked; the effort field, unestimated value, closed task states and handoff task are offered, as on a first answer |
+| Cross-model sharing off | Each repository's Sharing limit is moot and left as saved |
+| Cross-model sharing on | This repository's Sharing limit is asked |
+| Models | `phaseTiers`, only if the owner wants a phase moved |
+| Required pipelines | `triggersOnlyOnDefaultBranch` for each new pipeline |
+| Missing components | `declinedComponents` |
+
+- Whatever the new tracker is, remove the sub-answers it does not use, as the check's warnings name them (a checklist warning names one entry; remove only that entry), and tell the owner what was removed.
+- Write only the changed fields and their dependents; every other answer stays as saved.
+
 ## 3. Save
 
 Write `profile.json` to the AI SDLC home, creating the folder if needed, with the repository's answers under `repos["owner/name"]`. Save every answer, including one that matches the default, so the file shows the owner's whole way of working. Save `commandCenterPath` as detect reported it, without asking; if detect reported `null`, tell the owner to run `node install.mjs` from the software-factory checkout and detect again. Write nothing into the repository: no profile file, and no part of the AI SDLC home.
@@ -83,7 +108,7 @@ The profile holds names, commands, and settings. Never write a password, token, 
 node <this skill>/scripts/preflight.mjs check <repository> <harness>
 ```
 
-`<harness>` is the harness this session runs in, so the check also reports a missing model choice for it. It validates the profile against the schema, confirms each gate's tool exists, and reports each component as found or missing. `problems` stop a story; `warnings` do not. A repository with no `origin` remote, a missing tool that a required gate names, or missing `git`, is a problem. A missing pull request CLI or optional component is a warning. Fix every reported problem with the owner. A warning that names a question, such as "The profile has no answer for ..." or "<harness> has no model choice recorded", is answered by asking that one question and saving the answer, not by the missing-components question; return to the missing-components question for each other warning.
+`<harness>` is the harness this session runs in, so the check also reports a missing model choice for it. It validates the profile against the schema, confirms each gate's tool exists, and reports each component as found or missing. `problems` stop a story; `warnings` do not. A repository with no `origin` remote, a missing tool that a required gate names, or missing `git`, is a problem. A missing pull request CLI or optional component is a warning. Fix every reported problem with the owner. A warning that names a question, such as "The profile has no answer for ..." or "<harness> has no model choice recorded", is answered by asking that one question and saving the answer, not by the missing-components question. A warning that says a field "is not used when the tracker is ..." names no question to re-ask: answer it by removing that named field, or for a checklist warning only the named checklist entry, from the profile with the owner's agreement, and ask the Work tracker question only if the owner says the tracker is wrong. Return to the missing-components question for each other warning.
 
 The check confirms each gate's tool exists, not that the gate passes. After a repository interview, run each required gate once on the unchanged remote default branch, in a temporary worktree or a clean checkout of it, so the result does not depend on local edits. Skip `mutation`, which needs changed files. A gate that fails there would fail every story before the story changes anything. Show the owner the output and ask whether to correct the command, fix the repository first, or save the gate as `null`; do not save a gate that fails on the default branch without their decision.
 
@@ -97,10 +122,12 @@ End setup with a short report, not just "done":
 2. What is ready and what is not: each component and host ability, and for each one that is missing, the evidence or gate the lifecycle will go without.
 3. The check's `nextSteps`, in the owner's words: name a feature or bug to start a story, or say "Be Jarvis" to coordinate several from the Command Center.
 
-Tell the owner they can edit the profile file directly or say "redo AI SDLC setup".
+When setup changed answers, name each answer changed and each sub-answer removed, and say in one sentence that open stories pick up the change at their next worker turn or check.
+
+Tell the owner to run setup again ("change AI SDLC setup") to change any answer, or say "redo AI SDLC setup" for the whole interview.
 
 Then give the owner a home for the factory. When the host can list and rename its chats, and no chat is already named "Jarvis", rename this chat to "Jarvis" and say so. When a Jarvis chat exists, point the owner to it and leave this chat's name alone. When the host cannot rename, ask the owner to rename it.
 
 ## Later changes
 
-When `ai-sdlc` needs an answer the profile lacks, such as a new repository or a new pipeline, or the check warns that a question has no answer or a harness has no model choice recorded, ask that one question and update the profile; do not rerun the whole interview. When the check reports a tool or component that has gone missing, return to the missing-tools or missing-components question for it. When it reports that `commandCenterPath` no longer holds the Command Center, which happens after the checkout is moved, tell the owner and save the folder the message names.
+When `ai-sdlc` needs an answer the profile lacks, such as a new repository or a new pipeline, or the check warns that a question has no answer or a harness has no model choice recorded, ask that one question and update the profile; do not rerun the whole interview. When the check reports a tool or component that has gone missing, return to the missing-tools or missing-components question for it. When it reports that `commandCenterPath` no longer holds the Command Center, which happens after the checkout is moved, tell the owner and save the folder the message names. A warning that a tracker sub-answer "is not used when the tracker is ..." is answered by offering to remove the field it names (for a checklist warning, only the entry it names, never the whole checklist), or to change the Work tracker answer.

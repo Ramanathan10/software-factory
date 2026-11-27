@@ -185,11 +185,30 @@ export function modelWarning(models, tierOf, harness) {
   return `${harness.name} has no model choice recorded for ${missing.join(' and ')}. Ask the owner the ai-sdlc-setup Models question for ${harness.name}; "keep the default" is saved as null.`;
 }
 
+const staleMarker = ' is not used when the tracker is ';
+
+const trackerOnly = { none: null, github: ['organization', 'project', 'effortField'], linear: ['organization', 'project', 'effortField'] };
+
+export function staleTrackerWarnings(readiness, slug) {
+  if (typeOf(readiness) !== 'object' || !Object.hasOwn(trackerOnly, readiness.tracker)) return [];
+  const { tracker } = readiness;
+  const message = (subject, removal = 'Remove it') =>
+    `repos.${slug}.readiness.${subject}${staleMarker}${tracker}. ${removal}, or change the Work tracker answer (ai-sdlc-setup repository question 11).`;
+  const unused = trackerOnly[tracker] ?? Object.keys(readiness).filter(field => field !== 'tracker');
+  const stale = unused.filter(field => field in readiness).map(field => message(field));
+  if (tracker === 'github' && Array.isArray(readiness.checklist) && readiness.checklist.includes('effortSet')) {
+    stale.push(message('checklist entry effortSet', 'Remove that entry from the checklist'));
+  }
+  return stale;
+}
+
 export function nextSteps({ problems, warnings, asks = [] }) {
   if (problems.length) return ['Follow the ai-sdlc-setup skill to fix each problem, then run the check again.'];
+  const stale = warnings.filter(warning => warning.includes(staleMarker));
   return [
-    ...(asks.length ? ['Ask the owner each ai-sdlc-setup question a warning names, such as the Models question, one at a time, and save each answer to the profile.'] : []),
-    ...(warnings.length > asks.length ? ['Install each missing component with the owner\'s approval, or record it in declinedComponents so it is not raised again.'] : []),
+    ...(asks.length ? ['Ask the owner each ai-sdlc-setup question that a warning about an unanswered question or a missing model choice names, such as the Models question, one at a time, and save each answer to the profile.'] : []),
+    ...(stale.length ? ['Remove each readiness field or checklist entry a warning names from the profile, or change the Work tracker answer (ai-sdlc-setup repository question 11).'] : []),
+    ...(warnings.length > asks.length + stale.length ? ['Install each missing component with the owner\'s approval, or record it in declinedComponents so it is not raised again.'] : []),
     'Name a feature or bug to start a story with the ai-sdlc skill.',
     'Say "Be Jarvis" to run several stories in parallel and follow them in the Command Center.',
   ];
@@ -235,7 +254,7 @@ export function check(repo = '.', env = process.env, found = findCommandCenter()
   const tiers = { ...phaseTiers, ...machine?.phaseTiers };
   const open = unanswered(machine, repoProfile);
   const asks = [...open.map(unansweredWarning), machine && modelWarning(machine.models, tiers, harness)].filter(Boolean);
-  warnings.push(...asks);
+  warnings.push(...asks, ...staleTrackerWarnings(repoProfile?.readiness, slug));
 
   return {
     ok: problems.length === 0,
@@ -271,6 +290,28 @@ export function check(repo = '.', env = process.env, found = findCommandCenter()
   };
 }
 
+const valueAt = (section, field) => field.split('.').reduce((value, key) => value?.[key], section) ?? null;
+
+export function answers(repo = '.', env = process.env) {
+  const { slug, machinePath, machine, repoProfile, problems } = loadProfiles(repo, env);
+  const rows = (scope, section, extras, label) => {
+    if (section === undefined) return [];
+    if (typeOf(section) !== 'object') {
+      problems.push(`${label} is not an object. Run the ai-sdlc-setup skill.`);
+      return [];
+    }
+    return [
+      ...questions[scope].map(([question, name, field]) => ({ question, name, field, answered: answered(section, field), value: valueAt(section, field) })),
+      ...extras.map(([question, name, field, fallback]) => ({
+        question, name, field, answered: true, value: field && field in section ? section[field] : fallback,
+      })),
+    ].sort((a, b) => a.question - b.question);
+  };
+  const machineRows = rows('machine', machine, [[10, 'Models', 'phaseTiers', {}], [11, 'Missing components', 'declinedComponents', []]], `Machine profile at ${machinePath}`);
+  const repositoryRows = rows('repository', repoProfile, [[2, 'Missing tools', null, null], [7, 'Sharing limit', 'crossModelReviewAuthorized', null]], `repos.${slug}`);
+  return { profile: machinePath, slug, problems, machine: machineRows, repository: repositoryRows };
+}
+
 export function detect(repo = '.', env = process.env) {
   const { root, slug, machinePath, machine, source } = loadProfiles(repo, env);
   const files = list(root);
@@ -301,9 +342,16 @@ export function detect(repo = '.', env = process.env) {
 
 if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url))) {
   const [mode, repo = '.', harnessName] = process.argv.slice(2);
-  if (mode !== 'detect' && mode !== 'check') {
-    console.error('Usage: node preflight.mjs detect [repoDir] | check [repoDir] [harness]');
+  if (mode !== 'detect' && mode !== 'check' && mode !== 'answers') {
+    console.error('Usage: node preflight.mjs detect [repoDir] | check [repoDir] [harness] | answers [repoDir]');
     process.exit(2);
+  }
+  if (mode === 'answers') {
+    const result = answers(repo);
+    console.log(JSON.stringify(result, null, 2));
+    for (const problem of result.problems) console.error(problem);
+    if (!result.machine.length && !result.problems.length) console.error(`No profile at ${result.profile}. Run the ai-sdlc-setup skill.`);
+    process.exit(result.machine.length && !result.problems.length ? 0 : 1);
   }
   let result = mode === 'detect' ? detect(repo) : check(repo);
   if (mode === 'check' && harnessName) {
