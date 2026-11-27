@@ -175,3 +175,16 @@ test('the Command Center serves feed.js and app.js imports it', () => {
   const app = readFileSync(new URL('./ui/app.js', import.meta.url), 'utf8');
   assert.match(app, /from '\.\/feed\.js'/, 'app.js must import ./feed.js');
 });
+
+test('a keyword can span the story id, type and detail fields as the row reads them', () => {
+  const entries = need('feedEntries');
+  assert.deepEqual(ids(entries(stories, { keyword: 'feed-1 handoff', story: null })), [10]);
+  assert.deepEqual(ids(entries(stories, { keyword: 'handoff tests', story: null })), [10]);
+  assert.deepEqual(ids(entries(stories, { keyword: '1handoff', story: null })), []);
+  assert.deepEqual(ids(entries(stories, { keyword: 'handofftests', story: null })), []);
+});
+
+test('matches and feedEntries with no filter argument keep everything', () => {
+  assert.equal(need('matches')(stories[0].events[0]), true);
+  assert.deepEqual(ids(need('feedEntries')(stories)), [10, 9, 8, 7, 6, 3, 2, 1]);
+});
