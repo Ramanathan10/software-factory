@@ -29,7 +29,8 @@ export function abstract(story) {
   if (story.cleanup) state.cleanup = true;
   if (story.pr) state.pr = story.pr;
   if (story.prObservation) state.prObservation = { head: story.prObservation.head, status: story.prObservation.status,
-    ...(story.prObservation.review ? { blocking: blocking(story.prObservation.review) } : {}) };
+    ...(story.prObservation.review ? { blocking: blocking(story.prObservation.review) } : {}),
+    ...(story.prObservation.merge === 'conflicting' ? { conflicting: true } : {}) };
   if (story.readyHead) state.readyHead = story.readyHead;
   if (story.diagram) state.diagram = { returnPhase: story.diagram.returnPhase };
   if (story.retro) state.retro = { ...(story.retro.returnPhase && !story.retro.completedAt ? { returnPhase: story.retro.returnPhase } : {}), ...(story.retro.completedAt ? { completed: true } : {}), ...(story.retro.mergedAt ? { merged: true } : {}) };
@@ -49,8 +50,8 @@ function concrete(state) {
   if (state.retro) story.retro = { ...(state.retro.returnPhase ? { returnPhase: state.retro.returnPhase } : {}), startedAt: 'then', detail: 'Retro.', ...(state.retro.completed ? { completedAt: 'then' } : {}), ...(state.retro.merged ? { mergedAt: '2026-01-01T00:00:00.000Z' } : {}) };
   if (state.jarvis) story.jarvis = { session: 'jarvis-1', handled: 1, ...(state.jarvis.turn ? { turn: { ...state.jarvis.turn, log: 'jarvis.log' } } : { waking: 'now' }) };
   if (state.prObservation) {
-    const { blocking: blocked, ...observed } = state.prObservation;
-    story.prObservation = { ...observed, failedCount: observed.status === 'failed' ? 1 : 0,
+    const { blocking: blocked, conflicting, ...observed } = state.prObservation;
+    story.prObservation = { ...observed, ...(conflicting ? { merge: 'conflicting' } : {}), failedCount: observed.status === 'failed' ? 1 : 0,
       failures: observed.status === 'failed' ? ['test'] : [], ...(blocked === undefined ? {} : { review: review(blocked) }) };
   }
   return story;
@@ -97,6 +98,9 @@ export function eventInputs(evidence) {
     ...HEADS.flatMap(head => [true, false].map(blocked => ['pr-observed', {
       url: PR, observation: { head, status: 'passed', failedCount: 0, failures: [], review: review(blocked) },
     }])),
+    ...HEADS.map(head => ['pr-observed', {
+      url: PR, observation: { head, status: 'passed', failedCount: 0, failures: [], merge: 'conflicting' },
+    }]),
     ['request-cleanup', {}],
     ['cleanup-blocked', detail],
     ['complete-cleanup', detail],

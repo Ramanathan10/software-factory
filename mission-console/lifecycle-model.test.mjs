@@ -242,8 +242,29 @@ test('a worker can be assigned in publishing, and return-to-build leaves publish
   assert.ok(back.length, 'return-to-build is never accepted in publishing');
   const wrong = back.filter(([id]) => states.get(edgeTo(id, 'return-to-build')).state.phase !== 'building');
   assert.deepEqual(wrong.map(([, node]) => story(node)), [], 'return-to-build from publishing landed outside building');
-  const refused = live.filter(([id, { state }]) => ['ci', 'merge'].includes(state.phase) && edgeTo(id, 'return-to-build'));
-  assert.deepEqual(refused.map(([, node]) => story(node)), [], 'return-to-build was accepted in ci or merge');
+});
+
+test('return-to-build from ci or merge lands in building with no readiness, and waits for the worker and any blocker', () => {
+  const open = live.filter(([, { state }]) => ['ci', 'merge'].includes(state.phase) && !state.worker && !state.blocked && !state.cleanup);
+  assert.ok(open.some(([, { state }]) => state.phase === 'ci') && open.some(([, { state }]) => state.phase === 'merge' && state.readyHead), 'the explorer reaches ci and a ready merge with no worker');
+  const refused = open.filter(([id]) => !edgeTo(id, 'return-to-build'));
+  assert.deepEqual(refused.map(([, node]) => story(node)), [], 'return-to-build was refused in ci or merge');
+  const wrong = open.map(([id]) => states.get(edgeTo(id, 'return-to-build'))).filter(node => node && (node.state.phase !== 'building' || node.state.readyHead));
+  assert.deepEqual(wrong.map(node => story(node)), [], 'return-to-build from ci or merge landed outside building or kept readyHead');
+  const staffed = live.filter(([, { state }]) => ['ci', 'merge'].includes(state.phase) && state.worker && !state.cleanup);
+  assert.ok(staffed.length, 'the explorer reaches ci or merge with a worker');
+  assert.deepEqual(staffed.filter(([id]) => edgeTo(id, 'return-to-build')).map(([, node]) => story(node)), [], 'return-to-build was accepted with a worker assigned');
+});
+
+test('readiness is refused while the observed head conflicts with main, and allowed otherwise', () => {
+  const ci = live.filter(([, { state }]) => state.phase === 'ci' && !state.worker && !state.blocked && !state.cleanup && state.prObservation?.status === 'passed' && state.prObservation.blocking !== true);
+  const conflicting = ci.filter(([, { state }]) => state.prObservation.conflicting);
+  const clean = ci.filter(([, { state }]) => !state.prObservation.conflicting && state.prObservation.blocking === false);
+  assert.ok(conflicting.length && clean.length, 'the explorer reaches ci with a passed, clear observation that conflicts and one that does not');
+  const ready = ([, node]) => node.edges.some(edge => edge.type === 'pr-ready' && edge.input.head === node.state.prObservation.head && states.get(edge.to).state.phase === 'merge');
+  assert.deepEqual(conflicting.filter(ready).map(([, node]) => story(node)), [], 'pr-ready was accepted on a head that conflicts with main');
+  assert.deepEqual(clean.filter(node => !ready(node)).map(([, node]) => story(node)), [], 'pr-ready was refused on a passed, clear head that does not conflict');
+  assert.ok(live.some(([, { state }]) => state.phase === 'merge' && state.readyHead && state.prObservation?.conflicting), 'the explorer never reaches a ready merge story whose PR conflicts');
 });
 
 test('pr-opened is refused while a publisher is assigned and accepted once it is released', () => {

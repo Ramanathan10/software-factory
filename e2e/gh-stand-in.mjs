@@ -53,8 +53,8 @@ export function gh(state, args, { cwd = process.cwd(), stdin = () => readFileSyn
   };
   const fields = pull => ({
     number: pull.number, url: pull.url, title: pull.title, body: pull.body, state: pull.state, isDraft: pull.draft,
-    baseRefName: pull.base, headRefName: pull.head, headRefOid: headOf(pull), statusCheckRollup: [],
-    comments: pull.comments, reviews: [], reviewDecision: '', mergeable: 'MERGEABLE',
+    baseRefName: pull.base, headRefName: pull.head, headRefOid: headOf(pull), statusCheckRollup: pull.checks ?? [],
+    comments: pull.comments, reviews: [], reviewDecision: '', mergeable: pull.mergeable ?? 'MERGEABLE', mergeStateStatus: pull.mergeStateStatus ?? 'CLEAN',
   });
   const pick = pull => {
     const all = fields(pull);

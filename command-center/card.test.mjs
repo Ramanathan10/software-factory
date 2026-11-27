@@ -722,3 +722,66 @@ test('in the open inbox, a comparison-choice story with an open question loses t
     assert.deepEqual(cardKinds(cleared.id), ['grooming', 'compare'], 'the compare card stayed missing after the hold ended');
   });
 });
+
+const conflictWords = 'Merge conflict with main';
+const readyWords = 'PR ready to merge';
+const conflicts = {
+  merge: { ...base, id: 'CNFM-1', phase: 'merge', pr: 'https://github.com/acme/widgets/pull/21', readyHead: 'c'.repeat(40),
+    prObservation: { ...observation({ approvals: ['reviewer-a'], lastActivityAt: ago(120) }), merge: 'conflicting' } },
+  ci: { ...base, id: 'CNFC-1', phase: 'ci', pr: 'https://github.com/acme/widgets/pull/22',
+    prObservation: { ...observation({ lastActivityAt: ago(120) }), merge: 'conflicting' } },
+  bare: { ...base, id: 'CNFB-1', phase: 'merge', pr: 'https://github.com/acme/widgets/pull/23', readyHead: 'c'.repeat(40),
+    prObservation: { head: 'c'.repeat(40), status: 'passed', failedCount: 0, failures: [], at: now(), merge: 'conflicting' } },
+  behind: { ...base, id: 'BHND-1', phase: 'merge', pr: 'https://github.com/acme/widgets/pull/24', readyHead: 'c'.repeat(40),
+    prObservation: { ...observation({ approvals: ['reviewer-a'], lastActivityAt: ago(120) }), merge: 'behind' } },
+  clean: { ...base, id: 'CLEN-1', phase: 'merge', pr: 'https://github.com/acme/widgets/pull/25', readyHead: 'c'.repeat(40),
+    prObservation: { ...observation({ approvals: ['reviewer-a'], lastActivityAt: ago(120) }), merge: 'clean' } },
+};
+const tagsOf = id => walk(boardCard(id)).filter(node => node.classes?.().includes('blocking') || node.classes?.().includes('earlier'));
+
+test('a story in merge or ci whose PR conflicts with main shows a red blocking tag, with or without review evidence', () => {
+  show(Object.values(conflicts));
+  for (const key of ['merge', 'ci', 'bare']) {
+    const tag = tagsOf(conflicts[key].id).find(node => node.textContent === conflictWords);
+    assert.ok(tag, 'the ' + key + ' card has no blocking "' + conflictWords + '" tag: ' + boardCard(conflicts[key].id).textContent);
+    assert.ok(tag.classes().includes('blocking'));
+  }
+  for (const key of ['behind', 'clean']) {
+    assert.ok(!boardCard(conflicts[key].id).textContent.includes(conflictWords), 'a ' + key + ' PR reads as conflicting');
+  }
+});
+
+test('a merge story with a conflict never says it is ready to merge on the card, glyph, track row or story window', async () => {
+  const story = conflicts.merge;
+  show([story]);
+  assert.ok(!boardCard(story.id).textContent.includes(readyWords), boardCard(story.id).textContent);
+  assert.ok(!boardCard(story.id).textContent.includes('waiting on reviewer approval and merge'), 'the idle reason still waits on approval and merge: ' + boardCard(story.id).textContent);
+  const label = walk(boardCard(story.id)).find(node => node.getAttribute?.('title'));
+  for (const text of [label.getAttribute('title'), label.getAttribute('aria-label')]) {
+    assert.ok(text.includes(conflictWords) && !text.includes(readyWords), 'the glyph says: ' + text);
+  }
+  useView('track');
+  try {
+    show([story]);
+    const row = trackRow(story.id);
+    assert.ok(!row.textContent.includes(readyWords), 'the track row says: ' + row.textContent);
+    assert.ok(row.textContent.includes(conflictWords), 'the track row does not name the conflict: ' + row.textContent);
+  } finally {
+    useView('lanes');
+  }
+  await detailRows(story);
+  const heading = walk(ids.get('detail-body')).find(node => node.tag === 'small');
+  assert.equal(heading.textContent, story.id + ' · ' + conflictWords);
+  assert.ok(!document.getElementById('detail').querySelector('.win-title').textContent.includes(readyWords));
+});
+
+test('a merge story whose PR does not conflict still says it is ready to merge, and a PR behind main shows a neutral tag', () => {
+  show([conflicts.clean, conflicts.behind]);
+  const titleOf = id => walk(boardCard(id)).find(node => node.getAttribute?.('title')).getAttribute('title');
+  assert.ok(titleOf(conflicts.clean.id).includes(readyWords), titleOf(conflicts.clean.id));
+  assert.ok(!boardCard(conflicts.clean.id).textContent.includes('Behind main'));
+  const behind = boardCard(conflicts.behind.id);
+  assert.ok(behind.textContent.includes('Behind main'), behind.textContent);
+  assert.ok(titleOf(conflicts.behind.id).includes(readyWords), 'behind alone does not change the readiness label');
+  assert.ok(!tagsOf(conflicts.behind.id).some(node => node.textContent === 'Behind main' && node.classes().includes('blocking')), 'Behind main is not a blocking tag');
+});

@@ -1202,18 +1202,21 @@ test('a worker can be assigned in publishing as Hawkeye and records its work the
   assert.equal(store.handover('pub-worker').story.worker, undefined);
 });
 
-test('return-to-build is accepted from publishing and refused from ci, merge and building', t => {
+test('return-to-build is accepted from publishing, ci and merge and refused from building', t => {
   const store = fixture(t)();
   const record = toPublishing(store, 'pub-back');
   record('return-to-build', { detail: 'Merging origin/main conflicts in greet.mjs: merge origin/main and resolve these.' });
   assert.equal(store.handover('pub-back').story.phase, 'building');
-  assert.throws(() => record('return-to-build', { detail: 'Again.' }), error => error.status === 409 && /Return to build from review, the deterministic gates, the comparison, publishing, or PR review\./.test(error.message));
+  assert.throws(() => record('return-to-build', { detail: 'Again.' }), error => error.status === 409);
   const open = toCi(store, 'pub-ci');
   assert.equal(store.handover('pub-ci').story.phase, 'ci');
-  assert.throws(() => open('return-to-build', { detail: 'From ci.' }), error => error.status === 409);
-  open('pr-ready', { detail: 'Checks and review passed.' });
-  assert.equal(store.handover('pub-ci').story.phase, 'merge');
-  assert.throws(() => open('return-to-build', { detail: 'From merge.' }), error => error.status === 409);
+  open('return-to-build', { detail: 'Merge conflict with main: merge origin/main and resolve the conflict.' });
+  assert.equal(store.handover('pub-ci').story.phase, 'building');
+  const ready = toCi(store, 'pub-merge');
+  ready('pr-ready', { detail: 'Checks and review passed.' });
+  assert.equal(store.handover('pub-merge').story.phase, 'merge');
+  ready('return-to-build', { detail: 'Merge conflict with main: merge origin/main and resolve the conflict.' });
+  assert.equal(store.handover('pub-merge').story.phase, 'building');
 });
 
 test('pr-opened is refused while a publisher is assigned and accepted after it releases', t => {
@@ -1638,4 +1641,170 @@ test('a merge seen outside the watching phases records the evidence detail as th
   assert.equal(story.phase, 'retro');
   assert.equal(story.retro.mergeDetail, 'Merged during the diagram.');
   assert.equal(story.retro.detail, 'Merged during the diagram.');
+});
+
+const CONFLICT = 'Merge conflict with main on the observed head.';
+const OTHER_HEAD = 'e'.repeat(40);
+const mergeObserved = (merge, extra = {}) => observedStatus('passed', { ...(merge === undefined ? {} : { merge }), ...extra });
+const onHead = (input, head) => ({ url: input.url, observation: { ...input.observation, head } });
+const pendingOf = (store, id, result) => store.pendingFor(id).find(item => item.seq === result.seq);
+const RESOLVE = 'Merge conflict with main: merge origin/main and resolve the conflict.';
+
+test('Hawkeye stores a valid merge answer with the observation and refuses any other value', t => {
+  const store = fixture(t)();
+  const record = toCi(store, 'merge-valid');
+  for (const merge of ['conflicting', 'behind', 'clean']) {
+    record('pr-observed', mergeObserved(merge));
+    assert.equal(store.handover('merge-valid').story.prObservation.merge, merge);
+  }
+  for (const merge of ['DIRTY', 'unknown', '', 1, true, null, ['conflicting']]) {
+    assert.throws(() => record('pr-observed', mergeObserved(merge)), error => error.status === 400, 'merge ' + JSON.stringify(merge) + ' was accepted');
+  }
+  assert.equal(store.handover('merge-valid').story.prObservation.merge, 'clean', 'a refused answer changes nothing');
+});
+
+test('a conflict seen in ci or merge wakes Jarvis with conflict: true, with or without a CI worker assigned', t => {
+  for (const phase of ['ci', 'merge']) {
+    for (const staffed of [false, true]) {
+      const store = fixture(t)();
+      const id = 'conflict-' + phase + (staffed ? '-staffed' : '');
+      const record = toCi(store, id);
+      record('pr-observed', mergeObserved('clean'));
+      if (phase === 'merge') record('pr-ready', { head: REVIEW_HEAD, detail: 'Checks and review passed.' });
+      if (staffed && phase === 'ci') record('assign-worker', { session: 'ci-worker' });
+      const woke = record('pr-observed', mergeObserved('conflicting'));
+      assert.equal(woke.wake, true, 'a conflict in ' + phase + ' wakes');
+      const event = pendingOf(store, id, woke);
+      assert.equal(event?.conflict, true, 'the wake carries conflict: true');
+      assert.equal(event.observation.merge, 'conflicting');
+      assert.match(event.detail, /Merge conflict with main/);
+      assert.equal(event.feedback, undefined, 'a conflict is not review feedback');
+      assert.ok(record('pr-observed', mergeObserved('conflicting')).unchanged, 'the same conflict records nothing and wakes nothing');
+      assert.equal(store.handover(id).story.phase, phase, 'the phase does not move');
+    }
+  }
+});
+
+test('a conflict on a new head wakes again, and a first observation that conflicts wakes', t => {
+  const store = fixture(t)();
+  const record = toCi(store, 'conflict-new-head');
+  record('pr-observed', mergeObserved('conflicting'));
+  const woke = record('pr-observed', onHead(mergeObserved('conflicting'), OTHER_HEAD));
+  assert.equal(pendingOf(store, 'conflict-new-head', woke).conflict, true);
+  const first = toCi(store, 'conflict-first');
+  const result = first('pr-observed', mergeObserved('conflicting'));
+  assert.equal(pendingOf(store, 'conflict-first', result).conflict, true);
+});
+
+test('behind, clean and unknown never wake or set conflict, even on a passed PR whose previous status was passed', t => {
+  const store = fixture(t)();
+  const record = toCi(store, 'quiet-merge');
+  record('pr-observed', mergeObserved(undefined));
+  for (const merge of ['clean', 'behind', 'clean', 'behind']) {
+    const result = record('pr-observed', mergeObserved(merge));
+    assert.ok(result.seq && !result.unchanged, 'a ' + merge + ' answer is recorded for the cards');
+    assert.equal(result.wake, false, 'a ' + merge + ' answer does not wake');
+    assert.equal(pendingOf(store, 'quiet-merge', result)?.conflict, undefined);
+    assert.equal(store.handover('quiet-merge').story.prObservation.merge, merge);
+  }
+  assert.ok(record('pr-observed', mergeObserved(undefined)).unchanged, 'no answer after behind on the same head records nothing');
+  const behind = record('pr-observed', mergeObserved('clean'));
+  const next = record('pr-observed', mergeObserved('behind'));
+  assert.equal(behind.wake, false);
+  assert.match(store.handover('quiet-merge').story.events.find(event => event.seq === next.seq).detail, /Behind main/);
+});
+
+test('leaving a conflict does not wake, and a later conflict wakes again', t => {
+  const store = fixture(t)();
+  const record = toCi(store, 'resolved-merge');
+  record('pr-observed', mergeObserved('conflicting'));
+  assert.equal(record('pr-observed', mergeObserved('clean')).wake, false);
+  assert.equal(record('pr-observed', mergeObserved('behind')).wake, false);
+  assert.equal(record('pr-observed', mergeObserved('conflicting')).wake, true);
+});
+
+test('an observation with no merge answer keeps the stored one on the same head and stores none on a new head', t => {
+  const store = fixture(t)();
+  const record = toCi(store, 'keeps-merge');
+  record('pr-observed', mergeObserved('conflicting'));
+  assert.ok(record('pr-observed', mergeObserved(undefined)).unchanged, 'an unknown answer changes nothing');
+  assert.equal(store.handover('keeps-merge').story.prObservation.merge, 'conflicting');
+  const moved = record('pr-observed', onHead(mergeObserved(undefined), OTHER_HEAD));
+  assert.equal(moved.wake, true, 'a new head wakes as it does today');
+  assert.equal(pendingOf(store, 'keeps-merge', moved).conflict, undefined, 'an unknown merge on a new head is no conflict');
+  const story = store.handover('keeps-merge').story;
+  assert.equal(story.prObservation.head, OTHER_HEAD);
+  assert.equal(story.prObservation.merge, undefined, 'a new head carries no merge answer');
+  record('pr-ready', { head: OTHER_HEAD, detail: 'Checks and review passed on the resolved head.' });
+  assert.equal(store.handover('keeps-merge').story.phase, 'merge', 'the resolved head is not refused for the old conflict');
+});
+
+test('a merged or closed observation stores no merge answer and is no conflict', t => {
+  for (const status of ['merged', 'closed']) {
+    const store = fixture(t)();
+    const id = 'finished-' + status;
+    const record = toCi(store, id);
+    record('pr-observed', mergeObserved('conflicting'));
+    const result = record('pr-observed', observedStatus(status, { merge: 'conflicting' }));
+    assert.equal(pendingOf(store, id, result).conflict, undefined, 'a ' + status + ' PR is no conflict');
+    assert.equal(store.handover(id).story.prObservation.merge, undefined);
+  }
+});
+
+test('a conflict seen in pr-review is stored and does not wake', t => {
+  const store = fixture(t)();
+  const record = toCi(store, 'review-conflict');
+  record('pr-observed', mergeObserved('clean'));
+  record('pr-review-start', { detail: 'One new thread.' });
+  const result = record('pr-observed', mergeObserved('conflicting'));
+  assert.ok(result.seq && !result.unchanged, 'the conflict is recorded');
+  assert.equal(result.wake, false);
+  assert.equal(pendingOf(store, 'review-conflict', result)?.conflict, undefined);
+  const story = store.handover('review-conflict').story;
+  assert.equal(story.phase, 'pr-review');
+  assert.equal(story.prObservation.merge, 'conflicting');
+});
+
+test('readiness is refused while the observed head conflicts, and accepted when it is behind, clean or unanswered', t => {
+  const store = fixture(t)();
+  const record = toCi(store, 'ready-gate');
+  record('pr-observed', mergeObserved('conflicting'));
+  assert.throws(() => record('pr-ready', { head: REVIEW_HEAD, detail: 'Checks passed.' }),
+    error => error.status === 409 && error.message === CONFLICT);
+  const stored = store.handover('ready-gate').story;
+  assert.deepEqual([stored.phase, stored.readyHead], ['ci', undefined]);
+  for (const merge of ['behind', 'clean', undefined]) {
+    const id = 'ready-' + String(merge);
+    const other = toCi(store, id);
+    other('pr-observed', mergeObserved(merge));
+    other('pr-ready', { head: REVIEW_HEAD, detail: 'Checks and review passed.' });
+    assert.deepEqual([store.handover(id).story.phase, store.handover(id).story.readyHead], ['merge', REVIEW_HEAD]);
+  }
+});
+
+test('a story ready in merge whose PR starts conflicting wakes Jarvis and returns to build with its readiness cleared', t => {
+  const store = fixture(t)();
+  const record = toCi(store, 'qfmt');
+  record('pr-observed', mergeObserved('clean'));
+  record('pr-ready', { head: REVIEW_HEAD, detail: 'Checks and review passed.' });
+  const merge = store.handover('qfmt').story;
+  assert.deepEqual([merge.phase, merge.readyHead, merge.worker], ['merge', REVIEW_HEAD, undefined]);
+  const woke = record('pr-observed', mergeObserved('conflicting'));
+  assert.equal(pendingOf(store, 'qfmt', woke).conflict, true);
+  assert.equal(store.handover('qfmt').story.phase, 'merge');
+  record('return-to-build', { detail: RESOLVE });
+  const building = store.handover('qfmt').story;
+  assert.deepEqual([building.phase, building.readyHead], ['building', undefined]);
+});
+
+test('return-to-build from ci waits for the CI worker to release', t => {
+  const store = fixture(t)();
+  const record = toCi(store, 'ci-staffed');
+  record('pr-observed', mergeObserved('conflicting'));
+  record('assign-worker', { session: 'ci-worker' });
+  assert.throws(() => record('return-to-build', { detail: RESOLVE }), error => error.status === 409 && /Release/.test(error.message));
+  record('release-worker', { assignment: store.handover('ci-staffed').story.worker.id, detail: 'CI worker idle.' });
+  record('return-to-build', { detail: RESOLVE });
+  const story = store.handover('ci-staffed').story;
+  assert.deepEqual([story.phase, story.readyHead, story.worker], ['building', undefined, undefined]);
 });
