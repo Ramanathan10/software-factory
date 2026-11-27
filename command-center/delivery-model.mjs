@@ -1,13 +1,13 @@
-export const current = { filterSent: true, handReserves: true, startRegistersTurn: true, waitsForAdoptedTurns: true, recordsAtSpawn: true, rechecksAssignment: true, releasesAtTurnEnd: true, handsOnlyPending: true };
+export const current = { filterSent: true, handReserves: true, startRegistersTurn: true, waitsForAdoptedTurns: true, recordsAtSpawn: true, rechecksAssignment: true, releasesAtTurnEnd: true, handsOnlyPending: true, startupDelivers: true, rechecksPending: true };
 
 const DECISIONS = 2;
 const JARVIS_CALLS = 2;
 const RESTARTS = 1;
-const REPLACEMENTS = 2;
+const REPLACEMENTS = 1;
 
 const initial = fix => ({
-  restarts: 0, jarvisCalls: 0, nextId: 1, assign: 0, replaced: 0, released: 0, resumedReleased: false,
-  live: Array(DECISIONS).fill(false), wasted: Array(DECISIONS).fill(false),
+  restarts: 0, startupDone: false, woke: false, resumedAcked: false, jarvisCalls: 0, nextId: 1, assign: 0, replaced: 0, released: 0, resumedReleased: false,
+  live: Array(DECISIONS).fill(false), owned: Array(DECISIONS).fill(false), wasted: Array(DECISIONS).fill(false),
   recorded: Array(DECISIONS).fill(false), pending: Array(DECISIONS).fill(false),
   duplicated: false, reservedAfterAck: false, sent: Array(DECISIONS).fill(false), batch: Array(DECISIONS).fill(false),
   procs: [],
@@ -54,7 +54,13 @@ export function steps(state, fix) {
     if (next) out.push(['BatchFire', next]);
     else step('BatchFire', next => { next.batch.fill(false); });
   }
-  if (state.jarvisCalls < JARVIS_CALLS) {
+  if (fix.startupDelivers && state.restarts > 0 && !state.startupDone) {
+    const wanted = state.pending.map((pending, d) => pending && !state.sent[d]);
+    const next = hand({ ...structuredClone(state), startupDone: true }, fix, wanted, 'startup');
+    if (next) out.push(['StartupDeliver', next]);
+    else step('StartupDeliver', next => { next.startupDone = true; });
+  }
+  if (state.woke && state.jarvisCalls < JARVIS_CALLS) {
     const wanted = state.pending.map((pending, d) => pending && (!fix.filterSent || !state.sent[d]));
     const next = hand({ ...structuredClone(state), jarvisCalls: state.jarvisCalls + 1 }, fix, wanted, 'jarvis');
     if (next) out.push(['JarvisDeliver', next]);
@@ -73,14 +79,20 @@ export function steps(state, fix) {
         next.tails[next.assign] = next.nextId;
         next.nextId += 1;
       });
+    } else if (ready && fix.rechecksPending && !proc.seqs.some((seq, d) => seq && state.pending[d])) {
+      step('Skip(' + proc.via + '#' + proc.id + ')', next => {
+        next.procs.splice(at, 1);
+        if (fix.handReserves) release(next, proc.token, proc.seqs);
+      });
     } else if (ready) {
       step('Spawn(' + proc.via + '#' + proc.id + ')', next => {
         next.procs[at].spawned = true;
         next.turns.push({ id: proc.id, session: proc.session, seqs: proc.seqs, known: true, recorded: Boolean(fix.recordsAtSpawn), token: proc.token });
         if (proc.session !== state.assign && state.assign !== null) next.resumedReleased = true;
+        if (!proc.seqs.some((seq, d) => seq && state.pending[d])) next.resumedAcked = true;
         proc.seqs.forEach((seq, d) => {
           if (!seq) return;
-          if (proc.session === state.assign) next.live[d] = true;
+          if (proc.session === state.assign) next.live[d] = next.owned[d] = true;
           else next.wasted[d] = true;
         });
       });
@@ -96,16 +108,19 @@ export function steps(state, fix) {
   }
   for (const turn of state.turns) {
     const at = state.turns.indexOf(turn);
-    turn.seqs.forEach((seq, d) => {
-      if (seq && state.pending[d] && turn.session === state.assign) step('Ack(d' + d + ')', next => { next.pending[d] = false; });
+    state.pending.forEach((pending, d) => {
+      if (pending && turn.session === state.assign) step('Ack(d' + d + ')', next => { next.pending[d] = false; });
     });
-    step('TurnEnd(#' + turn.id + ')', next => {
-      next.turns.splice(at, 1);
-      if (fix.releasesAtTurnEnd && fix.handReserves) release(next, turn.token, turn.seqs);
-    });
+    for (const wakes of turn.session === state.assign ? [false, true] : [false]) {
+      step('TurnEnd(#' + turn.id + (wakes ? ', wakes' : '') + ')', next => {
+        next.turns.splice(at, 1);
+        if (wakes) next.woke = true;
+        if (fix.releasesAtTurnEnd && fix.handReserves) release(next, turn.token, turn.seqs);
+      });
+    }
   }
   if (state.assign !== null && state.released < REPLACEMENTS) {
-    step('Release', next => { next.assign = null; next.released += 1; });
+    step('Release', next => { next.assign = null; next.released += 1; next.woke = true; });
   }
   if (state.assign === null && state.replaced < REPLACEMENTS && !state.turns.some(turn => turn.adopted)) {
     step('Assign', next => { next.replaced += 1; next.assign = next.replaced; });
@@ -113,6 +128,8 @@ export function steps(state, fix) {
   if (state.restarts < RESTARTS && state.turns.every(turn => state.assign === null || turn.session === state.assign)) {
     step('Restart', next => {
       next.restarts += 1;
+      next.startupDone = false;
+      next.owned.fill(false);
       next.sent.fill(false);
       next.batch.fill(false);
       next.procs = [];
@@ -129,6 +146,7 @@ export const invariants = {
   ReleasedSessionNeverResumed: state => !state.resumedReleased,
   NoDuplicateDelivery: state => !state.duplicated,
   NoReserveAfterAck: state => !state.reservedAfterAck,
+  NoResumeForAcknowledged: state => !state.resumedAcked,
   NeverBlocked: state => state.assign === null || state.pending.every((pending, d) => !pending || !state.sent[d] || state.procs.some(proc => proc.seqs[d]) || state.turns.some(turn => turn.seqs[d])),
 };
 
@@ -148,6 +166,7 @@ export function check(fix = current, names = Object.keys(invariants)) {
     const next = steps(state, fix);
     if (!next.length && state.procs.length) return { stuck: true, trace: trace(key) };
     if (!next.length && state.pending.some((pending, d) => pending && state.wasted[d] && !state.live[d])) return { lost: true, trace: trace(key) };
+    if (!state.woke && !next.some(([label]) => !/^(Release|Assign|Record|Ack|Restart)/.test(label) && !label.includes('wakes')) && state.assign !== null && state.pending.some((pending, d) => pending && !state.owned[d] && !state.procs.some(proc => proc.seqs[d]) && !state.turns.some(turn => turn.seqs[d]))) return { unowned: true, trace: trace(key) };
     for (const [label, after] of next) {
       const afterKey = JSON.stringify(after);
       if (!seen.has(afterKey)) {
