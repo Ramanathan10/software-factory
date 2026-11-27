@@ -71,7 +71,7 @@ Cross-model sharing, required gates, mutation testing, pipelines, the spec locat
 
 ### Write and approve the spec
 
-Write observable acceptance criteria and choose the lowest useful test level (unit, contract, integration, or UI). Before presenting the plan for approval, run the plan critique below when distinct providers are available and the profile authorizes cross-model sharing. Otherwise note the limitation and continue. Resolve material objections in the plan; model agreement alone does not settle a decision.
+Write observable acceptance criteria and choose the lowest useful test level (unit, contract, integration, or UI). When the change alters behaviour that the repository's docs or agent instructions describe, find every file that states it and name each in an acceptance criterion with its new wording. When it changes who records an event or who is woken, walk each actor's turn through the new path against the code that enforces it before approval. Before presenting the plan for approval, run the plan critique below when distinct providers are available and the profile authorizes cross-model sharing. Otherwise note the limitation and continue. Resolve material objections in the plan; model agreement alone does not settle a decision.
 
 Stop and wait for the owner to approve the plan. Do not implement, edit the target repository, or open a pull request before approval.
 
