@@ -261,3 +261,52 @@ test('with nothing shipped the Archive tab says so', async () => {
   assert.ok(board().textContent.includes('No shipped stories.'));
   assert.equal(ids.get('stat-shipped').textContent, '0');
 });
+
+test('the Archive merged date comes from the retro merge time before the events and the update time', async () => {
+  const stamped = iso(200);
+  const kept = { ...base, id: 'DONE-3', title: 'Retro stamped work', repo: 'acme/one', phase: 'closed', pr: 'https://github.com/acme/one/pull/11', updatedAt: iso(1),
+    retro: { returnPhase: 'closed', startedAt: iso(250), completedAt: iso(2), mergedAt: stamped, detail: 'Lessons.' },
+    events: [{ seq: 90, at: iso(1), type: 'jarvis-turn-ended', detail: 'Jarvis ended its turn.' }] };
+  frame([open, kept]);
+  await show('archive');
+  const row = rowOf('DONE-3');
+  assert.ok(row, 'no row for DONE-3');
+  assert.ok(walk(row).some(node => Object.values(node.attributes ?? {}).includes(stamped)), 'the row does not carry the retro merge time ' + stamped);
+  assert.ok(!walk(row).some(node => Object.values(node.attributes ?? {}).includes(kept.updatedAt)), 'the row shows the update time');
+});
+
+const carries = (row, stamp) => walk(row).some(node => Object.values(node.attributes ?? {}).includes(stamp));
+
+test('the Archive merged date prefers the retro merge time over a merged event', async () => {
+  const stamped = iso(200);
+  const eventAt = iso(400);
+  const kept = { ...base, id: 'DONE-4', title: 'Both times', repo: 'acme/one', phase: 'closed', pr: 'https://github.com/acme/one/pull/12', updatedAt: iso(1),
+    retro: { returnPhase: 'closed', startedAt: iso(250), completedAt: iso(2), mergedAt: stamped, detail: 'Lessons.' },
+    events: [{ seq: 91, at: eventAt, type: 'merged', detail: 'Merged.' }] };
+  frame([open, kept]);
+  await show('archive');
+  const row = rowOf('DONE-4');
+  assert.ok(carries(row, stamped), 'the row does not carry the retro merge time ' + stamped);
+  assert.ok(!carries(row, eventAt), 'the row carries the merged event time');
+});
+
+test('the Archive merged date comes from the merged event when the retro has no merge time', async () => {
+  const eventAt = iso(400);
+  const kept = { ...base, id: 'DONE-5', title: 'Event only', repo: 'acme/one', phase: 'closed', pr: 'https://github.com/acme/one/pull/13', updatedAt: iso(1),
+    events: [{ seq: 92, at: eventAt, type: 'merged', detail: 'Merged.' }] };
+  frame([open, kept]);
+  await show('archive');
+  const row = rowOf('DONE-5');
+  assert.ok(carries(row, eventAt), 'the row does not carry the merged event time ' + eventAt);
+  assert.ok(!carries(row, kept.updatedAt), 'the row carries the update time');
+});
+
+test('the Archive merged date falls back to the update time with no retro merge time and no merged event', async () => {
+  const kept = { ...base, id: 'DONE-6', title: 'No merge record', repo: 'acme/one', phase: 'closed', pr: 'https://github.com/acme/one/pull/14', updatedAt: iso(3),
+    events: [{ seq: 93, at: iso(1), type: 'jarvis-turn-ended', detail: 'Jarvis ended its turn.' }] };
+  frame([open, kept]);
+  await show('archive');
+  const row = rowOf('DONE-6');
+  assert.ok(carries(row, kept.updatedAt), 'the row does not carry the update time ' + kept.updatedAt);
+  assert.ok(!row.textContent.includes('Invalid Date'), 'the row shows Invalid Date');
+});

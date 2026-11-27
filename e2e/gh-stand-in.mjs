@@ -115,6 +115,13 @@ export function gh(state, args, { cwd = process.cwd(), stdin = () => readFileSyn
     save();
     return pull.url + '#issuecomment-' + pull.comments.length;
   }
+  if (group === 'pr' && command === 'merge') {
+    const pull = find(positionals[0]);
+    if (pull.state !== 'OPEN') throw new Refusal('Pull request #' + pull.number + ' is already ' + pull.state.toLowerCase() + '.');
+    pull.state = 'MERGED';
+    save();
+    return 'Merged pull request #' + pull.number;
+  }
   if (group === 'pr' && command === 'checks') {
     throw new Refusal("no checks reported on the '" + find(positionals[0]).head + "' branch");
   }

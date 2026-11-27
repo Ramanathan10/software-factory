@@ -12,7 +12,9 @@ description: Check a change to the story store's lifecycle against every story s
 | Every field a guard in `store.mjs` reads is modeled | The model silently stops seeing a guard | |
 | Every reachable phase is in `roles.mjs`, and every phase there is reachable | A story moves to a phase the dashboard cannot show, or a phase is dead | |
 | A story not being cleaned up can always still reach `closed` | A story is stuck with no event that moves it | |
-| From `ci`, `merge`, `retro` or `pr-review` with a registered PR, `merged` (after `release-worker` if a worker is assigned) closes the story, except from `retro`, where `merged` holds the story in `retro` with its worker until the retro `handoff` closes it | GitHub merged the PR and the story stays open, or a retro that merged is closed under its worker and the owner cannot answer | 3c60828: a stale `blocked` refused `merged` |
+| From any open phase with a registered PR (`ci`, `merge` and `pr-review` included), `merged` (after `release-worker` if a worker is assigned) closes a story whose retro has finished and otherwise moves it to `retro` with the merge recorded (`retro.mergedAt`), the worker released first. From `retro`, `merged` keeps the retro worker, and the retro `handoff` closes the story | GitHub merged the PR and the story stays open, or a retro that merged is closed under its worker and the owner cannot answer, or a merge mid-work is refused | 3c60828: a stale `blocked` refused `merged` |
+| An observation of the registered PR is accepted in every open phase; outside ci, merge and pr-review only a `merged` or `closed` one changes the story, and a stored merge observation is kept | A merge during diagram, building or retro work goes unseen | RETRO-2 #63: a merge during diagram or retro work was not seen |
+| A retro whose merge is recorded (`retro.mergedAt`) refuses `replan` and a second `merged` | Replan sends a merged story back to planning, or a second merge wakes Jarvis and moves the merge date | RETRO-2 review: `replan` on a merged retro reached testing against the merged PR |
 | A worker exists only in a worker phase, and no event changes the phase under it | A worker keeps running on a phase that is no longer its own | |
 | A story awaiting cleanup never changes phase | Cleanup races with work on the same story | |
 | Every event the Jarvis phase table names is accepted in or into that row's phases | Jarvis is told to record an event the store refuses | d989158: the owner's change request on the comparison had no `return-to-build` |
@@ -25,7 +27,9 @@ description: Check a change to the story store's lifecycle against every story s
 node --test mission-console/lifecycle-model.test.mjs
 ```
 
-It takes about 12 seconds and explores about 17,600 states and 95,000 accepted events. `node --test` runs it with everything else, so CI runs it on every pull request.
+It takes about 4 to 5 minutes and explores about 208,600 states and 2.6 million accepted events, against a limit of 240,000 states set in `explore`. `node --test` runs it with everything else, so CI runs it on every pull request.
+
+When it fails with "More than N story states", first drop from `abstract` a field that no guard reads in the states that grew. Raise the limit only when every remaining state is one the store can tell apart, and update the numbers above in the same change.
 
 ## Read a failure
 
@@ -53,4 +57,4 @@ Never weaken a property to make a change pass. If the change is meant to alter t
 - `mission-console/roles.mjs`: `phases`
 - `skills/jarvis/SKILL.md`: the table under "5. Check handoffs and keep the console current"
 
-Last confirmed to describe these files at commit `c377a8c`. When any of them changes, rerun the model. Move this commit forward only after you have checked that `guarded`, `eventInputs` and the properties still describe the code at the new commit.
+Last confirmed to describe these files at commit `61d3587`. When any of them changes, rerun the model. Move this commit forward only after you have checked that `guarded`, `eventInputs` and the properties still describe the code at the new commit.

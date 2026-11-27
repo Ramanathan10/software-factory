@@ -169,7 +169,7 @@ Run this when Jarvis starts the `pr-review` phase for new feedback on the open p
 
 ## 9. Retro
 
-Look back over this run for what went wrong or took avoidable effort: a returned phase, an invalid test, a failing gate, a surviving mutant, a review finding, a review-bot cycle, or a correction from the owner. Most runs produce no durable lesson; report that plainly instead of inventing one.
+Look back over this run for what went wrong or took avoidable effort: a returned phase, an invalid test, a failing gate, a surviving mutant, a review finding, a review-bot cycle, or a correction from the owner. Most runs produce no durable lesson; report that plainly instead of inventing one. A story whose PR merged before or during the retro still runs it, whether the merge came in ci, merge, pr-review, diagram or building work or in the retro itself; the merge holds the story in the retro until the lessons are recorded.
 
 - For a lesson about the target repository, such as a convention, command, or setup gotcha, follow `learnings` and add it to that repository's guidance as its own commit on the PR branch. When `story.retro.mergedAt` is set, the PR merged during the retro and that branch ships nowhere: do not commit the lesson there; include it in your lessons and ask the owner through a `question` where to land it. A gate or command that proved wrong is a profile change through `ai-sdlc-setup`.
 - For a lesson about this workflow or one of its skills, follow `self-improvement` and propose the change to the skill that would have prevented the problem. Apply it with the owner's approval, under the rules of the repository that holds the skills.

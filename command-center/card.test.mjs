@@ -80,7 +80,11 @@ const reviewed = {
   answering: { ...base, id: 'PRR-9', phase: 'pr-review', pr: 'https://github.com/acme/widgets/pull/9' },
 };
 const shipped = { ...base, id: 'DONE-1', repo: 'acme/one', phase: 'closed' };
-sources.at(-1).listeners.stories({ data: JSON.stringify({ stories: [...Object.values(fixtures), shipped, ...Object.values(reviewed)] }) });
+const retros = {
+  merged: { ...base, id: 'MRG-1', phase: 'retro', pr: 'https://github.com/acme/widgets/pull/10', retro: { returnPhase: 'ci', startedAt: now(), mergedAt: now(), detail: 'The PR merged.' } },
+  open: { ...base, id: 'RET-1', phase: 'retro', pr: 'https://github.com/acme/widgets/pull/11', retro: { returnPhase: 'ci', startedAt: now(), detail: 'Review lessons.' } },
+};
+sources.at(-1).listeners.stories({ data: JSON.stringify({ stories: [...Object.values(fixtures), shipped, ...Object.values(reviewed), ...Object.values(retros)] }) });
 
 const walk = node => node && typeof node === 'object' ? [node, ...node.children.flatMap(walk)] : [];
 const cards = new Map(walk(ids.get('board')).filter(node => node.tag === 'article' && node.classes().includes('card')).map(card => [card.children.find(child => child?.tag === 'header')?.textContent.match(/[A-Z]+-\d+/)?.[0], card]));
@@ -440,6 +444,96 @@ test('the track view marks a story with no hold as idle and a story waiting on J
     assert.ok(row('JIDL-1').classes().includes('idle'), 'a story with no hold is not idle');
     assert.ok(!row('JWAI-1').classes().includes('idle'), 'a story waiting on Jarvis is idle');
   } finally {
+    useView('lanes');
+  }
+});
+
+const laneNameOf = new Map(walk(ids.get('board')).filter(node => node.classes?.().includes('lane'))
+  .flatMap(lane => walk(lane).filter(node => node.tag === 'article').map(article => [article, lane.children.find(child => child?.tag === 'h2')?.children[0]])));
+
+test('a merged story whose retro is running stays in the Ship lane labelled "Merged · finishing retro", and an open PR in retro does not', () => {
+  const merged = cards.get(retros.merged.id);
+  assert.ok(merged, 'the board rendered no card for the merged story in retro');
+  assert.ok(merged.textContent.includes('Merged · finishing retro'), 'the merged card says: ' + merged.textContent);
+  assert.equal(laneNameOf.get(merged), 'Ship');
+  const open = cards.get(retros.open.id);
+  assert.ok(open, 'the board rendered no card for the story in retro with its PR open');
+  assert.ok(!open.textContent.includes('Merged'), 'the retro card with an open PR says: ' + open.textContent);
+  assert.ok(!cards.has(shipped.id), 'a closed story has no card on the board');
+});
+
+const mergedWords = 'Merged · finishing retro';
+const retroPair = [retros.merged, retros.open];
+const trackRow = id => walk(ids.get('board')).find(node => node.tag === 'article' && node.classes().includes('track') && walk(node).some(child => child.classes?.().includes('id') && child.textContent === id));
+
+test('the card glyph tooltip and accessible label say merged with the finishing retro, and an open PR in retro keeps the plain phase name', () => {
+  show(retroPair);
+  const glyph = id => walk(boardCard(id)).find(node => node.getAttribute?.('title'));
+  assert.ok(glyph(retros.merged.id).getAttribute('title').endsWith(' · ' + mergedWords), glyph(retros.merged.id).getAttribute('title'));
+  assert.ok(glyph(retros.merged.id).getAttribute('aria-label').endsWith(' · ' + mergedWords));
+  assert.ok(!glyph(retros.open.id).getAttribute('title').includes('Merged'), glyph(retros.open.id).getAttribute('title'));
+});
+
+test('the track view row and its current step say merged with the finishing retro, and an open PR in retro does not', () => {
+  useView('track');
+  try {
+    show(retroPair);
+    const merged = trackRow(retros.merged.id);
+    const owner = walk(merged).find(node => node.classes?.().includes('owner'));
+    assert.ok(owner.textContent.startsWith(mergedWords), owner.textContent);
+    const now = walk(merged).find(node => node.tag === 'li' && node.classes().includes('now'));
+    assert.equal(now.textContent, mergedWords);
+    const open = trackRow(retros.open.id);
+    assert.ok(!open.textContent.includes('Merged'), open.textContent);
+  } finally {
+    useView('lanes');
+  }
+});
+
+test('the story window heading and title say merged with the finishing retro, and an open PR in retro does not', async () => {
+  await detailRows(retros.merged);
+  const heading = walk(ids.get('detail-body')).find(node => node.tag === 'small');
+  assert.equal(heading.textContent, retros.merged.id + ' · ' + mergedWords);
+  assert.equal(document.getElementById('detail').querySelector('.win-title').textContent, retros.merged.id + ' · ' + mergedWords);
+  await detailRows(retros.open);
+  const openHeading = walk(ids.get('detail-body')).find(node => node.tag === 'small');
+  assert.ok(!openHeading.textContent.includes('Merged'), openHeading.textContent);
+  assert.ok(!document.getElementById('detail').querySelector('.win-title').textContent.includes('Merged'));
+});
+
+const strange = { ...base, id: 'ODD-1', repo: 'acme/one', phase: 'mystery' };
+
+test('a story in a phase the board does not know shows the raw phase name on its card and in the story window', async () => {
+  useView('agents');
+  try {
+    show([strange]);
+    const title = walk(boardCard(strange.id)).find(node => node.getAttribute?.('title')).getAttribute('title');
+    assert.ok(title.endsWith(' · mystery'), title);
+    await detailRows(strange);
+    const heading = walk(ids.get('detail-body')).find(node => node.tag === 'small');
+    assert.equal(heading.textContent, strange.id + ' · mystery');
+    assert.equal(document.getElementById('detail').querySelector('.win-title').textContent, strange.id + ' · mystery');
+  } finally {
+    useView('lanes');
+  }
+});
+
+test('the track view shows the raw phase name for an unknown phase and the column name when the phase has no label', () => {
+  useView('track');
+  const testing = meta.phases.testing;
+  try {
+    show([strange]);
+    const owner = walk(trackRow(strange.id)).find(node => node.classes?.().includes('owner'));
+    assert.ok(owner.textContent.startsWith('mystery'), owner.textContent);
+    const column = meta.columns.find(each => each.phases.includes('testing')).name;
+    delete meta.phases.testing;
+    show([{ ...strange, id: 'ODD-2', phase: 'testing' }]);
+    const unlabelled = walk(trackRow('ODD-2')).find(node => node.classes?.().includes('owner'));
+    assert.ok(unlabelled.textContent.startsWith(column), unlabelled.textContent);
+    const now = walk(trackRow('ODD-2')).find(node => node.tag === 'li' && node.classes().includes('now'));
+    assert.equal(now.textContent, column);
+  } finally {
+    meta.phases.testing = testing;
     useView('lanes');
   }
 });
