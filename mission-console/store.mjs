@@ -430,7 +430,7 @@ function apply(story, input, now) {
         delete story.blocked;
         return story.retro.mergeDetail;
       }
-      if (['ci', 'merge', 'pr-review'].includes(story.phase) || story.retro?.completedAt) {
+      if (story.retro?.completedAt) {
         if (story.retro) story.retro.mergedAt = now;
         story.phase = 'closed';
       } else {
