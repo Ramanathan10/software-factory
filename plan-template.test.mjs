@@ -146,6 +146,8 @@ test('SKILL.md names the template in each phase that uses it', () => {
 test('SKILL.md says the context pack is appended to the committed spec', () => {
   const text = skill();
   assert.ok(sectionOf(text, '### Scout').includes('appended to the committed spec'));
+  assert.ok(sectionOf(text, '### Scout').includes('Context pack shape of `references/plan-template.md`'));
+  assert.match(sectionOf(text, '## 2. Test-first handoff'), /spec location and the spec is not committed yet/);
   assert.match(sectionOf(text, '### Write and approve the spec'), /context pack appended as its last section/);
   assert.ok(sectionOf(text, '## 2. Test-first handoff').includes('## Context pack'));
 });

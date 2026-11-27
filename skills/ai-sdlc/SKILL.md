@@ -50,7 +50,7 @@ Parallel stories on one machine must not compete for the shared resources in the
 
 ### Scout
 
-Before asking the owner anything, investigate the repository read-only and write a context pack: the relevant files and entry points, the conventions and rules that apply (agent instruction files written for any harness, not only the one running this session, such as `AGENTS.md`, `CLAUDE.md`, `.cursor/rules`, and `.github/copilot-instructions.md`, lint configuration, naming, and every entry in the profile's team rules: open each web address, read each file, and take each written instruction as given), the focused and full test commands, similar earlier changes, and known risks. The context pack opens the draft plan, is appended to the committed spec, and is given to every later subagent; the approved plan leaves it out. Correct it when a later phase finds it wrong. Under the Command Center, the scout's handoff carries the context pack summary and ends its turn; the planner opens the draft plan.
+Before asking the owner anything, investigate the repository read-only and write a context pack: the relevant files and entry points, the conventions and rules that apply (agent instruction files written for any harness, not only the one running this session, such as `AGENTS.md`, `CLAUDE.md`, `.cursor/rules`, and `.github/copilot-instructions.md`, lint configuration, naming, and every entry in the profile's team rules: open each web address, read each file, and take each written instruction as given), the focused and full test commands, similar earlier changes, and known risks. Write the context pack in the Context pack shape of `references/plan-template.md`. The context pack opens the draft plan, is appended to the committed spec, and is given to every later subagent; the approved plan leaves it out. Correct it when a later phase finds it wrong. Under the Command Center, the scout's handoff carries the context pack summary and ends its turn; the planner opens the draft plan.
 
 ### Feature lane
 
@@ -85,7 +85,7 @@ Compare findings only after all reviews finish. Group agreement, single-reviewer
 
 ## 2. Test-first handoff
 
-When the spec is not committed yet, commit the approved plan with the story's registered context pack appended as `## Context pack`, as `references/plan-template.md` says.
+When the profile gives a spec location and the spec is not committed yet, commit the approved plan with the story's registered context pack appended as `## Context pack`, as `references/plan-template.md` says. When the location is `null`, append the pack to the spec in the working notes instead.
 
 Assign a separate subagent to write only the tests and necessary fixtures for the approved behavior. Give it the spec, relevant production and test code, repository conventions, and a strict boundary: no production implementation, PR, deployment, or unrelated edits. For a bug, the test reproduces the reported failure. Do not start implementation while the test author is editing a shared workspace.
 
