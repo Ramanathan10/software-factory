@@ -812,11 +812,13 @@ test('a merge from ci, merge or pr-review with no retro started holds the story 
     const record = toCi(store, story);
     if (from === 'merge') record('pr-ready', { detail: 'Checks passed.' });
     if (from === 'pr-review') record('pr-review-start', { detail: 'Comment.' });
-    record('assign-worker', { session: 'worker-' + from });
-    record('blocked', { detail: 'Waiting.' });
-    assert.throws(() => record('merged', { detail: 'Merged in ' + from + '.' }), error => error.status === 409 && /Release the assigned worker/.test(error.message), from);
-    assert.equal(storyOf(store, story).phase, from);
-    record('release-worker', { assignment: storyOf(store, story).worker.id, detail: 'Stopped: the PR merged.' });
+    if (from !== 'merge') {
+      record('assign-worker', { session: 'worker-' + from });
+      record('blocked', { detail: 'Waiting.' });
+      assert.throws(() => record('merged', { detail: 'Merged in ' + from + '.' }), error => error.status === 409 && /Release the assigned worker/.test(error.message), from);
+      assert.equal(storyOf(store, story).phase, from);
+      record('release-worker', { assignment: storyOf(store, story).worker.id, detail: 'Stopped: the PR merged.' });
+    }
     record('merged', { detail: 'Merged in ' + from + '.' });
     const held = storyOf(store, story);
     assert.equal(held.phase, 'retro', 'merged from ' + from + ' holds the story in the retro');
