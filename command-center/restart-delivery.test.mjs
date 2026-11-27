@@ -305,3 +305,21 @@ test('start-up succeeds and delivers nothing for a staffed story whose harness i
   assert.equal(rig.resumes.length, 0);
   assert.deepEqual(rig.launched, []);
 });
+
+test('a delivery queued behind a running turn is told "acknowledged" when the worker acknowledged its decisions during the turn', async t => {
+  quiet(t);
+  const rig = setup(t);
+  const { assignment, running } = rig.seed({ turn: true });
+  const daemon = await rig.open();
+  const revision = rig.recorder.snapshot().find(item => item.id === story).revision;
+  const answer = rig.recorder.recordEvent({ story, type: 'answer', question: 'scope', answer: 1, revision, key: randomUUID() });
+  const delivery = fetch(daemon.origin + '/api/deliver', { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: daemon.origin }, body: JSON.stringify({ story }) });
+  await sleep(500);
+  rig.workerActs(assignment);
+  rig.recorder.ack(answer.seq);
+  await running.end(0);
+  const told = await (await delivery).json();
+  assert.equal(told.told, 'acknowledged');
+  assert.deepEqual(told.seqs, [answer.seq]);
+  assert.equal(rig.resumes.length, 0, 'the worker was resumed with an answer it had acknowledged');
+});
