@@ -158,8 +158,9 @@ const idleReasons = {
   ci: 'waiting on pipeline checks', merge: 'waiting on reviewer approval and merge', 'pr-review': 'waiting for the PR review worker',
 };
 const mergedInRetro = story => story.phase === 'retro' && Boolean(story.retro?.mergedAt);
-const phaseLabel = (story, fallback = story.phase) => mergedInRetro(story) ? 'Merged · finishing retro' : meta.phases[story.phase]?.[1] ?? fallback;
-const idleReason = story => idleReasons[story.phase] ?? 'no active worker';
+const conflicting = story => ['ci', 'merge'].includes(story.phase) && story.prObservation?.merge === 'conflicting';
+const phaseLabel = (story, fallback = story.phase) => mergedInRetro(story) ? 'Merged · finishing retro' : story.phase === 'merge' && conflicting(story) ? 'Merge conflict with main' : meta.phases[story.phase]?.[1] ?? fallback;
+const idleReason = story => conflicting(story) ? 'waiting for Jarvis to send it back to build' : idleReasons[story.phase] ?? 'no active worker';
 function isBusy(story) {
   if (story.phase === 'closed' || story.blocked || waitingOnYou(story)) return false;
   const held = jarvisHolds(story);
@@ -256,12 +257,14 @@ const stalled = story => ['ci', 'merge'].includes(story.phase) && Boolean(story.
   Date.now() - Date.parse(story.prObservation.review.lastActivityAt) > STALL_MS;
 function reviewState(story) {
   const review = story.prObservation?.review;
-  if (!['ci', 'merge'].includes(story.phase) || !review) return null;
+  if (!['ci', 'merge'].includes(story.phase)) return null;
   const labels = [
-    review.changesRequested.length > 0 && el('span', { class: 'blocking' }, 'Changes requested · ' + plural(review.changesRequested.length, 'reviewer', 'reviewers')),
-    review.unresolved > 0 && el('span', { class: 'blocking' }, plural(review.unresolved, 'unresolved thread', 'unresolved threads')),
-    review.earlier > 0 && el('span', { class: 'earlier' }, 'Earlier-head feedback · ' + review.earlier),
-    stalled(story) && el('span', { class: 'stalled' }, 'No review activity for ', el('time', { 'data-since': review.lastActivityAt }, elapsed(review.lastActivityAt))),
+    conflicting(story) && el('span', { class: 'blocking' }, 'Merge conflict with main'),
+    story.prObservation?.merge === 'behind' && el('span', { class: 'earlier' }, 'Behind main'),
+    review?.changesRequested.length > 0 && el('span', { class: 'blocking' }, 'Changes requested · ' + plural(review.changesRequested.length, 'reviewer', 'reviewers')),
+    review?.unresolved > 0 && el('span', { class: 'blocking' }, plural(review.unresolved, 'unresolved thread', 'unresolved threads')),
+    review?.earlier > 0 && el('span', { class: 'earlier' }, 'Earlier-head feedback · ' + review.earlier),
+    review && stalled(story) && el('span', { class: 'stalled' }, 'No review activity for ', el('time', { 'data-since': review.lastActivityAt }, elapsed(review.lastActivityAt))),
   ].filter(Boolean);
   return labels.length ? el('p', { class: 'review' }, ...labels) : null;
 }

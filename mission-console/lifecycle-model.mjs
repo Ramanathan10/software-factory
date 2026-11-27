@@ -30,7 +30,7 @@ export function abstract(story) {
   if (story.pr) state.pr = story.pr;
   if (story.prObservation) state.prObservation = { head: story.prObservation.head, status: story.prObservation.status,
     ...(story.prObservation.review ? { blocking: blocking(story.prObservation.review) } : {}),
-    ...(story.prObservation.merge === 'conflicting' ? { conflicting: true } : {}) };
+    ...(story.prObservation.merge === 'conflicting' && story.prObservation.status === 'passed' && !story.prObservation.review ? { conflicting: true } : {}) };
   if (story.readyHead) state.readyHead = story.readyHead;
   if (story.diagram) state.diagram = { returnPhase: story.diagram.returnPhase };
   if (story.retro) state.retro = { ...(story.retro.returnPhase && !story.retro.completedAt ? { returnPhase: story.retro.returnPhase } : {}), ...(story.retro.completedAt ? { completed: true } : {}), ...(story.retro.mergedAt ? { merged: true } : {}) };
@@ -121,7 +121,7 @@ export function jarvisInputs(evidence) {
   ];
 }
 
-export function explore({ open = openStore, limit = 240000, inputs: choose = eventInputs } = {}) {
+export function explore({ open = openStore, limit = 300000, inputs: choose = eventInputs } = {}) {
   const folder = mkdtempSync(join(tmpdir(), 'lifecycle-model-'));
   const evidence = join(folder, 'after.png');
   writeFileSync(evidence, 'png');

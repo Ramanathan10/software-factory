@@ -41,7 +41,10 @@ export function summarizePr(data) {
     counts.failed > 0 ? 'failed' :
     counts.pending > 0 ? 'running' :
     counts.good > 0 ? 'passed' : 'no-checks';
-  return { head: data.headRefOid.toLowerCase(), status, failedCount: counts.failed, failures: [...names].sort().slice(0, 10) };
+  const merge = data.state !== 'OPEN' ? null :
+    data.mergeable === 'CONFLICTING' || data.mergeStateStatus === 'DIRTY' ? 'conflicting' :
+    data.mergeable === 'MERGEABLE' ? (data.mergeStateStatus === 'BEHIND' ? 'behind' : 'clean') : null;
+  return { head: data.headRefOid.toLowerCase(), status, failedCount: counts.failed, failures: [...names].sort().slice(0, 10), ...(merge && { merge }) };
 }
 
 const login = actor => actor?.login ?? 'ghost';
@@ -116,7 +119,7 @@ export async function readGitHubPr(url, signal, posted = []) {
     signal, timeout: 15000, maxBuffer: 16 * 1024 * 1024, windowsHide: true,
     env: { ...process.env, GH_PROMPT_DISABLED: '1' },
   };
-  const { stdout } = await run('gh', ['pr', 'view', canonical, '--json', 'url,state,headRefOid,statusCheckRollup'], options);
+  const { stdout } = await run('gh', ['pr', 'view', canonical, '--json', 'url,state,headRefOid,statusCheckRollup,mergeable,mergeStateStatus'], options);
   const data = JSON.parse(stdout);
   if (githubPr(data.url)?.toLowerCase() !== canonical.toLowerCase()) throw new Error('GitHub returned a different PR.');
   const checks = summarizePr(data);

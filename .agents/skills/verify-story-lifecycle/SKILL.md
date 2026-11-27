@@ -18,8 +18,9 @@ description: Check a change to the story store's lifecycle against every story s
 | A worker exists only in a worker phase, and no event changes the phase under it | A worker keeps running on a phase that is no longer its own | |
 | A story awaiting cleanup never changes phase | Cleanup races with work on the same story | |
 | Every event the Jarvis phase table names is accepted in or into that row's phases | Jarvis is told to record an event the store refuses | d989158: the owner's change request on the comparison had no `return-to-build` |
+| `return-to-build` from `ci` or `merge` (after `release-worker` when a worker is assigned) lands in `building` with no `readyHead` | A story whose PR conflicts with main has no route back to the implementer | MRG-1: `return-to-build` was refused from ci and merge |
 | `diagram-start` is accepted only in publishing, ci or merge and returns there; it is refused in review and comparison | A story reaches the pull request without a review verdict or the owner's acceptance of the comparison | DIAG-1 #51: `diagram-start` in review or comparison returned to publishing |
-| `pr-ready` with a head reaches merge only when the story has an observation of that head with status passed and a clear review; with no head, only when there is no observation | A story shows ready to merge while checks failed, are running or are missing, or after Hawkeye has observed the PR | CHK-1 #52: `pr-ready` was accepted on a failed observation |
+| `pr-ready` with a head reaches merge only when the story has an observation of that head with status passed, a clear review and no merge conflict with main; with no head, only when there is no observation | A story shows ready to merge while checks failed, are running or are missing, or after Hawkeye has observed the PR | CHK-1 #52: `pr-ready` was accepted on a failed observation |
 
 ## Run it
 
@@ -27,7 +28,7 @@ description: Check a change to the story store's lifecycle against every story s
 node --test mission-console/lifecycle-model.test.mjs
 ```
 
-It takes about 4 to 5 minutes and explores about 208,600 states and 2.6 million accepted events, against a limit of 240,000 states set in `explore`. `node --test` runs it with everything else, so CI runs it on every pull request.
+It takes about 6 minutes and explores about 275,100 states and 3.7 million accepted events, against a limit of 300,000 states set in `explore`. `node --test` runs it with everything else, so CI runs it on every pull request.
 
 When it fails with "More than N story states", first drop from `abstract` a field that no guard reads in the states that grew. Raise the limit only when every remaining state is one the store can tell apart, and update the numbers above in the same change.
 
@@ -46,7 +47,7 @@ Never weaken a property to make a change pass. If the change is meant to alter t
 ## What it does not cover
 
 - One story at a time. Concurrency between processes recording on the same story is not modeled here; the store serializes each `record` in one `BEGIN IMMEDIATE` transaction and rejects a stale `revision`.
-- One question ID, two PR heads, all six observation statuses (`failed`, `passed`, `running`, `no-checks`, `merged`, `closed`), and a `passed` observation with a blocking and with a clear review. Review keys, `prSeen` and `prPosted` are not modeled; `store.test.mjs` covers the review wake. Answers are by option index only.
+- A merge conflict with main is modeled as one boolean, kept only on a passed observation with no review: that is where `pr-ready` reads it. A conflict carried across other statuses or a review on the same head is covered by `store.test.mjs`. One question ID, two PR heads, all six observation statuses (`failed`, `passed`, `running`, `no-checks`, `merged`, `closed`), and a `passed` observation with a blocking and with a clear review. Review keys, `prSeen` and `prPosted` are not modeled; `store.test.mjs` covers the review wake. Answers are by option index only.
 - `artifact` with one valid evidence file. File validation is covered by `store.test.mjs`.
 - The dashboards' lane lists in `command-center/ui/app.js` and `mission-console/console.mjs`.
 - Events after `complete-cleanup`: a deleted story refuses everything.
@@ -57,4 +58,4 @@ Never weaken a property to make a change pass. If the change is meant to alter t
 - `mission-console/roles.mjs`: `phases`
 - `skills/jarvis/SKILL.md`: the table under "5. Check handoffs and keep the console current"
 
-Last confirmed to describe these files at commit `61d3587`. When any of them changes, rerun the model. Move this commit forward only after you have checked that `guarded`, `eventInputs` and the properties still describe the code at the new commit.
+Last confirmed to describe these files at commit `476a42d`. When any of them changes, rerun the model. Move this commit forward only after you have checked that `guarded`, `eventInputs` and the properties still describe the code at the new commit.
