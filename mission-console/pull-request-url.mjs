@@ -1,6 +1,6 @@
 const githubPath = /^\/([\w.-]+)\/([\w.-]+)\/pull\/([1-9]\d*)(?:\/.*)?$/;
-const devPath = /^(\/([^/]+)\/([^/]+)\/_git\/([^/]+)\/pullrequest\/([1-9]\d*))(?:\/.*)?$/;
-const legacyPath = /^((?:\/DefaultCollection)?\/([^/]+)\/_git\/([^/]+)\/pullrequest\/([1-9]\d*))(?:\/.*)?$/;
+const devPath = /^(\/([^/]+)(?:\/([^/]+))?\/_git\/([^/]+)\/pullrequest\/([1-9]\d*))(?:\/.*)?$/;
+const legacyPath = /^((?:\/DefaultCollection)?(?:\/([^/]+))?\/_git\/([^/]+)\/pullrequest\/([1-9]\d*))(?:\/.*)?$/;
 const legacySuffix = '.visualstudio.com';
 const decoded = segment => {
   try {
@@ -18,7 +18,7 @@ function azure({ origin, hostname, host, pathname }) {
   const [org, project, repo, id] = dev ? names : [hostname.slice(0, -legacySuffix.length), ...names];
   return {
     kind: 'azure-devops', host, org, id, canonical: origin + path,
-    key: ('azure:' + org + '/' + decoded(project) + '/' + decoded(repo) + '/' + id).toLowerCase(),
+    key: ('azure:' + org + '/' + decoded(project ?? repo) + '/' + decoded(repo) + '/' + id).toLowerCase(),
   };
 }
 

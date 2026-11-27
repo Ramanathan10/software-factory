@@ -453,3 +453,30 @@ test('on Windows Hawkeye reads an Azure DevOps pull request through the stand-in
     rmSync(directory, { recursive: true, force: true });
   }
 }));
+
+test('a project-less Azure DevOps address is read when the repository is named after its project', async () => {
+  const pr = shown({ repository: { id: REPO_ID, name: 'repo', webUrl: 'https://dev.azure.com/org/_git/repo', project: { id: PROJECT_ID, name: 'repo' } } });
+  const observation = await readAzure(azStub({ pr }), { url: 'https://dev.azure.com/org/_git/repo/pullrequest/12' });
+  assert.equal(observation.head, HEAD);
+});
+
+test('a deleted thread, or a thread whose only comments were deleted, is not an unresolved item', async () => {
+  const live = discussion(5, 'active', [note(1, author('dev@example.test', 'Dev'), 'Rename this helper.')]);
+  const gone = { ...discussion(6, 'active', [note(1, author('dev@example.test'), 'Oops.')]), isDeleted: true };
+  const emptied = discussion(7, 'active', [note(1, author('dev@example.test'), 'Oops.', { isDeleted: true })]);
+  const { review } = await readAzure(azStub({ threads: [live, gone, emptied] }));
+  assert.equal(review.unresolved, 1);
+  assert.deepEqual(review.keys, ['5/1']);
+  assert.deepEqual(plain(review.items).map(item => item.key), ['5/1']);
+});
+
+test('a deleted comment is neither the first nor the last comment of its thread', async () => {
+  const thread = discussion(5, 'active', [
+    note(1, author('dev@example.test', 'Dev'), 'Rename this helper.'),
+    note(2, author('lead@example.test', 'Lead'), 'Withdrawn.', { isDeleted: true, publishedDate: at(40), lastUpdatedDate: at(40) }),
+  ]);
+  const { review } = await readAzure(azStub({ threads: [thread] }));
+  assert.deepEqual(review.keys, ['5/1']);
+  assert.equal(review.items[0].author, 'dev@example.test');
+  assert.equal(review.lastActivityAt, at(10));
+});

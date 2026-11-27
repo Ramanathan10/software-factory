@@ -135,7 +135,7 @@ const azureGood = new Set(['approved', 'notApplicable']);
 const azureEnded = { completed: 'merged', abandoned: 'closed' };
 const approving = new Set([10, 5]);
 const objecting = new Set([-10, -5]);
-const unresolvedThread = thread => ['active', 'pending'].includes(thread?.status) && spoken(thread).length > 0;
+const unresolvedThread = thread => thread?.isDeleted !== true && ['active', 'pending'].includes(thread?.status) && spoken(thread).length > 0;
 
 export async function runAz(file, args, { platform = process.platform, exec = run, ...options } = {}) {
   const settings = { timeout: 15000, maxBuffer: 16 * 1024 * 1024, windowsHide: true, ...options };
@@ -168,7 +168,7 @@ export function summarizeAzureChecks(data, policies) {
 }
 
 const azureName = person => String(person?.uniqueName ?? person?.displayName ?? 'ghost');
-const spoken = thread => (Array.isArray(thread?.comments) ? thread.comments : []).filter(comment => comment && comment.commentType !== 'system');
+const spoken = thread => (Array.isArray(thread?.comments) ? thread.comments : []).filter(comment => comment && comment.commentType !== 'system' && comment.isDeleted !== true);
 const stamp = comment => String(comment.lastUpdatedDate ?? comment.publishedDate);
 
 export function summarizeAzureReview(data, threads, { canonical, posted = [] }) {
@@ -177,8 +177,9 @@ export function summarizeAzureReview(data, threads, { canonical, posted = [] }) 
   const open = threads.filter(unresolvedThread);
   const items = [];
   for (const thread of open) {
-    const first = thread.comments[0];
-    const last = thread.comments.at(-1);
+    const kept = thread.comments.filter(comment => comment?.isDeleted !== true);
+    const first = kept[0];
+    const last = kept.at(-1);
     const key = thread.id + '/' + last.id;
     if (ours.has(key)) continue;
     const file = thread.threadContext?.filePath;

@@ -140,3 +140,29 @@ test('the rule throws nothing for any input', () => {
     assert.doesNotThrow(() => recognise(url), String(url));
   }
 });
+
+test('an Azure DevOps address without a project segment takes the repository name as the project, on both hosts', () => {
+  const key = 'azure:org/repo/repo/12';
+  const long = 'https://dev.azure.com/org/_git/repo/pullrequest/12';
+  const short = 'https://org.visualstudio.com/_git/repo/pullrequest/12';
+  const collection = 'https://org.visualstudio.com/DefaultCollection/_git/repo/pullrequest/12';
+  for (const [url, host] of [[long, 'dev.azure.com'], [short, 'org.visualstudio.com'], [collection, 'org.visualstudio.com']]) {
+    for (const spelling of [url, url + '/', url + '?_a=files', url + '/files#x']) {
+      const found = recognise(spelling);
+      assert.equal(found?.kind, 'azure-devops', spelling);
+      assert.equal(found.canonical, url, spelling);
+      assert.equal(found.host, host, spelling);
+      assert.equal(found.org, 'org', spelling);
+      assert.equal(found.key, key, spelling);
+    }
+  }
+  assert.equal(recognise('https://dev.azure.com/org/repo/_git/repo/pullrequest/12').key, key);
+  assert.equal(recognise('https://dev.azure.com/ORG/_git/REPO/pullrequest/12').key, key);
+  assert.notEqual(recognise('https://dev.azure.com/org/_git/repo/pullrequest/120').key, key);
+  assert.notEqual(recognise('https://dev.azure.com/org/_git/other/pullrequest/12').key, key);
+});
+
+test('a project-less dev.azure.com address that is not a pull request is still refused', () => {
+  assert.equal(recognise('https://dev.azure.com/org/_git/repo')?.kind, 'not-a-pr');
+  assert.equal(recognise('https://dev.azure.com/org/_git/repo/pullrequests')?.kind, 'not-a-pr');
+});

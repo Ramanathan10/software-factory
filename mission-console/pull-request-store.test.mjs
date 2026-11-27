@@ -248,3 +248,17 @@ test('a watched pull request that cannot be read warns with the CLI to check for
     assert.deepEqual(warnings, [expected], url);
   }
 });
+
+test('a project-less Azure DevOps address is accepted as a pull request and matches its project-named spelling', t => {
+  const { record, read, again } = publishing(t);
+  const long = 'https://dev.azure.com/org/_git/repo/pullrequest/12';
+  record('pr-opened', { url: long });
+  assert.equal(read().pr, long);
+  assert.equal(read().phase, 'ci');
+  again();
+  record('pr-opened', { url: 'https://dev.azure.com/org/repo/_git/repo/pullrequest/12/files?_a=files' });
+  assert.equal(read().pr, long);
+  again();
+  record('pr-opened', { url: 'https://org.visualstudio.com/DefaultCollection/_git/repo/pullrequest/12' });
+  assert.equal(read().pr, long);
+});
