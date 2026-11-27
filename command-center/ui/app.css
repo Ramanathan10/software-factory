@@ -385,6 +385,7 @@ dialog.reader { width: min(1100px, 96vw); max-height: 92vh; }
   body.feed-min .layout { grid-template-columns: 1fr; grid-template-rows: 1fr 40px; }
   body.feed-min .feed h2 { flex-direction: row; height: auto; padding: 10px 16px; }
   body.feed-min .feed-title { writing-mode: horizontal-tb; flex: 1; }
+  body.feed-min #feed-filtered { writing-mode: horizontal-tb; }
   .stats { gap: 14px; }
   .stats span { font-size: 11px; }
   #clock { display: none; }

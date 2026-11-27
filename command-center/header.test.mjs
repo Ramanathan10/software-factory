@@ -191,6 +191,10 @@ test('the filtered marker stays out of sight unless the feed is minimized', () =
   assert.ok(!/body\.feed-min [^{}]*\.feed-title[^{}]*,[^{}]*#feed-filtered/.test(baseCss));
 });
 
+test('the narrow layout lays the minimized filtered marker out horizontally', () => {
+  assert.equal(declarations(narrowCss, 'body.feed-min #feed-filtered')['writing-mode'], 'horizontal-tb');
+});
+
 test('the narrow layout does not drop the filter row unless minimized', () => {
   for (const [, selectors, body] of narrowCss.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
     if (/\.feed-filters/.test(selectors) && /display:\s*none/.test(body)) assert.match(selectors, /feed-min/, 'only the minimized feed may hide the row');
