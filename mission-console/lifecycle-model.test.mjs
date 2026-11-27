@@ -30,14 +30,23 @@ test('a story that is not being cleaned up can always still merge', () => {
   assert.deepEqual(stuck.map(([, node]) => story(node)), [], 'these stories can never reach closed');
 });
 
-test('the merge of a registered pull request closes the story from ci or merge', () => {
-  const refused = live.filter(([, { state }]) => state.pr && ['ci', 'merge'].includes(state.phase) && !state.cleanup)
-    .filter(([id, { state }]) => follow(states, id, [...(state.worker ? ['release-worker'] : []), 'merged'])?.phase !== 'closed');
-  assert.deepEqual(refused.map(([, node]) => story(node)), [], 'merged was refused after these events');
+test('the merge of a registered pull request from ci, merge or pr-review holds the story in retro unless the retro finished, and the retro handoff then closes it', () => {
+  const inShip = live.filter(([, { state }]) => state.pr && ['ci', 'merge', 'pr-review'].includes(state.phase) && !state.cleanup);
+  assert.ok(inShip.some(([, { state }]) => !state.retro?.completed), 'the explorer reaches ci, merge or pr-review with no finished retro');
+  const wrong = [];
+  for (const [id, { state }] of inShip) {
+    const release = state.worker ? ['release-worker'] : [];
+    const result = follow(states, id, [...release, 'merged']);
+    if (state.retro?.completed) {
+      if (result?.phase !== 'closed') wrong.push('merged did not close after ' + story(states.get(id)));
+    } else if (result?.phase !== 'retro' || !result.retro?.merged || result.worker || result.blocked) wrong.push('merged did not hold the story in retro after ' + story(states.get(id)));
+    else if (follow(states, id, [...release, 'merged', 'handoff'])?.phase !== 'closed') wrong.push('the retro handoff did not close the story after ' + story(states.get(id)));
+  }
+  assert.deepEqual(wrong, [], 'these merges closed or held the story the wrong way');
 });
 
 const merging = live.filter(([, { state }]) => state.pr && state.phase !== 'closed' && !state.cleanup);
-const closesDirectly = state => ['ci', 'merge', 'pr-review'].includes(state.phase) || state.retro?.completed;
+const closesDirectly = state => state.retro?.completed;
 
 test('merged during other work closes a story whose retro finished and otherwise holds it in retro until the retro handoff closes it', () => {
   const midWork = merging.filter(([, { state }]) => state.phase !== 'retro' && !closesDirectly(state));
@@ -163,8 +172,12 @@ test('PR review is reached from an open PR, a merge closes it, and a retro never
   const entries = live.flatMap(([, node]) => node.edges.filter(edge => states.get(edge.to).state.phase === 'pr-review' && node.state.phase !== 'pr-review')
     .map(edge => node.state.phase + ' ' + edge.type));
   assert.deepEqual([...new Set(entries)].sort(), ['ci pr-review-start', 'merge pr-review-start']);
-  const refused = reviewing.filter(([, { state }]) => !state.cleanup).filter(([id, { state }]) => follow(states, id, [...(state.worker ? ['release-worker'] : []), 'merged'])?.phase !== 'closed');
-  assert.deepEqual(refused.map(([, node]) => story(node)), [], 'a merge in pr-review did not close the story after these events');
+  const refused = reviewing.filter(([, { state }]) => !state.cleanup).filter(([id, { state }]) => {
+    const release = state.worker ? ['release-worker'] : [];
+    const merged = follow(states, id, [...release, 'merged']);
+    return state.retro?.completed ? merged?.phase !== 'closed' : merged?.phase !== 'retro' || follow(states, id, [...release, 'merged', 'handoff'])?.phase !== 'closed';
+  });
+  assert.deepEqual(refused.map(([, node]) => story(node)), [], 'a merge in pr-review did not hold the story in retro, or close it after a finished retro, after these events');
   const retro = reviewing.filter(([, node]) => node.edges.some(edge => edge.type === 'retro-start'));
   assert.deepEqual(retro.map(([, node]) => story(node)), [], 'a retro started from pr-review');
   const handoffs = new Set(reviewing.flatMap(([, node]) => node.edges.filter(edge => edge.type === 'handoff').map(edge => states.get(edge.to).state.phase)));

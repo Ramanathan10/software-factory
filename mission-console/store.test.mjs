@@ -206,6 +206,8 @@ test('approval, red evidence, and PR transitions hold independently across stori
   assert.equal(store.snapshot()[0].phase, 'ci');
   record('pr-ready', { detail: 'Checks and review passed for head abc.' });
   record('merged', { detail: 'GitHub reports that head abc was merged.' });
+  assert.equal(store.snapshot()[0].phase, 'retro', 'a merge before the retro holds the story in the retro');
+  record('handoff', { detail: 'Lessons recorded.' });
   const [first, second] = store.snapshot();
   assert.equal(first.phase, 'closed');
   assert.equal(first.activity, undefined);
@@ -240,6 +242,8 @@ test('a PR-stage scope decision can replan, recover the worktree, and reuse the 
   assert.throws(() => record('pr-opened', { url: url + '0' }), /existing pull request/);
   record('pr-opened', { url });
   record('merged', { detail: 'External merge observed before the next check poll.' });
+  assert.equal(store.snapshot()[0].phase, 'retro', 'a merge before the retro holds the story in the retro');
+  record('handoff', { detail: 'Lessons recorded.' });
   const [story] = store.snapshot();
   assert.equal(story.pr, url);
   assert.equal(story.phase, 'closed');
@@ -410,8 +414,10 @@ test('Hawkeye queues durable CI wakes once per observation, without advancing th
   assert.equal(next.handover('watched').story.phase, 'ci');
   assert.deepEqual(await watchOnce(next, { readPr }), []);
   record('merged', { detail: 'GitHub reports the registered PR merged.' });
-  assert.equal(next.handover('watched').story.phase, 'closed');
-  assert.equal(next.handover('watched').story.blocked, undefined);
+  const held = next.handover('watched').story;
+  assert.equal(held.phase, 'retro', 'a merge seen in ci holds the story in the retro');
+  assert.ok(held.retro.mergedAt);
+  assert.equal(held.blocked, undefined);
   assert.ok(next.pendingFor('other').every(event => event.type !== 'pr-observed'));
 });
 
@@ -799,6 +805,43 @@ test('a closed story refuses questions and answers, and a merge from ci, merge o
   }
 });
 
+test('a merge from ci, merge or pr-review with no retro started holds the story in retro, takes questions and answers there, and closes at the retro handoff', t => {
+  const store = fixture(t)();
+  for (const from of ['ci', 'merge', 'pr-review']) {
+    const story = 'held-from-' + from;
+    const record = toCi(store, story);
+    if (from === 'merge') record('pr-ready', { detail: 'Checks passed.' });
+    if (from === 'pr-review') record('pr-review-start', { detail: 'Comment.' });
+    record('assign-worker', { session: 'worker-' + from });
+    record('blocked', { detail: 'Waiting.' });
+    assert.throws(() => record('merged', { detail: 'Merged in ' + from + '.' }), error => error.status === 409 && /Release the assigned worker/.test(error.message), from);
+    assert.equal(storyOf(store, story).phase, from);
+    record('release-worker', { assignment: storyOf(store, story).worker.id, detail: 'Stopped: the PR merged.' });
+    record('merged', { detail: 'Merged in ' + from + '.' });
+    const held = storyOf(store, story);
+    assert.equal(held.phase, 'retro', 'merged from ' + from + ' holds the story in the retro');
+    assert.ok(Date.parse(held.retro.mergedAt) > 0, from);
+    assert.equal(held.retro.mergeDetail, 'Merged in ' + from + '.', from);
+    assert.equal(held.retro.detail, 'Merged in ' + from + '.', from);
+    assert.ok(held.retro.startedAt, from);
+    assert.equal(held.retro.returnPhase, undefined, from);
+    assert.equal(held.blocked, undefined, from);
+    assert.equal(held.worker, undefined, from);
+    record('assign-worker', { session: 'retro-' + from });
+    record('question', { question: 'keep', prompt: 'Keep the lesson?', options: ['Yes', 'No'], recommended: 0 });
+    record('answer', { question: 'keep', answer: 1 });
+    assert.equal(storyOf(store, story).questions.at(-1).answer, 'No', from);
+    assert.throws(() => record('handoff', { detail: 'Lessons.' }), /Release the assigned worker/, from);
+    record('release-worker', { assignment: storyOf(store, story).worker.id, detail: 'Retro done.' });
+    record('handoff', { detail: 'Lessons.' });
+    const closed = storyOf(store, story);
+    assert.equal(closed.phase, 'closed', from);
+    assert.equal(closed.retro.detail, 'Lessons.', from);
+    assert.ok(closed.retro.completedAt, from);
+    assert.ok(closed.retro.mergedAt, from);
+  }
+});
+
 test('document evidence accepts markdown, json, and text only', t => {
   const store = fixture(t)();
   const directory = mkdtempSync(join(tmpdir(), 'jarvis-doc-'));
@@ -943,6 +986,8 @@ test('PR review starts only while a PR is open, and can go back to build or clos
   const merged = toCi(store, 'merged');
   merged('pr-review-start', { detail: 'One comment.' });
   merged('merged', { detail: 'GitHub reports the PR merged.' });
+  assert.equal(store.handover('merged').story.phase, 'retro', 'a merge in pr-review before the retro holds the story in the retro');
+  merged('handoff', { detail: 'Lessons recorded.' });
   assert.equal(store.handover('merged').story.phase, 'closed');
 });
 
@@ -1505,7 +1550,7 @@ test('a PR observation on an open story with no registered PR is refused', t => 
   assert.throws(() => record('pr-observed', {}), error => error.status === 409 && /no longer being watched/.test(error.message));
 });
 
-test('a merge on a story with no retro closes it and leaves story.retro unset', t => {
+test('a merge on a story with no retro holds it in retro with the merge recorded, in ci, merge and pr-review', t => {
   const store = fixture(t)();
   for (const phase of ['ci', 'merge', 'pr-review']) {
     const id = 'plain-' + phase;
@@ -1517,8 +1562,15 @@ test('a merge on a story with no retro closes it and leaves story.retro unset', 
     assert.equal(store.handover(id).story.phase, phase);
     record('merged', { detail: 'Merged in ' + phase + '.' });
     const story = store.handover(id).story;
-    assert.equal(story.phase, 'closed', phase);
-    assert.equal(story.retro, undefined, phase);
+    assert.equal(story.phase, 'retro', phase);
+    assert.ok(story.retro.mergedAt, phase);
+    assert.ok(story.retro.startedAt, phase);
+    assert.equal(story.retro.mergeDetail, 'Merged in ' + phase + '.', phase);
+    assert.equal(story.retro.detail, 'Merged in ' + phase + '.', phase);
+    assert.equal(story.retro.returnPhase, undefined, phase);
+    assert.equal(story.retro.completedAt, undefined, phase);
+    assert.equal(story.worker, undefined, phase);
+    assert.equal(story.blocked, undefined, phase);
   }
 });
 
