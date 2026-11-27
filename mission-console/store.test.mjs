@@ -206,8 +206,6 @@ test('approval, red evidence, and PR transitions hold independently across stori
   assert.equal(store.snapshot()[0].phase, 'ci');
   record('pr-ready', { detail: 'Checks and review passed for head abc.' });
   record('merged', { detail: 'GitHub reports that head abc was merged.' });
-  assert.equal(store.snapshot()[0].phase, 'retro', 'a merge before any retro holds the story in retro');
-  record('handoff', { detail: 'Lessons logged after the merge.' });
   const [first, second] = store.snapshot();
   assert.equal(first.phase, 'closed');
   assert.equal(first.activity, undefined);
@@ -242,8 +240,6 @@ test('a PR-stage scope decision can replan, recover the worktree, and reuse the 
   assert.throws(() => record('pr-opened', { url: url + '0' }), /existing pull request/);
   record('pr-opened', { url });
   record('merged', { detail: 'External merge observed before the next check poll.' });
-  assert.equal(store.snapshot()[0].phase, 'retro');
-  record('handoff', { detail: 'Lessons logged after the merge.' });
   const [story] = store.snapshot();
   assert.equal(story.pr, url);
   assert.equal(story.phase, 'closed');
@@ -414,8 +410,7 @@ test('Hawkeye queues durable CI wakes once per observation, without advancing th
   assert.equal(next.handover('watched').story.phase, 'ci');
   assert.deepEqual(await watchOnce(next, { readPr }), []);
   record('merged', { detail: 'GitHub reports the registered PR merged.' });
-  assert.equal(next.handover('watched').story.phase, 'retro');
-  assert.equal(next.handover('watched').story.retro.returnPhase, 'closed');
+  assert.equal(next.handover('watched').story.phase, 'closed');
   assert.equal(next.handover('watched').story.blocked, undefined);
   assert.ok(next.pendingFor('other').every(event => event.type !== 'pr-observed'));
 });
@@ -948,9 +943,6 @@ test('PR review starts only while a PR is open, and can go back to build or clos
   const merged = toCi(store, 'merged');
   merged('pr-review-start', { detail: 'One comment.' });
   merged('merged', { detail: 'GitHub reports the PR merged.' });
-  assert.equal(store.handover('merged').story.phase, 'retro');
-  assert.equal(store.handover('merged').story.retro.returnPhase, 'closed');
-  merged('handoff', { detail: 'Lessons logged.' });
   assert.equal(store.handover('merged').story.phase, 'closed');
 });
 
@@ -1180,7 +1172,7 @@ function toDiagram(store, story) {
   return record;
 }
 
-function toRetro(store, story) {
+function toReviewRetro(store, story) {
   const record = toCi(store, story);
   record('retro-start', { detail: 'Review lessons.' });
   return record;
@@ -1202,7 +1194,7 @@ const backInCi = record => {
   record('pr-opened', { url: REVIEW_PR });
 };
 
-test('a merge during diagram work needs the worker released, then holds the story in retro with return phase closed', t => {
+test('a merge during diagram work needs the worker released, then holds the story in retro until the retro handoff', t => {
   const store = fixture(t)();
   const record = toDiagram(store, 'drawn');
   record('assign-worker', { session: 'rocket' });
@@ -1213,7 +1205,7 @@ test('a merge during diagram work needs the worker released, then holds the stor
   record('merged', { detail: 'GitHub reports the PR merged.' });
   const story = store.handover('drawn').story;
   assert.equal(story.phase, 'retro');
-  assert.equal(story.retro.returnPhase, 'closed');
+  assert.ok(story.retro.mergedAt);
   assert.equal(story.retro.detail, 'GitHub reports the PR merged.');
   assert.ok(story.retro.startedAt, 'the retro records when it started');
   assert.equal(story.pr, REVIEW_PR);
@@ -1230,24 +1222,6 @@ test('a merge during diagram work needs the worker released, then holds the stor
   assert.ok(closed.retro.completedAt);
   assert.equal(closed.retro.detail, 'Lessons for drawn.');
   assert.throws(() => record('question', { question: 'late', prompt: 'Late?', options: ['Yes', 'No'], recommended: 0 }), /closed/);
-});
-
-test('a merge in ci or merge starts the retro instead of closing the story, and the retro cannot be started again', t => {
-  const store = fixture(t)();
-  const inCi = toCi(store, 'at-ci');
-  inCi('merged', { detail: 'Merged from ci.' });
-  assert.deepEqual([store.handover('at-ci').story.phase, store.handover('at-ci').story.retro?.returnPhase], ['retro', 'closed']);
-  assert.throws(() => inCi('retro-start', { detail: 'Again.' }), error => error.status === 409);
-  inCi('question', { question: 'q', prompt: 'Which lesson?', options: ['One', 'Two'], recommended: 0 });
-  inCi('answer', { question: 'q', answer: 1 });
-  lessons(inCi, 'at-ci');
-  assert.equal(store.handover('at-ci').story.phase, 'closed');
-  const atMerge = toCi(store, 'at-merge');
-  atMerge('pr-ready', { detail: 'Checks and review passed.' });
-  atMerge('merged', { detail: 'Merged from merge.' });
-  assert.deepEqual([store.handover('at-merge').story.phase, store.handover('at-merge').story.retro?.returnPhase], ['retro', 'closed']);
-  lessons(atMerge, 'at-merge');
-  assert.equal(store.handover('at-merge').story.phase, 'closed');
 });
 
 test('a merge in any open phase with a registered PR holds the story in retro', t => {
@@ -1275,7 +1249,7 @@ test('a merge in any open phase with a registered PR holds the story in retro', 
     assert.equal(store.handover(id).story.pr, REVIEW_PR);
     record('merged', { detail: 'Merged in ' + phase + '.' });
     const story = store.handover(id).story;
-    assert.deepEqual([story.phase, story.retro?.returnPhase], ['retro', 'closed'], 'merged in ' + phase);
+    assert.deepEqual([story.phase, Boolean(story.retro?.mergedAt)], ['retro', true], 'merged in ' + phase);
   }
 });
 
@@ -1314,29 +1288,12 @@ test('a merge is refused in a closed story and in a story with no registered PR'
   assert.throws(() => done('merged', { detail: 'Merged twice.' }), error => error.status === 409);
 });
 
-test('a merge in the retro is accepted with the retro worker assigned, which keeps its assignment and the owner\'s answers', t => {
-  const store = fixture(t)();
-  const record = toRetro(store, 'held');
-  record('assign-worker', { session: 'lessons' });
-  const worker = store.handover('held').story.worker;
-  record('question', { question: 'keep', prompt: 'Keep the lesson?', options: ['Yes', 'No'], recommended: 0 });
-  record('merged', { detail: 'GitHub reports the PR merged during the retro.' });
-  const story = store.handover('held').story;
-  assert.deepEqual([story.phase, story.retro.returnPhase, story.worker?.id], ['retro', 'closed', worker.id]);
-  record('answer', { question: 'keep', answer: 0 });
-  assert.equal(store.handover('held').story.questions.at(-1).answer, 'Yes');
-  assert.throws(() => lessons(record, 'held'), /Release the assigned worker/);
-  record('release-worker', { assignment: worker.id, detail: 'Lessons written.' });
-  lessons(record, 'held');
-  assert.equal(store.handover('held').story.phase, 'closed');
-});
-
 test('a merge or close seen in diagram or retro stores no review and marks no feedback seen, so the feedback still wakes in ci', t => {
   const store = fixture(t)();
   for (const status of ['merged', 'closed']) {
     for (const phase of ['diagram', 'retro']) {
       const id = 'unreviewed-' + phase + '-' + status;
-      const record = phase === 'diagram' ? toDiagram(store, id) : toRetro(store, id);
+      const record = phase === 'diagram' ? toDiagram(store, id) : toReviewRetro(store, id);
       assert.equal(record('pr-observed', seenPr(status, { review: review(['IC_1', 'PRRT_2:PRRC_2']) })).wake, true);
       const story = store.handover(id).story;
       assert.equal(story.prObservation.status, status);
@@ -1346,39 +1303,10 @@ test('a merge or close seen in diagram or retro stores no review and marks no fe
   }
 });
 
-test('a merge during a running retro keeps the retro start and scope and only records the merge', t => {
-  const store = fixture(t)();
-  for (const [id, from] of [['retro-from-ci', 'ci'], ['retro-from-merge', 'merge']]) {
-    const record = toCi(store, id);
-    if (from === 'merge') record('pr-ready', { detail: 'Checks and review are clean.' });
-    record('retro-start', { detail: 'Retro scope for ' + id + '.' });
-    const before = store.handover(id).story.retro;
-    assert.equal(before.returnPhase, from);
-    record('merged', { detail: 'GitHub reports the PR merged.' });
-    const story = store.handover(id).story;
-    assert.equal(story.phase, 'retro');
-    assert.deepEqual(story.retro, { ...before, mergedAt: story.retro.mergedAt, mergeDetail: 'GitHub reports the PR merged.' });
-    assert.ok(story.retro.mergedAt);
-    assert.equal(story.retro.detail, 'Retro scope for ' + id + '.');
-  }
-});
-
-test('the retro handoff returns an open PR to ci and a merged story to closed', t => {
-  const store = fixture(t)();
-  const open = toRetro(store, 'open-pr');
-  lessons(open, 'open-pr');
-  assert.deepEqual([store.handover('open-pr').story.phase, store.handover('open-pr').story.retro.returnPhase], ['ci', 'ci']);
-  const merged = toRetro(store, 'merged-pr');
-  merged('merged', { detail: 'Merged during the retro.' });
-  lessons(merged, 'merged-pr');
-  const story = store.handover('merged-pr').story;
-  assert.deepEqual([story.phase, story.retro.detail], ['closed', 'Lessons for merged-pr.']);
-});
-
 test('every open phase with a registered PR is watched, and closed and cleanup stories are not', t => {
   const store = fixture(t)();
   toDiagram(store, 'w-diagram');
-  toRetro(store, 'w-retro');
+  toReviewRetro(store, 'w-retro');
   toBuilding(store, 'w-building');
   toCi(store, 'w-ci');
   start(store, 'w-bare');
@@ -1394,7 +1322,7 @@ test('every open phase with a registered PR is watched, and closed and cleanup s
 
 test('a merged or closed PR seen in any open phase is recorded and wakes Jarvis, with or without a worker assigned', t => {
   const store = fixture(t)();
-  const phases = { diagram: toDiagram, retro: toRetro, building: toBuilding };
+  const phases = { diagram: toDiagram, retro: toReviewRetro, building: toBuilding };
   for (const [phase, make] of Object.entries(phases)) {
     for (const status of ['merged', 'closed']) {
       for (const staffed of [false, true]) {
@@ -1450,7 +1378,7 @@ test('review feedback and check results seen outside ci, merge and pr-review lea
 
 test('feedback seen in the retro stays unmarked and wakes after the retro returns to ci', t => {
   const store = fixture(t)();
-  const record = toRetro(store, 'retro-quiet');
+  const record = toReviewRetro(store, 'retro-quiet');
   const result = record('pr-observed', observed(['IC_1']));
   assert.ok(!result.wake);
   const story = store.handover('retro-quiet').story;
@@ -1494,38 +1422,6 @@ test('Hawkeye polls a story in diagram, wakes Jarvis for a merge, and stops poll
   assert.equal(polls, 2, 'a story observed merged is not polled again');
 });
 
-test('a retro of a merged story refuses replan and keeps its retro, while an unmerged retro still replans', t => {
-  const store = fixture(t)();
-  const merged = toRetro(store, 'replan-merged');
-  merged('merged', { detail: 'GitHub reports the PR merged.' });
-  const before = store.handover('replan-merged').story;
-  const events = store.history('replan-merged').length;
-  assert.throws(() => merged('replan', { detail: 'A scope decision.' }), error => error.status === 409 && /The pull request has merged; finish the retro\./.test(error.message));
-  const after = store.handover('replan-merged').story;
-  assert.equal(after.phase, 'retro');
-  assert.deepEqual(after.retro, before.retro);
-  assert.equal(after.revision, before.revision);
-  assert.equal(store.history('replan-merged').length, events);
-  const open = toRetro(store, 'replan-open');
-  assert.equal(store.handover('replan-open').story.retro.returnPhase, 'ci');
-  open('replan', { detail: 'A scope decision.' });
-  assert.equal(store.handover('replan-open').story.phase, 'planning');
-  assert.equal(store.handover('replan-open').story.retro, undefined);
-});
-
-test('a second merge in a merged retro is refused and changes nothing', t => {
-  const store = fixture(t)();
-  const record = toRetro(store, 'twice');
-  record('merged', { detail: 'GitHub reports the PR merged.' });
-  const before = store.handover('twice').story;
-  const events = store.history('twice').length;
-  assert.throws(() => record('merged', { detail: 'Merged again.' }), error => error.status === 409 && /The merge is already recorded\./.test(error.message));
-  const after = store.handover('twice').story;
-  assert.equal(after.revision, before.revision);
-  assert.equal(store.history('twice').length, events);
-  assert.deepEqual(after.retro, before.retro);
-});
-
 test('a repeated closed or merged observation outside the watched phases records nothing and keeps the stored review', t => {
   const store = fixture(t)();
   for (const status of ['closed', 'merged']) {
@@ -1564,9 +1460,9 @@ test('a repeated closed or merged observation outside the watched phases records
 
 test('a merge that holds the story in retro stores the merge time on the story and keeps it through the close', t => {
   const store = fixture(t)();
-  const record = toCi(store, 'stamped');
+  const record = toBuilding(store, 'stamped');
   assert.equal(store.handover('stamped').story.retro?.mergedAt, undefined);
-  record('merged', { detail: 'Merged from ci.' });
+  record('merged', { detail: 'Merged in building.' });
   const mergedEvent = store.history('stamped').find(event => event.type === 'merged');
   const held = store.handover('stamped').story;
   assert.equal(held.phase, 'retro');
