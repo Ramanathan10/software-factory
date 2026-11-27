@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import { check, current, invariants } from './delivery-model.mjs';
 
 const version = (filterSent, handReserves, startRegistersTurn, waitsForAdoptedTurns, recordsAtSpawn = true, rechecksAssignment = true) => ({ filterSent, handReserves, startRegistersTurn, waitsForAdoptedTurns, recordsAtSpawn, rechecksAssignment, startupDelivers: true, rechecksPending: true });
-const skill = readFileSync(new URL('../.claude/skills/verify-decision-delivery/SKILL.md', import.meta.url), 'utf8');
+const skill = readFileSync(new URL('../.agents/skills/verify-decision-delivery/SKILL.md', import.meta.url), 'utf8');
 
 test('the code as it is: one turn per session, each decision handed once, no delivery stuck', () => {
   const result = check(current);

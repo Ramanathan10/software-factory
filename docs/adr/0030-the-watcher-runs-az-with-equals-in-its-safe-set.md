@@ -1,4 +1,4 @@
-# 0029. The watcher runs `az` with `=` in its safe set
+# 0030. The watcher runs `az` with `=` in its safe set
 
 Status: Accepted
 Date: 2026-11-27

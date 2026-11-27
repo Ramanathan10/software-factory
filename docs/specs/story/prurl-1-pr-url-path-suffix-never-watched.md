@@ -118,7 +118,7 @@ Owner's direction while planning: Hawkeye watches GitHub, GitHub Enterprise and 
 
 ### ADR
 
-`docs/adr/00NN-the-watcher-runs-az-with-equals-in-its-safe-set.md` takes the next free number when the PR is published (0029 today), and the ADR index adds a row for it. It records:
+`docs/adr/00NN-the-watcher-runs-az-with-equals-in-its-safe-set.md` takes the next free number when the PR is published (0030 today), and the ADR index adds a row for it. It records:
 - why the watcher runs `az` through a shell on Windows (ADR 0004 and 0025)
 - why `=` joins the set: `--route-parameters` needs it, and `az.cmd` passes `%*` through with `=` intact, which the stand-in test proves
 - that every value comes from the GUIDs and digits in Azure DevOps's own answer, or from a validated organization

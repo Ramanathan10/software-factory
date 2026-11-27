@@ -50,15 +50,15 @@ Parallel stories on one machine must not compete for the shared resources in the
 
 ### Scout
 
-Before asking the owner anything, investigate the repository read-only and write a context pack: the relevant files and entry points, the conventions and rules that apply (agent instruction files written for any harness, not only the one running this session, such as `AGENTS.md`, `CLAUDE.md`, `.cursor/rules`, and `.github/copilot-instructions.md`, lint configuration, naming, and every entry in the profile's team rules: open each web address, read each file, and take each written instruction as given), the focused and full test commands, similar earlier changes, and known risks. The context pack opens the draft plan, goes into the spec, and is given to every later subagent. Correct it when a later phase finds it wrong. Under the Command Center, the scout's handoff carries the context pack summary and ends its turn; the planner opens the draft plan.
+Before asking the owner anything, investigate the repository read-only and write a context pack: the relevant files and entry points, the conventions and rules that apply (agent instruction files written for any harness, not only the one running this session, such as `AGENTS.md`, `CLAUDE.md`, `.cursor/rules`, and `.github/copilot-instructions.md`, lint configuration, naming, and every entry in the profile's team rules: open each web address, read each file, and take each written instruction as given), the focused and full test commands, similar earlier changes, and known risks. Write the context pack in the Context pack shape of `references/plan-template.md`. The context pack opens the draft plan, is appended to the committed spec, and is given to every later subagent; the approved plan leaves it out. Correct it when a later phase finds it wrong. Under the Command Center, the scout's handoff carries the context pack summary and ends its turn; the planner opens the draft plan.
 
 ### Feature lane
 
-Read and follow the local `grill-me` skill for the interview. Interview until the frontier is empty.
+Read and follow the local `grill-me` skill for the interview. Interview until the frontier is empty. Write the plan with the Feature plan in `references/plan-template.md`.
 
 ### Bug lane
 
-Use this lane when the owner reports broken existing behavior. Reproduce the bug before asking anything: find the smallest steps, input, or command that shows it, and the root cause in the code. Ask the owner only for decisions the code cannot answer, such as the intended behavior or how far the fix should reach, using Grill Me's frontier format. A bug that cannot be reproduced is reported with what was tried; do not plan a fix for a guess.
+Use this lane when the owner reports broken existing behavior. Reproduce the bug before asking anything: find the smallest steps, input, or command that shows it, and the root cause in the code. Ask the owner only for decisions the code cannot answer, such as the intended behavior or how far the fix should reach, using Grill Me's frontier format. A bug that cannot be reproduced is reported with what was tried; do not plan a fix for a guess. Write the plan with the Bug plan in `references/plan-template.md`.
 
 ### Settle the run decisions
 
@@ -75,7 +75,7 @@ Write observable acceptance criteria and choose the lowest useful test level (un
 
 Stop and wait for the owner to approve the plan. Do not implement, edit the target repository, or open a pull request before approval.
 
-After approval, create the story worktree and branch. The spec holds the context pack, the problem (or bug reproduction and root cause), acceptance criteria, test level, out-of-scope items, settled decisions, and the run decisions above. When the profile gives a spec location, commit the spec there as `<branch-name>.md`, as the branch's first commit. When the spec location is `null`, keep the spec in the story's working notes outside the repository and put it in the pull request description. Later phases read the spec as the source of truth. When a later phase returns to phase 1, update the spec before continuing.
+After approval, create the story worktree and branch. The spec is the approved plan, in its template's shape, with the context pack appended as its last section, as `references/plan-template.md` says. When the profile gives a spec location, commit the spec there as `<branch-name>.md`, as the branch's first commit. When the spec location is `null`, keep the spec in the story's working notes outside the repository and put it in the pull request description. Later phases read the spec as the source of truth. When a later phase returns to phase 1, update the spec before continuing.
 
 ### Plan critique
 
@@ -85,7 +85,9 @@ Compare findings only after all reviews finish. Group agreement, single-reviewer
 
 ## 2. Test-first handoff
 
-Assign a separate subagent to write only the tests and necessary fixtures for the approved behavior. Give it the spec, relevant production and test code, repository conventions, and a strict boundary: no production implementation, PR, deployment, or unrelated edits. For a bug, the test reproduces the reported failure. Do not start implementation while the test author is editing a shared workspace.
+When the profile gives a spec location and the spec is not committed yet, commit the approved plan with the story's registered context pack appended as `## Context pack`, as `references/plan-template.md` says. When the location is `null`, append the pack to the spec in the working notes instead.
+
+Assign a separate subagent to write only the tests and necessary fixtures for the approved behavior. Give it the spec, relevant production and test code, repository conventions, and a strict boundary: no production implementation, PR, deployment, or unrelated edits. For a bug, the test reproduces the reported failure. Do not start implementation while the test author is editing a shared workspace. Wait for its result in the same turn: never end a turn while a subagent you started is still running, because the harness may stop it when the turn ends. This holds for every subagent a phase starts, such as a review seat.
 
 Run the focused tests against the unchanged implementation. Record the command and a failure that demonstrates the missing behavior, not an unrelated environment or baseline failure. If unit tests cannot express the behavior without coupling to implementation, use the lowest useful contract, integration, or UI test. Fix an invalid test before proceeding; do not manufacture red by breaking working behavior. If delegation is unavailable, tell the owner and get their direction before substituting same-agent test authoring.
 
@@ -97,7 +99,7 @@ If the ladder's first step says an approved part should not exist, return to pha
 
 Turn the valid red test green without weakening or deleting its assertion. If the test encodes the wrong contract, return to the test author or phase 1 rather than silently changing it. Run the focused tests, then the relevant broader tests. Before handing off, check the change against each acceptance criterion in the spec. A criterion it does not meet is unfinished work, never a limitation to write into an ADR, a skill or the handoff: fix it, or return to phase 1 to change the criterion.
 
-A story returned from publishing with a merge conflict starts by merging the remote default branch and resolving it.
+A story returned from publishing with a merge conflict starts by merging the remote default branch and resolving it so every settled decision in the spec still holds. When the default branch decides a settled case differently and the two cannot both hold, return to phase 1 for that decision; do not rewrite the spec to match. A rule cited from another story counts only if that story decided it, not if it put the case out of scope.
 
 ## 4. Required gates and mutation testing
 
@@ -148,9 +150,9 @@ Run this when Jarvis starts the `publishing` phase. Hawkeye's worker runs it. A 
 1. If a diagram is due, because the profile's `architectureDiagram` is `always` or the spec asks for one, and `story.diagram.completedAt` is not set: record `release-worker`, then `diagram-start` with the spec's scope, and end the turn. Jarvis staffs Rocket; Rocket's `handoff` returns the story to `publishing` and a new publisher starts. A diagram is drawn once per story.
 2. Find an existing pull request: `story.pr`, then `gh pr list --head <branch> --state open`, or on Azure DevOps `az repos pr list --source-branch <branch> --status active`.
 3. Run `git fetch origin` and `git merge origin/<default branch>`; never rebase. On a conflict run `git merge --abort`, record `release-worker`, then `return-to-build` naming the conflicting files and saying "merge origin/main and resolve these". End the turn.
-4. Rerun the profile's required gates. When one fails, rerun it on unchanged `origin/main`. If it passes there, the failure is the story's: record `release-worker`, then `return-to-build` with the output. If it fails there too, record a `question` with both results, then `blocked`; the worker stays assigned so the owner's answer reaches it. The store refuses a `question` once the story is blocked, so the order is fixed. After the owner's answer, record `resume`, then continue from step 4 or as the answer says; the store refuses `pr-opened` and `return-to-build` while the story is blocked.
+4. Rerun the profile's required gates. When one fails, rerun it on unchanged `origin/main`. If it passes there, the failure is the story's: record `release-worker`, then `return-to-build` with the output, and end the turn. If it fails there too, record a `question` with both results, then `blocked`, and end the turn; the worker stays assigned so the owner's answer reaches it. The store refuses a `question` once the story is blocked, so the order is fixed. After the owner's answer, record `resume`, then continue from step 4 or as the answer says; the store refuses `pr-opened` and `return-to-build` while the story is blocked.
 5. Run `git push -u origin <branch>`; never force.
-6. With no pull request, run `gh pr create` with a body from the spec, the gate results, the review verdict, the diagram, an Evidence section, and `Closes #<n>` when the work item is an issue. With one, create nothing and leave its description unchanged. On Azure DevOps, write the body to a file and run `az repos pr create --source-branch <branch> --target-branch <default branch> --title <title> --description @<file>`, with `--work-items <id>` when the work item is an Azure DevOps work item. When `az` or its `azure-devops` extension is missing or not signed in, record a `question` naming `az extension add --name azure-devops` and `az login`, then end the turn.
+6. With no pull request, run `gh pr create` with a body from the spec, the gate results, the review verdict, the diagram, an Evidence section, and `Closes #<n>` when the work item is an issue. With one, create nothing. When the story returned to build after the description was written, update it with `gh pr edit --body` (on Azure DevOps `az repos pr update --id <id> --description @<file>`) so the spec summary, gate results and review verdict match the current head; otherwise leave it unchanged. On Azure DevOps, write the body to a file and run `az repos pr create --source-branch <branch> --target-branch <default branch> --title <title> --description @<file>`, with `--work-items <id>` when the work item is an Azure DevOps work item. When `az` or its `azure-devops` extension is missing or not signed in, record a `question` naming `az extension add --name azure-devops` and `az login`, then end the turn.
 7. Record `release-worker`, then `pr-opened` with the pull request's web address, which is the existing one when there was one. On Azure DevOps that is `repository.webUrl` + `/pullrequest/` + `pullRequestId` from the `az repos pr create` or `az repos pr list` answer, never its `url` field, which is the REST address the store refuses. End the turn.
 
 ### PR review
@@ -189,4 +191,5 @@ Report the lessons recorded and where, or that there were none.
 - Before-and-after and the architecture diagram run only when the spec says so, and both finish before the pull request opens.
 - The owner accepts the before-and-after comparison before the pull request opens, and its screenshots and recordings are never committed.
 - The pull request is reported ready only after its required pipelines succeed on the current head.
+- A worker stops every background command or watcher it started before it records `release-worker`; one still running keeps its turn alive and holds the next worker's start.
 - The run ends with a retro report.
