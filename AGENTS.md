@@ -20,14 +20,22 @@ Follow this when the person asks to install, set up, or try the factory, or says
 - The repository is meant to be shared, so keep it free of personal skills and of real work details such as organization, people, or repository names.
 - Skills say "the owner" for the person running the session; never name a person in a skill.
 - Run `node --test` before committing. Keep the application free of package dependencies unless a story adds them deliberately.
-- A change to how decisions reach a worker or how worker turns start is checked by the delivery model; `.claude/skills/verify-decision-delivery/SKILL.md` says how.
+- A change to how decisions reach a worker or how worker turns start is checked by the delivery model; `.agents/skills/verify-decision-delivery/SKILL.md` says how.
 - A change to how workers start, how decisions reach them, or how Jarvis is woken is also tried end to end: `node e2e/run.mjs` runs each scenario under `e2e/scenarios/` against a throwaway Command Center with scripted workers and a scripted Jarvis. It uses no model, and the Tests workflow runs it on every pull request.
 - A bug found in a live story gets a scenario there that fails without the fix; `e2e/README.md` says how to write one. A bug that only a model's choices show is fixed in the skill that misled it; it gets no scenario.
 - Keep the story store and Command Center harness-neutral. Anything specific to one agent harness belongs under `adapters/`. Every harness is one row in `adapters/harnesses.mjs`, installed by `install.mjs` and described once in the factory runbook; only code a harness must load itself goes in `adapters/<harness>/`.
 - When the `ai-sdlc` phases change, update the store's transitions and the Jarvis phase table in the same change. A phase's dashboard lanes are part of its entry in `mission-console/roles.mjs`.
-- A change to `mission-console/store.mjs`, the phases in `roles.mjs`, or the Jarvis phase table is checked by the lifecycle model; `.claude/skills/verify-story-lifecycle/SKILL.md` says how to read its failures.
-- A change to how a phase ends is traced through the story worker, chat Jarvis and background Jarvis on each harness, and every file that restates it changes together: `skills/ai-sdlc/SKILL.md`, `skills/jarvis/SKILL.md`, `skills/jarvis/RUNBOOK.md`, `skills/jarvis/BACKGROUND.md`, `mission-console/README.md`, `e2e/README.md` and `.claude/skills/verify-story-lifecycle/SKILL.md`.
+- A change to `mission-console/store.mjs`, the phases in `roles.mjs`, or the Jarvis phase table is checked by the lifecycle model; `.agents/skills/verify-story-lifecycle/SKILL.md` says how to read its failures.
+- A change to how a phase ends is traced through the story worker, chat Jarvis and background Jarvis on each harness, and every file that restates it changes together: `skills/ai-sdlc/SKILL.md`, `skills/jarvis/SKILL.md`, `skills/jarvis/RUNBOOK.md`, `skills/jarvis/BACKGROUND.md`, `mission-console/README.md`, `e2e/README.md` and `.agents/skills/verify-story-lifecycle/SKILL.md`.
 - Keep imported third-party skills self-contained. Vet an exact upstream revision before importing or updating one, and preserve its source and license.
 - Profiles and story databases hold names and settings only. Never commit a profile or a database.
 - `private-details.test.mjs` checks both of the sharing rules above: no owner's name, nickname or `PRIVATE_WORDS` entry in a tracked file, and no profile or database.
-- Source files carry no comments: `comment-ratchet.mjs` holds each file to its count in `comment-ratchet.json`, and `node --test` fails if one goes up. Put a reason the code cannot show in an ADR under `docs/adr/`, and sweep the remaining comments with `/delete-comment`.
+- Source files carry no comments: `comment-ratchet.mjs` holds each file to its count in `comment-ratchet.json`, and `node --test` fails if one goes up. Put a reason the code cannot show in an ADR under `docs/adr/`, and sweep the remaining comments with the delete-comment skill (`.agents/skills/delete-comment/SKILL.md`).
+
+## Maintainer skills
+
+The skills for working on the factory itself live once each in `.agents/skills/`, where Codex and GitHub Copilot discover them. A harness that does not, such as Claude Code, reads the named file when the task matches. `install.mjs` never installs them; they name files that exist only in this repository (ADR 0029).
+
+- `.agents/skills/delete-comment/SKILL.md`: sweep code comments out of the repository, or when the comment ratchet fails.
+- `.agents/skills/verify-decision-delivery/SKILL.md`: check a change to how decisions reach a worker or how worker turns start.
+- `.agents/skills/verify-story-lifecycle/SKILL.md`: check a change to the story store's lifecycle, the phases in `roles.mjs`, or the Jarvis phase table.
