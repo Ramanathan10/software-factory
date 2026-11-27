@@ -101,9 +101,11 @@ function reviewOf(review) {
 }
 
 function observePr(story, input, now) {
-  requireThat(['ci', 'merge', 'pr-review'].includes(story.phase) && story.pr && input.url === story.pr,
+  requireThat(story.phase !== 'closed' && story.pr && input.url === story.pr,
     'The registered PR is no longer being watched.', 409);
+  const watching = ['ci', 'merge', 'pr-review'].includes(story.phase);
   const observation = input.observation;
+  if (!watching && !['merged', 'closed'].includes(observation?.status)) return null;
   requireThat(validHead(observation?.head), 'Supply the observed PR head.');
   const { head, status, failedCount, failures } = observation;
   requireThat(['failed', 'passed', 'running', 'no-checks', 'merged', 'closed'].includes(status) &&
@@ -111,7 +113,7 @@ function observePr(story, input, now) {
     failures.length <= Math.min(10, failedCount) && failures.every(name => typeof name === 'string' && name.length <= 160),
   'Supply valid check evidence.');
   const current = { head, status, failedCount: status === 'failed' ? failedCount : 0, failures: status === 'failed' ? failures : [] };
-  const review = reviewOf(observation.review);
+  const review = watching ? reviewOf(observation.review) : undefined;
   const previous = story.prObservation;
   const checksSame = previous && Object.keys(current).every(key => JSON.stringify(current[key]) === JSON.stringify(previous[key]));
   const reviewing = story.phase === 'pr-review';
@@ -313,7 +315,7 @@ function apply(story, input, now) {
         return outcome;
       }
       if (story.phase === 'retro') {
-        requireThat(['ci', 'merge'].includes(story.retro?.returnPhase), 'Retro return phase is unavailable.', 409);
+        requireThat(['ci', 'merge', 'closed'].includes(story.retro?.returnPhase), 'Retro return phase is unavailable.', 409);
         const lessons = string(input.detail, 'retro lessons');
         story.phase = story.retro.returnPhase;
         story.retro.completedAt = now;
@@ -418,8 +420,13 @@ function apply(story, input, now) {
       story.phase = 'ci';
       return string(input.detail, 'new head or check regression');
     case 'merged':
-      requireThat(['ci', 'merge', 'retro', 'pr-review'].includes(story.phase), 'There is no open PR to reconcile in this phase.', 409);
-      story.phase = 'closed';
+      requireThat(story.pr && story.phase !== 'closed', 'There is no open PR to reconcile in this phase.', 409);
+      if (story.retro?.completedAt) story.phase = 'closed';
+      else {
+        const detail = string(input.detail, 'merge evidence');
+        story.retro = { startedAt: now, detail, ...story.retro, returnPhase: 'closed' };
+        story.phase = 'retro';
+      }
       delete story.blocked;
       return string(input.detail, 'merge evidence');
     default:
@@ -518,7 +525,7 @@ export function openStore(path) {
     },
     watchTargets() {
       return all.all().map(({ state }) => JSON.parse(state)).filter(story =>
-        !story.cleanup && story.pr && ['ci', 'merge', 'pr-review'].includes(story.phase));
+        !story.cleanup && story.pr && story.phase !== 'closed');
     },
     handover(id) {
       identifier(id, 'story ID');

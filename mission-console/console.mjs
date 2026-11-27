@@ -68,6 +68,7 @@ function status(story) {
     return { owner: 'watcher', label: 'Merge observed · awaiting story closure' };
   }
   if (story.phase === 'closed') return { owner: 'coordinator', label: 'Merged' };
+  if (story.phase === 'retro' && story.retro?.returnPhase === 'closed') return { owner: 'coordinator', label: 'Merged · retro in progress' };
   if (story.phase === 'planning' && story.questions.some(question => !question.answer)) {
     return { owner: 'planner', label: 'Answer Captain America', decision: true };
   }

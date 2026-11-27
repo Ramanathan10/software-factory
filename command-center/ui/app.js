@@ -157,6 +157,8 @@ const idleReasons = {
   diagram: 'waiting for the diagram', publishing: 'no publisher session active',
   ci: 'waiting on pipeline checks', merge: 'waiting on reviewer approval and merge', 'pr-review': 'waiting for the PR review worker',
 };
+const mergedInRetro = story => story.phase === 'retro' && story.retro?.returnPhase === 'closed';
+const phaseLabel = (story, fallback = story.phase) => mergedInRetro(story) ? 'Merged · retro in progress' : meta.phases[story.phase]?.[1] ?? fallback;
 const idleReason = story => idleReasons[story.phase] ?? 'no active worker';
 function isBusy(story) {
   if (story.phase === 'closed' || story.blocked || waitingOnYou(story)) return false;
@@ -271,7 +273,7 @@ function storyCard(story) {
   const last = story.events?.[0];
   const held = jarvisHolds(story);
   const idle = !busy && !waiting && !story.blocked && !held;
-  const label = alias(role) + ' · ' + (meta.phases[story.phase]?.[1] ?? story.phase);
+  const label = alias(role) + ' · ' + (phaseLabel(story));
   const placement = story.id + ':' + story.phase;
   const arriving = !seenCards.has(placement);
   seenCards.add(placement);
@@ -286,6 +288,7 @@ function storyCard(story) {
       idle ? el('span', { class: 'avatar sm', title: label, 'aria-label': label, role: 'img' }, '··') : avatar(role, { small: true, moving: busy, label })),
     el('h3', {}, story.title),
     last && (waiting || story.blocked) && el('p', { class: 'last' }, last.detail),
+    mergedInRetro(story) && el('p', { class: 'last' }, phaseLabel(story)),
     reviewState(story),
     el('div', { class: 'owner' },
       (!busy || held) && el('span', { class: 'who' }, story.blocked ? 'Blocked' : waiting ? 'Waiting on you' : jarvisStatus(story) ?? 'Idle · ' + idleReason(story)),
@@ -367,11 +370,11 @@ function renderTrack(items) {
             }, elapsed(story.createdAt))),
           el('h3', {}, story.title),
           el('div', { class: 'owner' },
-            el('span', {}, (meta.phases[story.phase]?.[1] ?? columns[at]?.name ?? story.phase) + (story.blocked ? ' · blocked' : waiting ? ' · waiting on you' : idle || held ? ' · ' + (jarvisStatus(story) ?? 'idle, ' + idleReason(story)) : '')),
+            el('span', {}, (phaseLabel(story, columns[at]?.name)) + (story.blocked ? ' · blocked' : waiting ? ' · waiting on you' : idle || held ? ' · ' + (jarvisStatus(story) ?? 'idle, ' + idleReason(story)) : '')),
             busy && el('span', { class: 'dots' }, el('i'), el('i'), el('i')))),
         el('div', { class: 'track-run' },
           el('ol', { class: 'steps' }, boardColumns().map((column, index) =>
-            el('li', { class: index < at ? 'past' : index === at ? 'now' : '', title: column.name }, el('span', {}, index === at ? meta.phases[story.phase]?.[1] ?? column.name : column.name)))),
+            el('li', { class: index < at ? 'past' : index === at ? 'now' : '', title: column.name }, el('span', {}, index === at ? phaseLabel(story, column.name) : column.name)))),
           last && el('p', { class: 'last' }, last.detail)));
     }));
 }
@@ -748,7 +751,7 @@ async function openDetail(id, history) {
   detailFor = id;
   const row = (label, value) => value ? el('div', { class: 'row' }, el('dt', {}, label), el('dd', {}, value)) : null;
   $('detail-body').replaceChildren(...[
-    el('small', {}, story.id + ' · ' + (meta.phases[story.phase]?.[1] ?? story.phase)),
+    el('small', {}, story.id + ' · ' + (phaseLabel(story))),
     el('h2', {}, story.title),
     el('p', {}, story.brief),
     el('dl', {},
@@ -769,7 +772,7 @@ async function openDetail(id, history) {
     el('section', {}, el('h3', {}, 'Timeline'), el('ol', { class: 'timeline' }, (history ?? story.events ?? []).map(event =>
       el('li', {}, el('time', {}, new Date(event.at).toLocaleString()), ' ', el('b', {}, event.type), ' ', event.detail ?? '')))),
   ].filter(Boolean));
-  showWindow($('detail'), story.id + ' · ' + (meta.phases[story.phase]?.[1] ?? story.phase), () => openDetail(id));
+  showWindow($('detail'), story.id + ' · ' + (phaseLabel(story)), () => openDetail(id));
   if (story.phase !== 'closed' || history) return;
   const response = await fetch('/api/history?story=' + encodeURIComponent(id));
   if (response.ok && detailFor === id) openDetail(id, await response.json());
