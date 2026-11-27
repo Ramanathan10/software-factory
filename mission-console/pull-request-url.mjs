@@ -1,6 +1,6 @@
 const githubPath = /^\/([\w.-]+)\/([\w.-]+)\/pull\/([1-9]\d*)(?:\/.*)?$/;
-const devPath = /^(\/([^/]+)(?:\/([^/]+))?\/_git\/([^/]+)\/pullrequest\/([1-9]\d*))(?:\/.*)?$/;
-const legacyPath = /^((?:\/DefaultCollection)?(?:\/([^/]+))?\/_git\/([^/]+)\/pullrequest\/([1-9]\d*))(?:\/.*)?$/;
+const devPath = /^(\/([^/]+)(?:\/([^/]+))?\/_git\/([^/]+)\/pullrequest\/([1-9]\d*))(?:\/.*)?$/i;
+const legacyPath = /^((?:\/DefaultCollection)?(?:\/([^/]+))?\/_git\/([^/]+)\/pullrequest\/([1-9]\d*))(?:\/.*)?$/i;
 const legacySuffix = '.visualstudio.com';
 const decoded = segment => {
   try {

@@ -107,16 +107,24 @@ const reviewQuery = `query($owner: String!, $name: String!, $number: Int!) {
   }
 }`;
 
-const readOptions = signal => ({
+function withheld(env, host) {
+  if (host.toLowerCase() === process.env.GH_HOST?.toLowerCase()) return env;
+  for (const name of enterpriseTokens) delete env[name];
+  return env;
+}
+
+const enterpriseTokens = ['GH_ENTERPRISE_TOKEN', 'GITHUB_ENTERPRISE_TOKEN'];
+
+const readOptions = (signal, host) => ({
   cwd: fileURLToPath(new URL('.', import.meta.url)),
   signal, timeout: 15000, maxBuffer: 16 * 1024 * 1024, windowsHide: true,
-  env: { ...process.env, GH_PROMPT_DISABLED: '1' },
+  env: withheld({ ...process.env, GH_PROMPT_DISABLED: '1' }, host),
 });
 
 export async function readGitHubPr(url, signal, posted = [], { run: runner = run } = {}) {
   const found = pullRequestUrl(url);
   if (found?.kind !== 'github') throw new Error('Unsupported PR URL.');
-  const options = readOptions(signal);
+  const options = readOptions(signal, found.host);
   const { stdout } = await runner('gh', ['pr', 'view', found.canonical, '--json', 'url,state,headRefOid,statusCheckRollup'], options);
   const data = JSON.parse(stdout);
   if (pullRequestUrl(data.url)?.key !== found.key) throw new Error('GitHub returned a different PR.');
@@ -167,7 +175,8 @@ export function summarizeAzureChecks(data, policies) {
   };
 }
 
-const azureName = person => String(person?.uniqueName ?? person?.displayName ?? 'ghost');
+const fit = (value, max) => String(value).slice(0, max);
+const azureName = person => fit((person?.isContainer === true ? person.displayName : undefined) ?? person?.uniqueName ?? person?.displayName ?? 'ghost', 100);
 const spoken = thread => (Array.isArray(thread?.comments) ? thread.comments : []).filter(comment => comment && comment.commentType !== 'system' && comment.isDeleted !== true);
 const stamp = comment => String(comment.lastUpdatedDate ?? comment.publishedDate);
 
@@ -184,22 +193,22 @@ export function summarizeAzureReview(data, threads, { canonical, posted = [] }) 
     if (ours.has(key)) continue;
     const file = thread.threadContext?.filePath;
     items.push({
-      key, kind: file ? 'thread' : 'comment', author: azureName(first.author), bot: !/^[^@\s]+@[^@\s]+$/.test(String(first.author?.uniqueName ?? '')),
-      path: file ?? undefined, line: file ? thread.threadContext.rightFileStart?.line : undefined,
-      excerpt: excerpt(first.content), url: canonical + '?discussionId=' + thread.id, at: stamp(last),
+      key: fit(key, 200), kind: file ? 'thread' : 'comment', author: azureName(first.author), bot: !/^[^@\s]+@[^@\s]+$/.test(String(first.author?.uniqueName ?? '')),
+      path: file === undefined || file === null ? undefined : fit(file, 500), line: file ? thread.threadContext.rightFileStart?.line : undefined,
+      excerpt: excerpt(first.content), url: fit(canonical + '?discussionId=' + thread.id, 500), at: stamp(last),
     });
   }
   items.sort((a, b) => b.at.localeCompare(a.at));
   const times = [data.creationDate, ...threads.flatMap(thread => spoken(thread).flatMap(comment => [comment.publishedDate, comment.lastUpdatedDate]))]
     .filter(time => typeof time === 'string');
   return {
-    approvals: reviewers.filter(reviewer => approving.has(reviewer.vote)).map(azureName),
-    changesRequested: reviewers.filter(reviewer => objecting.has(reviewer.vote)).map(azureName),
+    approvals: reviewers.filter(reviewer => approving.has(reviewer.vote)).map(azureName).slice(0, 100),
+    changesRequested: reviewers.filter(reviewer => objecting.has(reviewer.vote)).map(azureName).slice(0, 100),
     unresolved: open.length,
     earlier: 0,
     items: items.slice(0, 10).map(({ at, ...item }) => JSON.parse(JSON.stringify(item))),
-    keys: items.map(item => item.key),
-    more: false,
+    keys: items.map(item => item.key).slice(0, 1000),
+    more: items.length > 1000,
     lastActivityAt: times.sort().at(-1),
   };
 }

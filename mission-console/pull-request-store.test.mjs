@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { openStore } from './store.mjs';
-import { watchOnce } from './watcher.mjs';
+import { readAzurePr, watchOnce } from './watcher.mjs';
 
 function fixture(t) {
   const directory = mkdtempSync(join(tmpdir(), 'pr-url-'));
@@ -261,4 +261,31 @@ test('a project-less Azure DevOps address is accepted as a pull request and matc
   again();
   record('pr-opened', { url: 'https://org.visualstudio.com/DefaultCollection/_git/repo/pullrequest/12' });
   assert.equal(read().pr, long);
+});
+
+test('an Azure DevOps observation with a team reviewer and long strings is stored, not refused', async t => {
+  const { store, record, read } = publishing(t, 'team');
+  record('pr-opened', { url: 'https://dev.azure.com/org/Proj/_git/repo/pullrequest/12' });
+  const head = 'c'.repeat(40);
+  const project = '0a1b2c3d-1111-2222-3333-444455556666';
+  const repository = 'aabbccdd-7777-8888-9999-000011112222';
+  const shown = {
+    pullRequestId: 12, status: 'active', creationDate: new Date(0).toISOString(), lastMergeSourceCommit: { commitId: head },
+    reviewers: [{ vote: 10, isContainer: true, displayName: '[Proj]\\Platform Engineering Reviewers',
+      uniqueName: 'vstfs:///Classification/TeamProject/' + project + '\\Platform Engineering Reviewers' }],
+    repository: { id: repository, name: 'repo', webUrl: 'https://dev.azure.com/org/Proj/_git/repo', project: { id: project, name: 'Proj' } },
+  };
+  const comment = { id: 1, author: { uniqueName: 'a'.repeat(120) + '@example.test', displayName: 'A' }, content: 'Rename.', commentType: 'text',
+    publishedDate: new Date(1).toISOString(), lastUpdatedDate: new Date(1).toISOString() };
+  const threads = [{ id: 5, status: 'active', comments: [comment], threadContext: { filePath: '/' + 'p'.repeat(600), rightFileStart: { line: 3, offset: 1 } } }];
+  const run = async (file, args) => {
+    if (args.includes('show')) return { stdout: JSON.stringify(shown) };
+    if (args.includes('policy')) return { stdout: '[]' };
+    return { stdout: JSON.stringify({ value: threads }) };
+  };
+  const warnings = [];
+  await watchOnce(store, { readPr: (address, signal, posted) => readAzurePr(address, signal, posted, { run }), warn: message => warnings.push(message) });
+  assert.deepEqual(warnings, []);
+  assert.equal(read().prObservation.head, head);
+  assert.deepEqual(read().prObservation.review.approvals, ['[Proj]\\Platform Engineering Reviewers']);
 });

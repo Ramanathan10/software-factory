@@ -166,3 +166,20 @@ test('a project-less dev.azure.com address that is not a pull request is still r
   assert.equal(recognise('https://dev.azure.com/org/_git/repo')?.kind, 'not-a-pr');
   assert.equal(recognise('https://dev.azure.com/org/_git/repo/pullrequests')?.kind, 'not-a-pr');
 });
+
+test('the fixed tokens of a visualstudio.com address match in any case', () => {
+  const expected = recognise('https://org.visualstudio.com/DefaultCollection/Proj/_git/repo/pullrequest/12');
+  for (const url of [
+    'https://org.visualstudio.com/defaultcollection/Proj/_git/repo/pullrequest/12',
+    'https://org.visualstudio.com/DEFAULTCOLLECTION/Proj/_GIT/repo/PullRequest/12',
+    'https://org.visualstudio.com/Proj/_GIT/repo/pullrequest/12',
+    'https://org.visualstudio.com/Proj/_git/repo/PULLREQUEST/12',
+  ]) {
+    const found = recognise(url);
+    assert.equal(found?.kind, 'azure-devops', url);
+    assert.equal(found.key, expected.key, url);
+  }
+  const bare = recognise('https://org.visualstudio.com/defaultcollection/_git/repo/pullrequest/12');
+  assert.equal(bare.key, recognise('https://org.visualstudio.com/_git/repo/pullrequest/12').key);
+  assert.equal(bare.canonical, 'https://org.visualstudio.com/defaultcollection/_git/repo/pullrequest/12');
+});

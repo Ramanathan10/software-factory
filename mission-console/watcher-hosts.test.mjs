@@ -480,3 +480,65 @@ test('a deleted comment is neither the first nor the last comment of its thread'
   assert.equal(review.items[0].author, 'dev@example.test');
   assert.equal(review.lastActivityAt, at(10));
 });
+
+test('Enterprise tokens reach gh only for the host named by GH_HOST', async () => {
+  const read = reader('readGitHubPr');
+  const names = ['GH_ENTERPRISE_TOKEN', 'GITHUB_ENTERPRISE_TOKEN', 'GH_HOST'];
+  const saved = names.map(name => process.env[name]);
+  try {
+    process.env.GH_ENTERPRISE_TOKEN = 'secret-one';
+    process.env.GITHUB_ENTERPRISE_TOKEN = 'secret-two';
+    process.env.GH_HOST = 'ghe.example.com';
+    const envFor = async url => {
+      const environments = [];
+      const stub = ghStub({ url });
+      await read(url, undefined, [], { run: async (file, args, options) => { environments.push(options.env); return stub.run(file, args); } });
+      assert.equal(environments.length, 2);
+      return environments;
+    };
+    for (const env of await envFor('https://ghe.example.com/o/r/pull/3')) {
+      assert.equal(env.GH_ENTERPRISE_TOKEN, 'secret-one');
+      assert.equal(env.GITHUB_ENTERPRISE_TOKEN, 'secret-two');
+    }
+    for (const url of ['https://attacker.example/o/r/pull/1', 'https://github.com/o/r/pull/3']) {
+      for (const env of await envFor(url)) {
+        assert.equal(env.GH_ENTERPRISE_TOKEN, undefined, url);
+        assert.equal(env.GITHUB_ENTERPRISE_TOKEN, undefined, url);
+        assert.equal(env.GH_PROMPT_DISABLED, '1');
+      }
+    }
+    delete process.env.GH_HOST;
+    for (const env of await envFor('https://ghe.example.com/o/r/pull/3')) assert.equal(env.GH_ENTERPRISE_TOKEN, undefined);
+  } finally {
+    names.forEach((name, index) => {
+      if (saved[index] === undefined) delete process.env[name];
+      else process.env[name] = saved[index];
+    });
+  }
+});
+
+test('a team reviewer is named by display name, and every string the Azure reader emits fits the store limits', async () => {
+  const team = 'vstfs:///Classification/TeamProject/' + PROJECT_ID + '\\Platform Engineering Reviewers';
+  const long = 'x'.repeat(300);
+  const pr = shown({ reviewers: [
+    { vote: 10, uniqueName: team, displayName: '[Proj]\\Platform Engineering Reviewers', isContainer: true },
+    { vote: -10, uniqueName: 'u'.repeat(113) + '@example.test', displayName: 'Long' },
+  ] });
+  const threadList = [
+    discussion(5, 'active', [note(1, author('d'.repeat(120) + '@example.test', 'D'), 'Rename.')], onFile('/' + long + long, 3)),
+  ];
+  const { review } = await readAzure(azStub({ pr, threads: threadList }), { url: ORG_URL + '?x=' + long });
+  assert.deepEqual(review.approvals, ['[Proj]\\Platform Engineering Reviewers']);
+  const limit = (value, max) => assert.ok(value === undefined || value.length <= max, String(value).length + ' > ' + max);
+  review.approvals.concat(review.changesRequested).forEach(name => limit(name, 100));
+  review.items.forEach(item => { limit(item.author, 100); limit(item.path, 500); limit(item.url, 500); limit(item.key, 200); });
+  review.keys.forEach(key => limit(key, 200));
+});
+
+test('the Azure reader caps names at 100 and keys at 1000', async () => {
+  const reviewers = Array.from({ length: 150 }, (_, index) => ({ vote: 10, uniqueName: 'r' + index + '@example.test', displayName: 'R' }));
+  const many = Array.from({ length: 1100 }, (_, index) => discussion(index + 1, 'active', [note(1, author('a@example.test'), 'Fix ' + index)]));
+  const { review } = await readAzure(azStub({ pr: shown({ reviewers }), threads: many }));
+  assert.ok(review.approvals.length <= 100);
+  assert.ok(review.keys.length <= 1000);
+});

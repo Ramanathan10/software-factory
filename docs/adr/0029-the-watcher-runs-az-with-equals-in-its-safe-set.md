@@ -11,6 +11,8 @@ Hawkeye reads Azure DevOps pull requests with `az`. The thread read, `az devops 
 - `=` is allowed because `az.cmd` passes `%*` through with each `=` intact, which a stand-in `az.cmd` test on Windows proves for the `--route-parameters` argument.
 - Every value on the command line comes from the digits of the pull request id, an organization that matches the Azure DevOps naming rule, fixed words, or the two GUIDs in Azure DevOps's own answer, each checked against a GUID pattern before `az` runs. Nothing else from the pull request address reaches the shell.
 - The readiness reader keeps its own set (0025): it never sends `=`.
+- The GitHub reader reads any host with a `/<owner>/<repo>/pull/<n>` path, so it forwards `GH_ENTERPRISE_TOKEN` and `GITHUB_ENTERPRISE_TOKEN` to `gh` only when the pull request's host is the one named by `GH_HOST`. For every other host it removes them from the environment it passes, so a wrongly recorded address cannot receive them. `gh auth login` credentials and `GH_TOKEN` are untouched.
+- The Azure reader bounds every string it hands the store to the store's limits (names 100, paths and links 500, keys 200, at most 100 names and 1000 keys), and names a team or group reviewer by display name, because its unique name is a long `vstfs:///` address. An over-long value would otherwise make the store refuse the whole observation.
 
 ## Alternatives
 - Widen the readiness reader's set instead: that reader never needs `=`, so its guarantee would weaken for nothing.
