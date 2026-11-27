@@ -85,7 +85,7 @@ Compare findings only after all reviews finish. Group agreement, single-reviewer
 
 ## 2. Test-first handoff
 
-Assign a separate subagent to write only the tests and necessary fixtures for the approved behavior. Give it the spec, relevant production and test code, repository conventions, and a strict boundary: no production implementation, PR, deployment, or unrelated edits. For a bug, the test reproduces the reported failure. Do not start implementation while the test author is editing a shared workspace.
+Assign a separate subagent to write only the tests and necessary fixtures for the approved behavior. Give it the spec, relevant production and test code, repository conventions, and a strict boundary: no production implementation, PR, deployment, or unrelated edits. For a bug, the test reproduces the reported failure. Do not start implementation while the test author is editing a shared workspace. Wait for its result in the same turn: never end a turn while a subagent you started is still running, because the harness may stop it when the turn ends. This holds for every subagent a phase starts, such as a review seat.
 
 Run the focused tests against the unchanged implementation. Record the command and a failure that demonstrates the missing behavior, not an unrelated environment or baseline failure. If unit tests cannot express the behavior without coupling to implementation, use the lowest useful contract, integration, or UI test. Fix an invalid test before proceeding; do not manufacture red by breaking working behavior. If delegation is unavailable, tell the owner and get their direction before substituting same-agent test authoring.
 
@@ -97,7 +97,7 @@ If the ladder's first step says an approved part should not exist, return to pha
 
 Turn the valid red test green without weakening or deleting its assertion. If the test encodes the wrong contract, return to the test author or phase 1 rather than silently changing it. Run the focused tests, then the relevant broader tests. Before handing off, check the change against each acceptance criterion in the spec. A criterion it does not meet is unfinished work, never a limitation to write into an ADR, a skill or the handoff: fix it, or return to phase 1 to change the criterion.
 
-A story returned from publishing with a merge conflict starts by merging the remote default branch and resolving it.
+A story returned from publishing with a merge conflict starts by merging the remote default branch and resolving it so every settled decision in the spec still holds. When the default branch decides a settled case differently and the two cannot both hold, return to phase 1 for that decision; do not rewrite the spec to match. A rule cited from another story counts only if that story decided it, not if it put the case out of scope.
 
 ## 4. Required gates and mutation testing
 
@@ -150,7 +150,7 @@ Run this when Jarvis starts the `publishing` phase. Hawkeye's worker runs it. Th
 3. Run `git fetch origin` and `git merge origin/<default branch>`; never rebase. On a conflict run `git merge --abort`, record `release-worker`, then `return-to-build` naming the conflicting files and saying "merge origin/main and resolve these". End the turn.
 4. Rerun the profile's required gates. When one fails, rerun it on unchanged `origin/main`. If it passes there, the failure is the story's: record `release-worker`, then `return-to-build` with the output, and end the turn. If it fails there too, record a `question` with both results, then `blocked`, and end the turn; the worker stays assigned so the owner's answer reaches it. The store refuses a `question` once the story is blocked, so the order is fixed. After the owner's answer, record `resume`, then continue from step 4 or as the answer says; the store refuses `pr-opened` and `return-to-build` while the story is blocked.
 5. Run `git push -u origin <branch>`; never force.
-6. With no pull request, run `gh pr create` with a body from the spec, the gate results, the review verdict, the diagram, an Evidence section, and `Closes #<n>` when the work item is an issue. With one, create nothing and leave its description unchanged.
+6. With no pull request, run `gh pr create` with a body from the spec, the gate results, the review verdict, the diagram, an Evidence section, and `Closes #<n>` when the work item is an issue. With one, create nothing. When the story returned to build after the description was written, update it with `gh pr edit --body` so the spec summary, gate results and review verdict match the current head; otherwise leave it unchanged.
 7. Record `release-worker`, then `pr-opened` with the URL, which is the existing one when there was one. End the turn.
 
 ### PR review
