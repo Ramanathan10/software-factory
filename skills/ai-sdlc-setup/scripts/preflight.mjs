@@ -190,7 +190,7 @@ const staleMarker = ' is not used when the tracker is ';
 const trackerOnly = { none: null, github: ['organization', 'project', 'effortField'], linear: ['organization', 'project', 'effortField'] };
 
 export function staleTrackerWarnings(readiness, slug) {
-  if (typeOf(readiness) !== 'object' || !(readiness.tracker in trackerOnly)) return [];
+  if (typeOf(readiness) !== 'object' || !Object.hasOwn(trackerOnly, readiness.tracker)) return [];
   const { tracker } = readiness;
   const message = (field, subject = field) =>
     `repos.${slug}.readiness.${subject}${staleMarker}${tracker}. Remove it, or change the Work tracker answer (ai-sdlc-setup repository question 11).`;
@@ -293,19 +293,23 @@ export function check(repo = '.', env = process.env, found = findCommandCenter()
 const valueAt = (section, field) => field.split('.').reduce((value, key) => value?.[key], section) ?? null;
 
 export function answers(repo = '.', env = process.env) {
-  const { slug, machinePath, machine, repoProfile } = loadProfiles(repo, env);
-  const rows = (scope, section, extras) => (section ? [
-    ...questions[scope].map(([question, name, field]) => ({ question, name, field, answered: answered(section, field), value: valueAt(section, field) })),
-    ...extras.map(([question, name, field, fallback]) => ({
-      question, name, field, answered: true, value: field && field in section ? section[field] : fallback,
-    })),
-  ].sort((a, b) => a.question - b.question) : []);
-  return {
-    profile: machinePath,
-    slug,
-    machine: rows('machine', machine, [[10, 'Models', 'phaseTiers', {}], [11, 'Missing components', 'declinedComponents', []]]),
-    repository: rows('repository', repoProfile, [[2, 'Missing tools', null, null], [7, 'Sharing limit', 'crossModelReviewAuthorized', null]]),
+  const { slug, machinePath, machine, repoProfile, problems } = loadProfiles(repo, env);
+  const rows = (scope, section, extras, label) => {
+    if (section === undefined) return [];
+    if (typeOf(section) !== 'object') {
+      problems.push(`${label} is not an object. Run the ai-sdlc-setup skill.`);
+      return [];
+    }
+    return [
+      ...questions[scope].map(([question, name, field]) => ({ question, name, field, answered: answered(section, field), value: valueAt(section, field) })),
+      ...extras.map(([question, name, field, fallback]) => ({
+        question, name, field, answered: true, value: field && field in section ? section[field] : fallback,
+      })),
+    ].sort((a, b) => a.question - b.question);
   };
+  const machineRows = rows('machine', machine, [[10, 'Models', 'phaseTiers', {}], [11, 'Missing components', 'declinedComponents', []]], `Machine profile at ${machinePath}`);
+  const repositoryRows = rows('repository', repoProfile, [[2, 'Missing tools', null, null], [7, 'Sharing limit', 'crossModelReviewAuthorized', null]], `repos.${slug}`);
+  return { profile: machinePath, slug, problems, machine: machineRows, repository: repositoryRows };
 }
 
 export function detect(repo = '.', env = process.env) {
@@ -345,11 +349,9 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
   if (mode === 'answers') {
     const result = answers(repo);
     console.log(JSON.stringify(result, null, 2));
-    if (!result.machine.length) {
-      console.error(`No profile at ${result.profile}. Run the ai-sdlc-setup skill.`);
-      process.exit(1);
-    }
-    process.exit(0);
+    for (const problem of result.problems) console.error(problem);
+    if (!result.machine.length && !result.problems.length) console.error(`No profile at ${result.profile}. Run the ai-sdlc-setup skill.`);
+    process.exit(result.machine.length && !result.problems.length ? 0 : 1);
   }
   let result = mode === 'detect' ? detect(repo) : check(repo);
   if (mode === 'check' && harnessName) {

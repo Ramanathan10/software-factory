@@ -507,3 +507,49 @@ test('a component warning still gets the install step, beside the stale tracker 
   assert.match(only.nextSteps.join('\n'), /declinedComponents/);
   assert.doesNotMatch(only.nextSteps.join('\n'), /Work tracker/);
 });
+
+test('a tracker named like an inherited property reports the schema problem instead of throwing', t => {
+  for (const tracker of ['constructor', 'toString', '__proto__']) {
+    const { repo, env } = workspace(t, { machineProfile: completeMachine, repoEntry: { ...completeRepo, readiness: { tracker } } });
+    const result = check(repo, withInstalledComponents(t, env));
+    assert.equal(result.ok, false, tracker);
+    assert.match(result.problems.join('\n'), /readiness\.tracker/, tracker);
+    assert.deepEqual(staleWarnings(result), [], tracker);
+  }
+});
+
+test('answers surfaces an invalid machine profile instead of reporting a missing one', t => {
+  const { repo, env } = workspace(t);
+  writeFileSync(join(env.AI_SDLC_HOME, 'profile.json'), '{ not json');
+  const result = run('answers', repo, env);
+  assert.equal(result.status, 1);
+  assert.match(result.json.problems.join('\n'), /Machine profile at .* is not valid JSON/);
+  assert.match(result.stderr, /not valid JSON/);
+  assert.doesNotMatch(result.stderr, /No profile at/);
+});
+
+test('answers reports a repository section that is not an object instead of throwing', t => {
+  for (const repoEntry of ['broken', 7, ['x']]) {
+    const { repo, env } = workspace(t, { machineProfile: completeMachine, repoEntry });
+    const result = run('answers', repo, env);
+    assert.equal(result.status, 1, JSON.stringify(repoEntry));
+    assert.deepEqual(result.json.repository, [], JSON.stringify(repoEntry));
+    assert.match(result.json.problems.join('\n'), /repos\.acme\/widgets is not an object/, JSON.stringify(repoEntry));
+  }
+});
+
+test('answers with a complete profile reports no problems', t => {
+  const { repo, env } = workspace(t, { machineProfile: completeMachine, repoEntry: completeRepo });
+  assert.deepEqual(run('answers', repo, env).json.problems, []);
+});
+
+const skillText = name => readFileSync(fileURLToPath(new URL(`../../${name}/SKILL.md`, import.meta.url)), 'utf8');
+
+test('the setup skill sends a repository with no section to the interview before the change table', () => {
+  assert.match(skillText('ai-sdlc-setup'), /no section[^\n]*repository interview first[^\n]*do not show the change table until the asked answers are saved/i);
+});
+
+test('the skills answer a stale tracker warning by removing the field, not by re-asking the tracker question', () => {
+  assert.match(skillText('ai-sdlc-setup'), /is not used when the tracker is[^\n]*removing/i);
+  assert.match(skillText('ai-sdlc'), /is not used when the tracker is[^\n]*(report|tell)[^\n]*once/i);
+});
