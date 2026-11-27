@@ -188,3 +188,10 @@ test('matches and feedEntries with no filter argument keep everything', () => {
   assert.equal(need('matches')(stories[0].events[0]), true);
   assert.deepEqual(ids(need('feedEntries')(stories)), [10, 9, 8, 7, 6, 3, 2, 1]);
 });
+
+test('a story with no events list contributes no entries and does not break the others', () => {
+  const entries = need('feedEntries');
+  const bare = { id: 'BARE-1', title: 'No events yet' };
+  assert.deepEqual(ids(entries([bare, ...stories], { keyword: '', story: null })), [10, 9, 8, 7, 6, 3, 2, 1]);
+  assert.deepEqual(entries([bare], { keyword: '', story: null }), []);
+});
