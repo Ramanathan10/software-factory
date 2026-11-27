@@ -263,3 +263,27 @@ test('a publisher can release and start diagram work, and the diagram handoff re
   assert.deepEqual(returned.filter(id => states.get(id).state.phase !== 'publishing'), [], 'a diagram handoff from publishing landed elsewhere');
   assert.ok(returned.some(id => edgeTo(id, 'assign-worker')), 'assign-worker is refused in publishing after the diagram returns');
 });
+
+const MODEL_PR = 'https://github.com/acme/widgets/pull/1';
+const spellings = eventInputs('evidence.png').filter(([type, input]) => type === 'pr-opened' && input.url !== MODEL_PR).map(([, input]) => input.url);
+
+test('the explorer records the pull request in a suffixed spelling and again in another spelling', () => {
+  assert.ok(spellings.some(url => url.startsWith(MODEL_PR + '/')), 'no pr-opened input carries a path suffix after ' + MODEL_PR);
+  assert.ok(spellings.some(url => !url.startsWith(MODEL_PR + '/') && url.split('#')[0].toLowerCase() === MODEL_PR.toLowerCase()),
+    'no pr-opened input spells the pull request another way (case or fragment)');
+});
+
+test('a registered pull request is re-recorded in each spelling, accepted, and stays in its first spelling', () => {
+  assert.ok(spellings.length, 'the explorer has no pr-opened input in another spelling');
+  const registered = publishing.filter(([, { state }]) => state.pr && !state.worker && !state.blocked && !state.cleanup);
+  assert.ok(registered.length, 'no reachable story is back in publishing with a registered pull request');
+  const refused = [];
+  for (const [id, node] of registered) {
+    for (const url of spellings) {
+      const edge = node.edges.find(candidate => candidate.type === 'pr-opened' && candidate.input.url === url);
+      if (!edge || states.get(edge.to).state.phase !== 'ci' || states.get(edge.to).state.pr !== MODEL_PR) refused.push(story(node) + ' with ' + url);
+    }
+  }
+  assert.deepEqual(refused, [], 'pr-opened refused or rewrote the stored pull request for the same pull request');
+  assert.deepEqual(live.filter(([, { state }]) => state.pr && state.pr !== MODEL_PR).map(([, node]) => story(node)), [], 'a story holds a pull request that is not the canonical one');
+});
