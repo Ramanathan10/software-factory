@@ -221,3 +221,60 @@ test('the legacy Mission Console question form formats the prompt, has no legend
   assert.equal(result.legend, 0, 'the fieldset still has a legend');
   assert.ok(result.textareaLabel?.includes('Which docs should change with the fix?'), 'the textarea lost its aria-label: ' + result.textareaLabel);
 });
+
+test('the legacy prompt block carries the md class and the Command Center prompt block carries md and q-prompt', { skip }, async () => {
+  await open('http://127.0.0.1:' + legacy.address().port + '/');
+  await until(`document.querySelector('#questions fieldset')`, 'the legacy question form');
+  const legacyClasses = await evaluate(`document.getElementById(document.querySelector('#questions fieldset').getAttribute('aria-labelledby')).classList.value.split(' ')`);
+  assert.ok(legacyClasses.includes('md'), 'legacy prompt block classes: ' + legacyClasses);
+  assert.ok(legacyClasses.includes('prompt'), 'legacy prompt block classes: ' + legacyClasses);
+  await centerQuestion();
+  const centerClasses = await evaluate(`document.getElementById(document.querySelector('.decision.grooming .question').getAttribute('aria-labelledby')).classList.value.split(' ')`);
+  assert.ok(centerClasses.includes('md'), 'Command Center prompt block classes: ' + centerClasses);
+  assert.ok(centerClasses.includes('q-prompt'), 'Command Center prompt block classes: ' + centerClasses);
+});
+
+test('the legacy Mission Console renders task list checkboxes disabled with only the done one checked, and two questions get their own prompt ids', { skip }, async () => {
+  const { openStore } = await import('../mission-console/store.mjs');
+  const { serve } = await import('../mission-console/jarvis.mjs');
+  const dbPath = join(root, 'two-questions.sqlite');
+  const store = openStore(dbPath);
+  const server = serve(store, await freePort());
+  try {
+    await new Promise(resolve => server.once('listening', resolve));
+    store.record({ story: 'WEB-8', key: randomUUID(), type: 'create', title: 'Two questions', detail: 'Two questions', branch: 'story/web-8', worktree: join(root, 'work8'), harness: 'Seed Harness', repo: 'example/web-app' });
+    const first = store.handover('WEB-8').story.revision;
+    store.record({ story: 'WEB-8', key: randomUUID(), revision: first, type: 'question', question: 'tasks', prompt: ['Which tasks are done?', '', '- [x] done', '- [ ] todo'].join(String.fromCharCode(10)), options: ['Yes', 'No'], recommended: 0 });
+    const second = store.handover('WEB-8').story.revision;
+    store.record({ story: 'WEB-8', key: randomUUID(), revision: second, type: 'question', question: 'other', prompt: 'A completely different second prompt', options: ['Yes', 'No'], recommended: 0 });
+    await open('http://127.0.0.1:' + server.address().port + '/');
+    await until(`document.querySelectorAll('#questions fieldset').length === 2`, 'both legacy question forms');
+    const result = await evaluate(`(() => {
+      const groups = [...document.querySelectorAll('#questions fieldset')];
+      const boxes = [...document.querySelectorAll('#questions input[type=checkbox]')];
+      return {
+        ids: groups.map(group => group.getAttribute('aria-labelledby')),
+        texts: groups.map(group => document.getElementById(group.getAttribute('aria-labelledby'))?.textContent ?? null),
+        boxes: boxes.map(box => ({ disabled: box.hasAttribute('disabled'), checked: box.hasAttribute('checked'), disabledAttr: box.getAttribute('disabled'), checkedAttr: box.getAttribute('checked') })),
+        attributeValues: [...document.querySelectorAll('#questions *')].flatMap(node => [...node.attributes].map(attribute => attribute.name + '=' + attribute.value)).filter(pair => /=(true|false)$/.test(pair)),
+        attributeNames: [...document.querySelectorAll('#questions *')].flatMap(node => [...node.attributes].map(attribute => attribute.name)).filter(name => name === 'true' || name === 'false'),
+      };
+    })()`);
+    assert.equal(result.ids.length, 2);
+    assert.notEqual(result.ids[0], result.ids[1], 'both fieldsets point at the same prompt id: ' + result.ids);
+    const byText = (needle) => result.texts.findIndex(each => each?.includes(needle));
+    assert.ok(byText('Which tasks are done?') >= 0, 'the first prompt is not found through aria-labelledby: ' + JSON.stringify(result.texts));
+    assert.ok(byText('A completely different second prompt') >= 0, 'the second prompt is not found through aria-labelledby: ' + JSON.stringify(result.texts));
+    assert.notEqual(byText('Which tasks are done?'), byText('A completely different second prompt'));
+    assert.equal(result.boxes.length, 2, 'expected two task checkboxes');
+    assert.ok(result.boxes.every(box => box.disabled && box.disabledAttr === ''), 'every checkbox is disabled: ' + JSON.stringify(result.boxes));
+    assert.deepEqual(result.boxes.map(box => box.checked), [true, false], 'exactly the done box is checked: ' + JSON.stringify(result.boxes));
+    assert.equal(result.boxes[0].checkedAttr, '');
+    assert.deepEqual(result.attributeValues, [], 'a boolean leaked into an attribute value');
+    assert.deepEqual(result.attributeNames, []);
+  } finally {
+    server.close();
+    server.closeAllConnections?.();
+    try { store.close(); } catch {}
+  }
+});

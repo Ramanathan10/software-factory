@@ -191,3 +191,22 @@ test('with breaks, every short sequence of lines from a fixed fragment set rende
   walk([]);
   assert.deepEqual(failures, []);
 });
+
+const strongs = node => kids(node).filter(child => typeof child !== 'string' && child.tag === 'strong');
+
+test('double underscores inside a word stay literal, and standing alone or after a space they make strong', () => {
+  const [inWord] = renderMarkdown('x__y__ z', el);
+  assert.equal(strongs(inWord).length, 0);
+  assert.equal(text(inWord), 'x__y__ z');
+  const [afterSpace] = renderMarkdown('see __y__ here', el);
+  assert.deepEqual(strongs(afterSpace).map(text), ['y']);
+  const [alone] = renderMarkdown('__y__', el);
+  assert.deepEqual(strongs(alone).map(text), ['y']);
+});
+
+test('four underscores between spaces stay literal text with no strong element', () => {
+  const [para] = renderMarkdown('a ____ b', el);
+  assert.equal(strongs(para).length, 0);
+  assert.equal(text(para), 'a ____ b');
+  assert.deepEqual(kids(para), ['a ____ b']);
+});
