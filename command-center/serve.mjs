@@ -7,7 +7,7 @@ import { harnessKey } from '../mission-console/roles.mjs';
 import { InputError, workerPhases } from '../mission-console/store.mjs';
 import { watchOnce } from '../mission-console/watcher.mjs';
 import { createConsoleService, DEFAULT_DB_PATH } from './console-service.mjs';
-import { createCoordinator } from './coordinator.mjs';
+import { commandLine, createCoordinator } from './coordinator.mjs';
 import { createSupervisor } from './supervisor.mjs';
 import { isMain } from '../mission-console/is-main.mjs';
 
@@ -224,7 +224,7 @@ export async function start({ port = DEFAULT_PORT, dbPath = DEFAULT_DB_PATH, ada
     coordinator = createCoordinator({ service, launch, adapters, quietMs, busy: id => starts.has(id),
       kickoff: (story, news) => jarvisKickoff(story, news, dbPath, Number(new URL(server.url).port)) });
     for (const story of service.snapshot()) {
-      const staffed = story.worker && row(story.harness).workers === 'command-line';
+      const staffed = story.worker && commandLine(story);
       if (staffed || (story.phase === 'testing' && !story.worker && !story.blocked && !story.cleanup)) {
         service.deliverPending(story.id).catch(error => console.error('Pending approval on ' + story.id + ' could not be delivered: ' + error.message));
       }

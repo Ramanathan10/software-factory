@@ -293,3 +293,15 @@ test('start-up delivery does not try to hand a decision to a story with no worke
   assert.equal(rig.resumes.length, 0);
   assert.ok(!logged.mock.calls.some(call => /not delivered/.test(String(call.arguments[0]))), 'start-up tried to deliver to an unstaffed story');
 });
+
+test('start-up succeeds and delivers nothing for a staffed story whose harness is unknown', async t => {
+  quiet(t);
+  const rig = setup(t);
+  rig.seed({ harness: 'Retired Harness' });
+  rig.recorder.recordEvent({ story, type: 'answer', question: 'scope', answer: 1 });
+  const daemon = await rig.open();
+  await sleep(1500);
+  assert.equal((await fetch(daemon.origin + '/')).status, 200);
+  assert.equal(rig.resumes.length, 0);
+  assert.deepEqual(rig.launched, []);
+});
