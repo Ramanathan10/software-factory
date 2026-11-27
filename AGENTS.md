@@ -19,7 +19,7 @@ Follow this when the person asks to install, set up, or try the factory, or says
 
 - The repository is meant to be shared, so keep it free of personal skills and of real work details such as organization, people, or repository names.
 - Skills say "the owner" for the person running the session; never name a person in a skill.
-- Run `node --test` before committing. Keep the application free of package dependencies unless a story adds them deliberately.
+- Run `node --test` before committing. It prints a spec summary (`ℹ pass N`, `ℹ fail N`), not TAP: run it in the foreground or wait for it to exit, never for a `# fail` line. Keep the application free of package dependencies unless a story adds them deliberately.
 - A change to how decisions reach a worker or how worker turns start is checked by the delivery model; `.agents/skills/verify-decision-delivery/SKILL.md` says how.
 - A change to how workers start, how decisions reach them, or how Jarvis is woken is also tried end to end: `node e2e/run.mjs` runs each scenario under `e2e/scenarios/` against a throwaway Command Center with scripted workers and a scripted Jarvis. It uses no model, and the Tests workflow runs it on every pull request.
 - A bug found in a live story gets a scenario there that fails without the fix; `e2e/README.md` says how to write one. A bug that only a model's choices show is fixed in the skill that misled it; it gets no scenario.

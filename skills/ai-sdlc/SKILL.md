@@ -189,4 +189,5 @@ Report the lessons recorded and where, or that there were none.
 - Before-and-after and the architecture diagram run only when the spec says so, and both finish before the pull request opens.
 - The owner accepts the before-and-after comparison before the pull request opens, and its screenshots and recordings are never committed.
 - The pull request is reported ready only after its required pipelines succeed on the current head.
+- A worker stops every background command or watcher it started before it records `release-worker`; one still running keeps its turn alive and holds the next worker's start.
 - The run ends with a retro report.
