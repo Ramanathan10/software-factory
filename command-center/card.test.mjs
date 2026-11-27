@@ -463,6 +463,12 @@ test('a story held in the retro after its merge is labelled as merged and finish
   assert.ok(!boardCard('HELD-3').textContent.includes('Merged · finishing retro'), 'a retro with no merge is labelled as merged');
 });
 
+test('only a story in the retro phase reads as merged and finishing the retro, even if it kept retro.mergedAt', () => {
+  show([{ ...held.idle, id: 'HELD-4', phase: 'ci' }]);
+  assert.ok(boardCard('HELD-4'), 'the story outside the retro has no card');
+  assert.ok(!boardCard('HELD-4').textContent.includes('Merged · finishing retro'), 'a story that left the retro is labelled as finishing it: ' + boardCard('HELD-4').textContent);
+});
+
 test('a held retro is in Waiting on you only while a question is open, and it is not in the Archive until it closes', () => {
   show([held.idle]);
   assert.ok(!boardCard('HELD-1').classes().includes('waiting'), 'a held retro with no open question is waiting on the owner');

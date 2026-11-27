@@ -726,6 +726,17 @@ test('the retro handoff on a merged retro closes the story and keeps the lessons
   assert.ok(Date.parse(closed.retro.completedAt) > 0);
 });
 
+test('a merge during the retro clears a blocker on the held story', t => {
+  const store = fixture(t)();
+  const record = toRetro(store, 'stuck');
+  record('blocked', { detail: 'Retro worker cannot reach the runbook.' });
+  assert.equal(storyOf(store, 'stuck').blocked, 'Retro worker cannot reach the runbook.');
+  record('merged', { detail: 'Merged at 1234abc.' });
+  const held = storyOf(store, 'stuck');
+  assert.equal(held.phase, 'retro');
+  assert.equal(held.blocked, undefined, 'the held retro stays blocked after the merge');
+});
+
 test('a retro handoff with no merge recorded still returns to the phase the retro started from', t => {
   const store = fixture(t)();
   const record = toRetro(store, 'unmerged', { returnPhase: 'merge' });
