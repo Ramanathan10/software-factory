@@ -261,3 +261,16 @@ test('with nothing shipped the Archive tab says so', async () => {
   assert.ok(board().textContent.includes('No shipped stories.'));
   assert.equal(ids.get('stat-shipped').textContent, '0');
 });
+
+test('the Archive merged date comes from the retro merge time before the events and the update time', async () => {
+  const stamped = iso(200);
+  const kept = { ...base, id: 'DONE-3', title: 'Retro stamped work', repo: 'acme/one', phase: 'closed', pr: 'https://github.com/acme/one/pull/11', updatedAt: iso(1),
+    retro: { returnPhase: 'closed', startedAt: iso(250), completedAt: iso(2), mergedAt: stamped, detail: 'Lessons.' },
+    events: [{ seq: 90, at: iso(1), type: 'jarvis-turn-ended', detail: 'Jarvis ended its turn.' }] };
+  frame([open, kept]);
+  await show('archive');
+  const row = rowOf('DONE-3');
+  assert.ok(row, 'no row for DONE-3');
+  assert.ok(walk(row).some(node => Object.values(node.attributes ?? {}).includes(stamped)), 'the row does not carry the retro merge time ' + stamped);
+  assert.ok(!walk(row).some(node => Object.values(node.attributes ?? {}).includes(kept.updatedAt)), 'the row shows the update time');
+});

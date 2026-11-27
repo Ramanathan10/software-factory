@@ -1430,3 +1430,34 @@ test('a repeated closed or merged observation outside the watched phases records
   assert.equal(store.handover('keep-back').story.phase, 'ci');
   assert.deepEqual(store.handover('keep-back').story.prObservation.review, stored);
 });
+
+test('a merge that holds the story in retro stores the merge time on the story and keeps it through the close', t => {
+  const store = fixture(t)();
+  const record = toCi(store, 'stamped');
+  assert.equal(store.handover('stamped').story.retro?.mergedAt, undefined);
+  record('merged', { detail: 'Merged from ci.' });
+  const mergedEvent = store.history('stamped').find(event => event.type === 'merged');
+  const held = store.handover('stamped').story;
+  assert.equal(held.phase, 'retro');
+  assert.equal(held.retro.mergedAt, mergedEvent.at);
+  assert.equal(new Date(held.retro.mergedAt).toISOString(), held.retro.mergedAt);
+  lessons(record, 'stamped');
+  const closed = store.handover('stamped').story;
+  assert.equal(closed.phase, 'closed');
+  assert.equal(closed.retro.mergedAt, mergedEvent.at);
+});
+
+test('a merge that closes the story after a finished retro stores the merge time on the story', t => {
+  const store = fixture(t)();
+  const record = toCi(store, 'after-retro');
+  record('retro-start', { detail: 'Review lessons.' });
+  lessons(record, 'after-retro');
+  assert.equal(store.handover('after-retro').story.phase, 'ci');
+  assert.ok(store.handover('after-retro').story.retro.completedAt);
+  record('merged', { detail: 'Merged after the retro.' });
+  const mergedEvent = store.history('after-retro').find(event => event.type === 'merged');
+  const closed = store.handover('after-retro').story;
+  assert.equal(closed.phase, 'closed');
+  assert.equal(closed.retro.mergedAt, mergedEvent.at);
+  assert.equal(new Date(closed.retro.mergedAt).toISOString(), closed.retro.mergedAt);
+});
