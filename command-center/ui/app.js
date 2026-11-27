@@ -801,7 +801,7 @@ function render() {
   if (changed('crew', [stories, busyKey, filterRole])) renderCrew();
   if (filterRepo && !repos().includes(filterRepo)) filterRepo = '';
   if (changed('toolbar', [view, filterRole, filterRepo, repos(), stories.length, visible().length])) renderToolbar();
-  const decisionKey = [filterRole === 'approver', stories.map(story => [story.id, story.phase, openQuestions(story).map(question => question.id), story.plan, story.draftPlan?.text, waitingOnYou(story)])];
+  const decisionKey = [filterRole === 'approver', stories.map(story => [story.id, story.phase, openQuestions(story).map(question => question.id), story.plan, story.draftPlan?.text, waitingOnYou(story), story.phase === 'comparison-choice' && !jarvisHold(story)])];
   if (changed('decisions', decisionKey)) renderDecisions();
   if (changed('board', [stories, busyKey, stories.map(stalled), view, filterRole, filterRepo, [...clearing]])) renderBoard();
   if (changed('feed', [lastFrameAt > 0, stories.map(story => story.events?.[0]?.seq), filterRole, filterRepo])) renderFeed();

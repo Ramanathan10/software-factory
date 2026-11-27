@@ -710,3 +710,15 @@ test('a comparison-choice story with an open question waits on you even while Ja
   assert.equal(boardCard(cmp.failed.id).attributes['data-role'], 'approver');
   inFocus(() => assert.deepEqual(cardKinds(cmp.failed.id), ['grooming']));
 });
+
+test('in the open inbox, a comparison-choice story with an open question loses the compare card when a hold begins and regains it when the hold ends', () => {
+  const cleared = { ...cmp.failed, waitingOnJarvis: undefined, jarvis: undefined };
+  inFocus(() => {
+    show([cleared]);
+    assert.deepEqual(cardKinds(cleared.id), ['grooming', 'compare']);
+    show([cmp.failed]);
+    assert.deepEqual(cardKinds(cleared.id), ['grooming'], 'the compare card stayed after a hold began');
+    show([cleared]);
+    assert.deepEqual(cardKinds(cleared.id), ['grooming', 'compare'], 'the compare card stayed missing after the hold ended');
+  });
+});
