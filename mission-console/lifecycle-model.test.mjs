@@ -36,7 +36,7 @@ const mergeClosing = (id, state) => {
   if (!held || held.phase === 'closed') return held;
   return follow(states, id, [...release, 'merged', ...(held.worker ? ['release-worker'] : []), 'handoff']);
 };
-const merging = live.filter(([, { state }]) => state.pr && state.phase !== 'closed' && !state.cleanup);
+const merging = live.filter(([, { state }]) => state.pr && state.phase !== 'closed' && !state.cleanup && state.retro?.returnPhase !== 'closed');
 
 test('merged from an open phase with a registered PR closes the story when its retro has finished, and otherwise moves it to retro with return phase closed, whose handoff closes it', () => {
   assert.ok(merging.some(([, { state }]) => state.phase === 'diagram') && merging.some(([, { state }]) => state.phase === 'building') &&

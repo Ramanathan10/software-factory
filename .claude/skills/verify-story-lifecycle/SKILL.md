@@ -13,6 +13,7 @@ description: Check a change to the story store's lifecycle against every story s
 | Every reachable phase is in `roles.mjs`, and every phase there is reachable | A story moves to a phase the dashboard cannot show, or a phase is dead | |
 | A story not being cleaned up can always still reach `closed` | A story is stuck with no event that moves it | |
 | From `ci`, `merge`, `retro` or `pr-review` with a registered PR, `merged` (after `release-worker` if a worker is assigned) closes the story | GitHub merged the PR and the story stays open | 3c60828: a stale `blocked` refused `merged` |
+| A retro whose merge is recorded (return phase `closed`) refuses `replan` and a second `merged` | Replan sends a merged story back to planning, or a second merge wakes Jarvis and moves the merge date | RETRO-2 review: `replan` on a merged retro reached testing against the merged PR |
 | A worker exists only in a worker phase, and no event changes the phase under it | A worker keeps running on a phase that is no longer its own | |
 | A story awaiting cleanup never changes phase | Cleanup races with work on the same story | |
 | Every event the Jarvis phase table names is accepted in or into that row's phases | Jarvis is told to record an event the store refuses | d989158: the owner's change request on the comparison had no `return-to-build` |

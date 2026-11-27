@@ -115,11 +115,12 @@ function observePr(story, input, now) {
   const current = { head, status, failedCount: status === 'failed' ? failedCount : 0, failures: status === 'failed' ? failures : [] };
   const review = watching ? reviewOf(observation.review) : undefined;
   const previous = story.prObservation;
+  const kept = watching ? review : previous?.review;
   const checksSame = previous && Object.keys(current).every(key => JSON.stringify(current[key]) === JSON.stringify(previous[key]));
   const reviewing = story.phase === 'pr-review';
   const seen = new Set(story.prSeen ?? []);
   const fresh = review && !reviewing ? review.keys.filter(key => !seen.has(key)) : [];
-  if (checksSame && JSON.stringify(review) === JSON.stringify(previous.review) && !fresh.length) return null;
+  if (checksSame && JSON.stringify(kept) === JSON.stringify(previous.review) && !fresh.length) return null;
   const priorHead = previous?.head ?? story.readyHead;
   const newHead = Boolean(priorHead && priorHead !== current.head);
   const reconcileReady = story.phase === 'merge' && !previous && !story.readyHead;
@@ -131,7 +132,7 @@ function observePr(story, input, now) {
   const feedback = fresh.length > 0;
   const said = feedback ? ' · New feedback · ' + fresh.length + (fresh.length === 1 ? ' item' : ' items') : '';
   const detail = 'Hawkeye · ' + (newHead ? 'New head · ' : '') + labels[status] + ' · ' + head.slice(0, 12) + listed + said;
-  story.prObservation = { ...current, ...(review ? { review } : {}), at: now };
+  story.prObservation = { ...current, ...(kept ? { review: kept } : {}), at: now };
   if (review && !reviewing) {
     const live = new Set(review.keys);
     story.prSeen = [...[...seen].filter(key => !live.has(key)), ...live].slice(-1000);
@@ -355,6 +356,7 @@ function apply(story, input, now) {
     case 'replan':
       requireThat(story.phase !== 'planning' && story.phase !== 'closed',
         'This phase cannot reopen planning.', 409);
+      requireThat(story.retro?.returnPhase !== 'closed', 'The pull request has merged; finish the retro.', 409);
       story.phase = 'planning';
       delete story.blocked;
       delete story.readyHead;
@@ -421,6 +423,7 @@ function apply(story, input, now) {
       return string(input.detail, 'new head or check regression');
     case 'merged':
       requireThat(story.pr && story.phase !== 'closed', 'There is no open PR to reconcile in this phase.', 409);
+      requireThat(story.retro?.returnPhase !== 'closed', 'The merge is already recorded.', 409);
       if (story.retro?.completedAt) story.phase = 'closed';
       else {
         const detail = string(input.detail, 'merge evidence');
