@@ -261,7 +261,7 @@ h1 span { color: var(--muted); letter-spacing: .02em; font-weight: 500; margin-l
 .question { border: 1px solid var(--line); border-radius: 10px; padding: 10px; margin: 0; display: grid; gap: 8px; background: rgba(11, 14, 20, .5); transition: border-color .3s; }
 .question.ready { border-color: rgba(62, 207, 142, .55); }
 .question .q-num { color: var(--muted); font-size: 10px; letter-spacing: .1em; text-transform: uppercase; }
-.question .q-prompt { margin: 0; font-size: 13px; line-height: 1.45; }
+.question .q-prompt { font-size: 13px; line-height: 1.45; }
 .choices button[aria-pressed="true"] { background: var(--amber); color: #1b1405; border-color: var(--amber); font-weight: 600; }
 textarea { width: 100%; resize: vertical; background: #0e121b; color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 8px; font: 13px/1.45 var(--font); }
 textarea:focus { outline: none; border-color: var(--amber); }

@@ -169,7 +169,8 @@ after(async () => {
   await new Promise(resolve => legacy ? legacy.close(() => resolve()) : resolve());
   legacy?.closeAllConnections?.();
   try { legacyStore?.close(); } catch {}
-  if (root) rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+  await sleep(500);
+  try { if (root) rmSync(root, { recursive: true, force: true, maxRetries: 25, retryDelay: 200 }); } catch {}
 });
 
 const centerQuestion = async () => {
