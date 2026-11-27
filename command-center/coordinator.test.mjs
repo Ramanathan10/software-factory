@@ -491,11 +491,36 @@ test('a closed story is never woken', async t => {
   write('handoff', { detail: 'Review clean.' });
   write('comparison-choice', { run: false });
   write('pr-opened', { url: 'https://github.com/acme/widgets/pull/1' });
+  write('retro-start', { detail: 'Review lessons.' });
+  write('handoff', { detail: 'Lessons logged.' });
   write('merged', { detail: 'Merged.' });
   assert.equal(rig.story().phase, 'closed');
   await rig.open();
   await settle();
   assert.equal(rig.jarvisTurns(), 0);
+});
+
+test('a merged story whose retro has not finished is woken, since the retro still has to run', async t => {
+  const rig = coordinated(t);
+  scoutHandedOff(rig);
+  const write = (type, extra = {}) => rig.recorder.recordEvent({ story: 'tl-1', type, ...extra });
+  write('plan', { detail: 'Export selected rows.' });
+  write('approve');
+  write('handoff', { detail: 'Red verified.', command: 'node --test' });
+  write('handoff', { detail: 'Green.', command: 'node --test' });
+  write('handoff', { detail: 'Gates pass.', command: 'node --test' });
+  write('handoff', { detail: 'Gates pass.', command: 'node --test' });
+  write('handoff', { detail: 'Mutation pass.', command: 'npx stryker run' });
+  write('handoff', { detail: 'Review clean.' });
+  write('comparison-choice', { run: false });
+  write('pr-opened', { url: 'https://github.com/acme/widgets/pull/1' });
+  write('merged', { detail: 'Merged.' });
+  assert.equal(rig.story().phase, 'retro');
+  rig.ackAll();
+  write('question', { question: 'keep', prompt: 'Keep the lesson?', options: ['Yes', 'No'], recommended: 0 });
+  write('answer', { question: 'keep', answer: 0 });
+  await rig.open();
+  await until('a background Jarvis turn for the retro', () => rig.jarvis.length);
 });
 
 test('the board is told a story is waiting on Jarvis, since when and why, and then that Jarvis is checking it', async t => {

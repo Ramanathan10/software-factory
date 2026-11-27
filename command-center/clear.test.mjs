@@ -107,6 +107,8 @@ async function fixture(t) {
     } else {
       record(id, 'pr-ready', { detail: 'Checks passed.' });
     }
+    record(id, 'retro-start', { detail: 'Review lessons.' });
+    record(id, 'handoff', { detail: 'Lessons logged.' });
     record(id, 'merged', { detail: 'GitHub reports the PR merged.' });
     record(id, 'jarvis-turn-started', { session: id + '-jarvis', pid: 4343, log: logs.jarvis });
     record(id, 'jarvis-turn-ended', { outcome: 'ended', code: 0, detail: 'Jarvis ended its turn.' });

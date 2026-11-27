@@ -32,7 +32,7 @@ export function abstract(story) {
     ...(story.prObservation.review ? { blocking: blocking(story.prObservation.review) } : {}) };
   if (story.readyHead) state.readyHead = story.readyHead;
   if (story.diagram) state.diagram = { returnPhase: story.diagram.returnPhase };
-  if (story.retro) state.retro = { returnPhase: story.retro.returnPhase };
+  if (story.retro) state.retro = { returnPhase: story.retro.returnPhase, ...(story.retro.completedAt ? { completed: true } : {}) };
   if (story.prReview) state.prReview = { returnPhase: story.prReview.returnPhase };
   if (story.jarvis?.turn) state.jarvis = { turn: { pid: story.jarvis.turn.pid } };
   else if (story.jarvis?.waking) state.jarvis = { waking: true };
@@ -46,6 +46,7 @@ function concrete(state) {
   if (state.worker) story.worker = { ...state.worker, role: 'scout', session: 'session-1', ...(state.worker.turn ? { turn: { ...state.worker.turn, log: 'turn.log' } } : {}) };
   if (state.blocked) story.blocked = 'Blocked.';
   if (state.cleanup) story.cleanup = {};
+  if (state.retro) story.retro = { returnPhase: state.retro.returnPhase, startedAt: 'then', detail: 'Retro.', ...(state.retro.completed ? { completedAt: 'then' } : {}) };
   if (state.jarvis) story.jarvis = { session: 'jarvis-1', handled: 1, ...(state.jarvis.turn ? { turn: { ...state.jarvis.turn, log: 'jarvis.log' } } : { waking: 'now' }) };
   if (state.prObservation) {
     const { blocking: blocked, ...observed } = state.prObservation;

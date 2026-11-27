@@ -51,6 +51,16 @@ test('a pull request opens only for a pushed branch, once, and reads back with i
   });
 });
 
+test('a pull request merges once, and then reads back as merged and no longer open', t => {
+  const { state, work } = repository(t);
+  git(work, 'push', '-q', 'origin', 'story/one');
+  const url = gh(state, ['pr', 'create', '--title', 'Add it', '--body', 'Body'], { cwd: work });
+  assert.match(gh(state, ['pr', 'merge', url], { cwd: work }), /Merged pull request #1/);
+  assert.equal(JSON.parse(gh(state, ['pr', 'view', url, '--json', 'state'], { cwd: work })).state, 'MERGED');
+  assert.deepEqual(JSON.parse(gh(state, ['pr', 'list', '--state', 'open', '--json', 'number'], { cwd: work })), []);
+  assert.throws(() => gh(state, ['pr', 'merge', url], { cwd: work }), /already merged/);
+});
+
 test('the body can come from a file, and an edit replaces it', t => {
   const { state, work } = repository(t);
   git(work, 'push', '-q', 'origin', 'story/one');

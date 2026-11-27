@@ -80,7 +80,11 @@ const reviewed = {
   answering: { ...base, id: 'PRR-9', phase: 'pr-review', pr: 'https://github.com/acme/widgets/pull/9' },
 };
 const shipped = { ...base, id: 'DONE-1', repo: 'acme/one', phase: 'closed' };
-sources.at(-1).listeners.stories({ data: JSON.stringify({ stories: [...Object.values(fixtures), shipped, ...Object.values(reviewed)] }) });
+const retros = {
+  merged: { ...base, id: 'MRG-1', phase: 'retro', pr: 'https://github.com/acme/widgets/pull/10', retro: { returnPhase: 'closed', startedAt: now(), detail: 'The PR merged.' } },
+  open: { ...base, id: 'RET-1', phase: 'retro', pr: 'https://github.com/acme/widgets/pull/11', retro: { returnPhase: 'ci', startedAt: now(), detail: 'Review lessons.' } },
+};
+sources.at(-1).listeners.stories({ data: JSON.stringify({ stories: [...Object.values(fixtures), shipped, ...Object.values(reviewed), ...Object.values(retros)] }) });
 
 const walk = node => node && typeof node === 'object' ? [node, ...node.children.flatMap(walk)] : [];
 const cards = new Map(walk(ids.get('board')).filter(node => node.tag === 'article' && node.classes().includes('card')).map(card => [card.children.find(child => child?.tag === 'header')?.textContent.match(/[A-Z]+-\d+/)?.[0], card]));
@@ -442,4 +446,18 @@ test('the track view marks a story with no hold as idle and a story waiting on J
   } finally {
     useView('lanes');
   }
+});
+
+const laneNameOf = new Map(walk(ids.get('board')).filter(node => node.classes?.().includes('lane'))
+  .flatMap(lane => walk(lane).filter(node => node.tag === 'article').map(article => [article, lane.children.find(child => child?.tag === 'h2')?.children[0]])));
+
+test('a merged story whose retro is running stays in the Ship lane labelled "Merged · retro in progress", and an open PR in retro does not', () => {
+  const merged = cards.get(retros.merged.id);
+  assert.ok(merged, 'the board rendered no card for the merged story in retro');
+  assert.ok(merged.textContent.includes('Merged · retro in progress'), 'the merged card says: ' + merged.textContent);
+  assert.equal(laneNameOf.get(merged), 'Ship');
+  const open = cards.get(retros.open.id);
+  assert.ok(open, 'the board rendered no card for the story in retro with its PR open');
+  assert.ok(!open.textContent.includes('Merged'), 'the retro card with an open PR says: ' + open.textContent);
+  assert.ok(!cards.has(shipped.id), 'a closed story has no card on the board');
 });
