@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, rmdirSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
@@ -291,4 +291,219 @@ test('the background Jarvis has a tier of its own, standard by default, which th
   const result = check(moved.repo, moved.env);
   assert.deepEqual(result.problems, []);
   assert.equal(result.phaseTiers.coordinator, 'fast');
+});
+
+const script = fileURLToPath(new URL('./preflight.mjs', import.meta.url));
+const completeMachine = {
+  ...machine, sharedResources: [], defaultVerificationEnvironment: 'localhost', implementationLevel: 'full', reviewRoundLimit: 3,
+  beforeAndAfter: 'ask', architectureDiagram: 'ask', workerPermissions: 'restricted', models: { 'claude-code': { deep: 'opus', standard: null } },
+};
+const completeRepo = {
+  gates: { test: 'git --version', lint: null, typecheck: null, build: null, secrets: null, dependencies: null, staticAnalysis: null, mutation: null },
+  requiredPipelines: [], reviewBot: 'none', specDir: 'docs/specs', branchPattern: 'story/{id}-{slug}', worktreeRoot: '/work/trees', teamRules: [],
+  readiness: { tracker: 'github', checklist: ['prLinked'] },
+};
+
+function run(mode, repo, env) {
+  const result = spawnSync(process.execPath, [script, ...(mode ? [mode] : []), ...(repo ? [repo] : [])], { env, encoding: 'utf8' });
+  let json = null;
+  try { json = JSON.parse(result.stdout); } catch {}
+  return { ...result, json };
+}
+
+const rowOf = (rows, field) => rows.find(row => row.field === field);
+const withoutHyperframes = env => {
+  const path = (env.PATH || env.Path || '').split(delimiter).filter(dir => !onPath('hyperframes', { ...env, PATH: dir })).join(delimiter);
+  return { ...env, PATH: path, Path: path };
+};
+
+function withInstalledComponents(t, env) {
+  const bin = mkdtempSync(join(tmpdir(), 'ai-sdlc-bin-'));
+  t.after(() => rmSync(bin, { recursive: true, force: true }));
+  for (const name of ['gh', 'ffmpeg', 'hyperframes']) writeFileSync(join(bin, name), '');
+  const path = [bin, env.PATH || env.Path].join(delimiter);
+  return { ...env, PATH: path, Path: path };
+}
+
+test('answers lists every machine and repository question with its current answer', t => {
+  const { repo, env } = workspace(t, { machineProfile: completeMachine, repoEntry: completeRepo });
+  const { status, json } = run('answers', repo, env);
+  assert.equal(status, 0);
+  assert.equal(json.profile, join(env.AI_SDLC_HOME, 'profile.json'));
+  assert.equal(json.slug, 'acme/widgets');
+  assert.deepEqual(Object.keys(json.machine[0]).sort(), ['answered', 'field', 'name', 'question', 'value']);
+  assert.deepEqual([...new Set(json.machine.map(row => row.question))], [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
+  assert.deepEqual([...new Set(json.repository.map(row => row.question))], [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
+  assert.deepEqual(rowOf(json.machine, 'ownerName'), { question: 1, name: 'Name', field: 'ownerName', answered: true, value: 'Sam' });
+  assert.deepEqual(rowOf(json.machine, 'reviewRoundLimit'), { question: 6, name: 'Review round limit', field: 'reviewRoundLimit', answered: true, value: 3 });
+  assert.deepEqual(rowOf(json.machine, 'models').value, { 'claude-code': { deep: 'opus', standard: null } });
+  assert.deepEqual(rowOf(json.repository, 'gates.test'), { question: 1, name: 'Gates', field: 'gates.test', answered: true, value: 'git --version' });
+  assert.equal(rowOf(json.repository, 'branchPattern').value, 'story/{id}-{slug}');
+  assert.deepEqual(rowOf(json.repository, 'readiness').value, completeRepo.readiness);
+  assert.deepEqual(json.repository.filter(row => row.field?.startsWith('gates.')).map(row => row.field),
+    ['test', 'lint', 'typecheck', 'build', 'secrets', 'dependencies', 'staticAnalysis', 'mutation'].map(gate => 'gates.' + gate));
+});
+
+test('answers shows a null answer as answered and a field the profile lacks as unanswered', t => {
+  const { gates, readiness, ...rest } = completeRepo;
+  const { reviewRoundLimit, ...partialMachine } = completeMachine;
+  const { repo, env } = workspace(t, {
+    machineProfile: partialMachine,
+    repoEntry: { ...rest, gates: { test: 'git --version', mutation: null } },
+  });
+  const { json } = run('answers', repo, env);
+  assert.deepEqual(rowOf(json.repository, 'gates.mutation'), { question: 3, name: 'Mutation testing', field: 'gates.mutation', answered: true, value: null });
+  assert.deepEqual(rowOf(json.repository, 'gates.lint'), { question: 1, name: 'Gates', field: 'gates.lint', answered: false, value: null });
+  assert.deepEqual(rowOf(json.repository, 'readiness'), { question: 11, name: 'Work tracker', field: 'readiness', answered: false, value: null });
+  assert.deepEqual(rowOf(json.machine, 'reviewRoundLimit'), { question: 6, name: 'Review round limit', field: 'reviewRoundLimit', answered: false, value: null });
+});
+
+test('answers marks as unanswered exactly the fields check lists as unanswered', t => {
+  const { gates, readiness, specDir, ...rest } = completeRepo;
+  const { models, ...partialMachine } = completeMachine;
+  const { repo, env } = workspace(t, {
+    machineProfile: partialMachine,
+    repoEntry: { ...rest, gates: { test: 'git --version' } },
+  });
+  const open = check(repo, env).unanswered.map(({ scope, field }) => `${scope}:${field}`).sort();
+  assert.ok(open.length >= 5);
+  const { json } = run('answers', repo, env);
+  const shown = [
+    ...json.machine.filter(row => !row.answered).map(row => `machine:${row.field}`),
+    ...json.repository.filter(row => !row.answered).map(row => `repository:${row.field}`),
+  ].sort();
+  assert.deepEqual(shown, open);
+});
+
+test('a question whose omission is an answer is never unanswered', t => {
+  const { repo, env } = workspace(t, { machineProfile: completeMachine, repoEntry: completeRepo });
+  assert.deepEqual(check(repo, env).unanswered, []);
+  const { json } = run('answers', repo, env);
+  assert.deepEqual([...json.machine, ...json.repository].filter(row => !row.answered), []);
+  assert.deepEqual(rowOf(json.machine, 'declinedComponents'), { question: 11, name: 'Missing components', field: 'declinedComponents', answered: true, value: [] });
+  assert.deepEqual(rowOf(json.machine, 'phaseTiers'), { question: 10, name: 'Models', field: 'phaseTiers', answered: true, value: {} });
+  assert.deepEqual(rowOf(json.repository, 'crossModelReviewAuthorized'), { question: 7, name: 'Sharing limit', field: 'crossModelReviewAuthorized', answered: true, value: null });
+  const missingTools = json.repository.find(row => row.question === 2);
+  assert.equal(missingTools.name, 'Missing tools');
+  assert.equal(missingTools.answered, true);
+  assert.equal(missingTools.value, null);
+});
+
+test('answers shows the saved value of a question whose omission is an answer', t => {
+  const { repo, env } = workspace(t, {
+    machineProfile: { ...completeMachine, declinedComponents: ['ffmpeg'], phaseTiers: { ci: 'fast' } },
+    repoEntry: { ...completeRepo, crossModelReviewAuthorized: false },
+  });
+  const { json } = run('answers', repo, env);
+  assert.deepEqual(rowOf(json.machine, 'declinedComponents').value, ['ffmpeg']);
+  assert.deepEqual(rowOf(json.machine, 'phaseTiers').value, { ci: 'fast' });
+  assert.equal(rowOf(json.repository, 'crossModelReviewAuthorized').value, false);
+});
+
+test('answers with no profile prints empty sections and exits 1 naming the missing profile', t => {
+  const { repo, env } = workspace(t);
+  const result = run('answers', repo, env);
+  assert.equal(result.status, 1);
+  assert.deepEqual([result.json.machine, result.json.repository], [[], []]);
+  assert.equal(result.json.slug, 'acme/widgets');
+  assert.match(result.stdout + result.stderr, /No profile at .*profile\.json/);
+});
+
+test('answers with a machine profile but no repository section lists only the machine questions', t => {
+  const { repo, env } = workspace(t, { machineProfile: completeMachine });
+  const { json } = run('answers', repo, env);
+  assert.ok(json.machine.length > 0);
+  assert.deepEqual(json.repository, []);
+  assert.equal(rowOf(json.machine, 'ownerName').value, 'Sam');
+});
+
+test('the usage line names the answers mode', t => {
+  const { env } = workspace(t);
+  const result = run(undefined, undefined, env);
+  assert.equal(result.status, 2);
+  assert.match(result.stderr, /Usage: node preflight\.mjs detect \[repoDir\] \| check \[repoDir\] \[harness\] \| answers \[repoDir\]/);
+});
+
+const stale = (tracker, field) =>
+  `repos.acme/widgets.readiness.${field} is not used when the tracker is ${tracker}. Remove it, or change the Work tracker answer (ai-sdlc-setup repository question 11).`;
+const staleWarnings = result => result.warnings.filter(warning => /is not used when the tracker is/.test(warning));
+
+function trackerCheck(t, readiness) {
+  const { repo, env } = workspace(t, { machineProfile: completeMachine, repoEntry: { ...completeRepo, readiness } });
+  return check(repo, withInstalledComponents(t, env));
+}
+
+test('a tracker of none warns about every other readiness field, and the check still passes', t => {
+  const readiness = {
+    tracker: 'none', organization: 'acme', project: 'Widgets', effortField: 'Points', unestimatedValue: -1, closedTaskStates: ['Done'],
+    targetBranch: 'main', checklist: ['prLinked'], handoffTaskTitle: 'Handoff', handoffAssignee: 'Sam', phases: ['ci'],
+  };
+  const result = trackerCheck(t, readiness);
+  assert.deepEqual(result.problems, []);
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.unanswered, []);
+  const fields = Object.keys(readiness).filter(field => field !== 'tracker');
+  assert.deepEqual(staleWarnings(result).sort(), fields.map(field => stale('none', field)).sort());
+});
+
+test('a tracker of none with nothing else saved warns about nothing', t => {
+  assert.deepEqual(trackerCheck(t, { tracker: 'none' }).warnings, []);
+});
+
+test('a github or linear tracker warns about the Azure DevOps organization, project and effort field only', t => {
+  for (const tracker of ['github', 'linear']) {
+    const result = trackerCheck(t, {
+      tracker, organization: 'acme', project: 'Widgets', effortField: 'Points', unestimatedValue: -1, closedTaskStates: ['Done'],
+      targetBranch: 'main', checklist: ['prLinked', 'tasksClosed'], handoffTaskTitle: 'Handoff', handoffAssignee: 'Sam', phases: ['ci'],
+    });
+    assert.equal(result.ok, true);
+    assert.deepEqual(staleWarnings(result).sort(), ['effortField', 'organization', 'project'].map(field => stale(tracker, field)).sort(), tracker);
+  }
+});
+
+test('a github checklist that counts effort warns about the checklist entry', t => {
+  const result = trackerCheck(t, { tracker: 'github', checklist: ['prLinked', 'effortSet'] });
+  assert.equal(result.ok, true);
+  const warnings = staleWarnings(result);
+  assert.equal(warnings.length, 1);
+  assert.match(warnings[0], /repos\.acme\/widgets\.readiness\.checklist/);
+  assert.match(warnings[0], /effortSet/);
+  assert.match(warnings[0], /is not used when the tracker is github\./);
+  assert.match(warnings[0], /Remove it, or change the Work tracker answer \(ai-sdlc-setup repository question 11\)\.$/);
+  assert.deepEqual(staleWarnings(trackerCheck(t, { tracker: 'linear', checklist: ['effortSet'] })), []);
+});
+
+test('an azure-devops tracker keeps every readiness field without a warning', t => {
+  const readiness = {
+    tracker: 'azure-devops', organization: 'acme', project: 'Widgets', effortField: 'Points', unestimatedValue: -1, closedTaskStates: ['Done'],
+    targetBranch: 'main', checklist: ['tasksClosed', 'effortSet'], handoffTaskTitle: 'Handoff', handoffAssignee: 'Sam', phases: ['ci'],
+  };
+  const result = trackerCheck(t, readiness);
+  assert.deepEqual(result.problems, []);
+  assert.deepEqual(result.warnings, []);
+});
+
+test('a stale tracker field tells the owner to remove it, not to install a component', t => {
+  const result = trackerCheck(t, { tracker: 'none', checklist: ['prLinked'] });
+  assert.equal(result.warnings.length, 1);
+  const steps = result.nextSteps.join('\n');
+  assert.match(steps, /[Rr]emove/);
+  assert.match(steps, /Work tracker/);
+  assert.doesNotMatch(steps, /declinedComponents|Install each missing component/);
+  assert.match(steps, /Name a feature or bug to start a story/);
+});
+
+test('a component warning still gets the install step, beside the stale tracker step when both are present', t => {
+  const { repo, env } = workspace(t, { machineProfile: completeMachine, repoEntry: { ...completeRepo, readiness: { tracker: 'none', checklist: ['prLinked'] } } });
+  const both = check(repo, withoutHyperframes(env));
+  assert.match(both.warnings.join('\n'), /hyperframes is not installed/);
+  assert.equal(staleWarnings(both).length, 1);
+  assert.match(both.nextSteps.join('\n'), /declinedComponents/);
+  assert.match(both.nextSteps.join('\n'), /Work tracker/);
+
+  const componentOnly = workspace(t, { machineProfile: completeMachine, repoEntry: completeRepo });
+  const only = check(componentOnly.repo, withoutHyperframes(componentOnly.env));
+  assert.deepEqual(staleWarnings(only), []);
+  assert.match(only.nextSteps.join('\n'), /declinedComponents/);
+  assert.doesNotMatch(only.nextSteps.join('\n'), /Work tracker/);
 });
