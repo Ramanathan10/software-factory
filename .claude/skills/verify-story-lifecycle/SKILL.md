@@ -54,4 +54,4 @@ Never weaken a property to make a change pass. If the change is meant to alter t
 - `mission-console/roles.mjs`: `phases`
 - `skills/jarvis/SKILL.md`: the table under "5. Check handoffs and keep the console current"
 
-Last confirmed to describe these files at commit `b848f7f`. When any of them changes, rerun the model. Move this commit forward only after you have checked that `guarded`, `eventInputs` and the properties still describe the code at the new commit.
+Last confirmed to describe these files at commit `ce19d0b`. When any of them changes, rerun the model. Move this commit forward only after you have checked that `guarded`, `eventInputs` and the properties still describe the code at the new commit.
