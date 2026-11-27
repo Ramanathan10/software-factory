@@ -133,3 +133,61 @@ test('every short sequence of lines from a fixed fragment set renders and ends',
   assert.deepEqual(failures, []);
   assert.equal(sequences, fragments.length + fragments.length ** 2 + fragments.length ** 3);
 });
+
+const withBreaks = input => renderMarkdown(input, el, { breaks: true });
+const kids = node => node.children;
+
+test('with breaks, consecutive lines of a paragraph are joined by a br element', () => {
+  const [para, ...rest] = withBreaks('(a) first\n(b) second\n(c) third');
+  assert.equal(rest.length, 0);
+  assert.equal(para.tag, 'p');
+  assert.deepEqual(kids(para).map(child => typeof child === 'string' ? child : child.tag), ['(a) first', 'br', '(b) second', 'br', '(c) third']);
+});
+
+test('with breaks, a blank line still starts a new paragraph and adds no br', () => {
+  const blocks = withBreaks('one\ntwo\n\nthree');
+  assert.deepEqual(blocks.map(block => block.tag), ['p', 'p']);
+  assert.equal(kids(blocks[0]).filter(child => child.tag === 'br').length, 1);
+  assert.equal(kids(blocks[1]).filter(child => child.tag === 'br').length, 0);
+});
+
+test('without the option a paragraph still joins its lines with a space and has no br', () => {
+  for (const blocks of [renderMarkdown('one\ntwo', el), renderMarkdown('one\ntwo', el, {}), renderMarkdown('one\ntwo', el, { breaks: false })]) {
+    assert.equal(blocks.length, 1);
+    assert.equal(text(blocks[0]), 'one two');
+    assert.ok(!kids(blocks[0]).some(child => child.tag === 'br'));
+  }
+});
+
+test('with breaks, inline marks on each line still render and the text stays literal', () => {
+  const [para] = withBreaks('**bold** line\n<img src=x onerror=alert(1)>\n`code` [x](javascript:alert(1))');
+  assert.deepEqual(kids(para).filter(child => typeof child !== 'string').map(child => child.tag), ['strong', 'br', 'br', 'code']);
+  assert.match(text(para), /<img src=x onerror=alert\(1\)>/);
+  assert.match(text(para), /\[x\]\(javascript:alert\(1\)\)/);
+});
+
+test('with breaks, lists, fences, quotes, headings and tables render as without it', () => {
+  const input = '## Head\n\n1. one\n2. two\n\n- a\n  - nested\n\n> quote\n\n```\ncode\nmore\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |';
+  assert.deepEqual(withBreaks(input), renderMarkdown(input, el));
+});
+
+test('with breaks, a list item continuation line and a paragraph after a list keep their shape', () => {
+  const blocks = withBreaks('- item\n  continues\n\nafter\nlines');
+  assert.deepEqual(blocks.map(block => block.tag), ['ul', 'p']);
+  assert.equal(text(blocks[0]), 'item continues');
+  assert.equal(kids(blocks[1]).filter(child => child.tag === 'br').length, 1);
+});
+
+test('with breaks, every short sequence of lines from a fixed fragment set renders and ends', () => {
+  const fragments = ['# Title', '- item', '1. first', '> quote', '```', '| a | b |', '|---|---|', 'plain', 'more plain', ''];
+  const failures = [];
+  const walk = prefix => {
+    if (failures.length) return;
+    if (prefix.length) {
+      try { assert.ok(renderMarkdown(prefix.join('\n'), el, { breaks: true }).length >= 0); } catch (error) { failures.push(error.message); }
+    }
+    if (prefix.length < 3) for (const fragment of fragments) walk([...prefix, fragment]);
+  };
+  walk([]);
+  assert.deepEqual(failures, []);
+});
