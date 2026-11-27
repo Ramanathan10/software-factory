@@ -155,3 +155,57 @@ test('the 1100px rule still hides the clock and tightens the stats', () => {
   assert.equal(declarations(narrowCss, '.stats').gap, '14px');
   assert.equal(declarations(narrowCss, '.stats span')['font-size'], '11px');
 });
+
+const feedPanel = between(html, '<aside class="feed" id="feed-panel">', '</aside>');
+const feedHeading = between(feedPanel, '<h2>', '</h2>');
+
+test('the feed panel holds the heading, then the filter row, then the list', () => {
+  const order = ['<h2>', '<div class="feed-filters">', '<ol id="feed">'].map(marker => feedPanel.indexOf(marker));
+  assert.ok(order.every(index => index >= 0), `a feed part is missing: ${order}`);
+  assert.deepEqual(order, [...order].sort((a, b) => a - b));
+  assert.ok(feedPanel.indexOf('</h2>') < feedPanel.indexOf('<div class="feed-filters">'), 'the filter row sits below the heading, not in it');
+});
+
+test('the filter row has a labelled search box and a chip for the picked story', () => {
+  const row = div(feedPanel, '<div class="feed-filters">');
+  assert.match(row, /<input[^>]*\btype="search"[^>]*>/);
+  assert.match(row, /<input[^>]*\bid="feed-keyword"[^>]*>/);
+  assert.match(row, /<input[^>]*\baria-label="Filter live feed"[^>]*>/);
+  assert.match(row, /id="feed-story"/);
+  assert.match(row.slice(row.indexOf('id="feed-story"')), /^id="feed-story"[^>]*\bhidden\b/, 'the chip starts hidden');
+});
+
+test('the filtered marker sits in the heading, hidden until a filter is on', () => {
+  assert.match(feedHeading, /<b[^>]*\bid="feed-filtered"[^>]*\bhidden\b[^>]*>filtered<\/b>/);
+  assert.ok(feedHeading.indexOf('id="feed-unread"') >= 0 && feedHeading.indexOf('id="feed-filtered"') >= 0);
+});
+
+test('the feed grid has a row for the filters and the filter row is hidden while minimized', () => {
+  assert.equal(declarations(baseCss, '.feed')['grid-template-rows'], 'auto auto 1fr');
+  assert.match(baseCss, /body\.feed-min [^{}]*\.feed-filters[^{}]*\{[^{}]*display:\s*none/);
+});
+
+test('the filtered marker stays out of sight unless the feed is minimized', () => {
+  assert.ok(/#feed-filtered[^{}]*\{[^{}]*display:\s*none/.test(baseCss), 'the marker needs a rule that hides it by default');
+  assert.match(baseCss, /body\.feed-min #feed-filtered[^{}]*\{[^{}]*display:\s*(inline|block|inline-block|flex|inline-flex)/);
+  assert.ok(!/body\.feed-min [^{}]*\.feed-title[^{}]*,[^{}]*#feed-filtered/.test(baseCss));
+});
+
+test('the narrow layout does not drop the filter row unless minimized', () => {
+  for (const [, selectors, body] of narrowCss.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+    if (/\.feed-filters/.test(selectors) && /display:\s*none/.test(body)) assert.match(selectors, /feed-min/, 'only the minimized feed may hide the row');
+  }
+});
+
+test('app.js wires the keyword box and keeps the filters out of localStorage', () => {
+  assert.ok(js.includes("$('feed-keyword')"), 'app.js reads the keyword box by id');
+  assert.ok(js.includes("$('feed-filtered')"), 'app.js shows the filtered marker by id');
+  const keys = [...js.matchAll(/localStorage\.(?:setItem|getItem)\('([^']+)'/g)].map(match => match[1]);
+  assert.deepEqual([...new Set(keys)].sort(), ['aisdlc-feed-min', 'aisdlc-view']);
+});
+
+test('the keyword box and the story id button keep their keys from the page handlers', () => {
+  assert.match(js, /feed-keyword[\s\S]*?Escape[\s\S]*?stopPropagation/, 'the keyword box handles Escape itself and stops it reaching the document handler');
+  assert.match(js, /Show only [\s\S]*?Show all stories/, 'the story id button has both titles');
+  assert.ok(js.includes('No entries match'));
+});
