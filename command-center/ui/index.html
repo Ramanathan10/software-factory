@@ -45,7 +45,12 @@
     <aside class="feed" id="feed-panel">
       <h2><span class="feed-title">Live feed <span id="feed-rate"></span></span>
         <b class="feed-unread" id="feed-unread" hidden></b>
+        <b class="feed-filtered" id="feed-filtered" hidden>filtered</b>
         <button type="button" class="feed-toggle" id="feed-toggle" title="Minimize live feed" aria-label="Minimize live feed" aria-expanded="true">âˆ’</button></h2>
+      <div class="feed-filters">
+        <input type="search" id="feed-keyword" aria-label="Filter live feed" placeholder="Filter feed" autocomplete="off">
+        <span class="feed-chip" id="feed-story" hidden><span id="feed-story-id"></span><button type="button" id="feed-story-clear" aria-label="Show all stories">×</button></span>
+      </div>
       <ol id="feed"></ol>
     </aside>
   </main>

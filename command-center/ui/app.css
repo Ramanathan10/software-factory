@@ -292,16 +292,26 @@ textarea:focus { outline: none; border-color: var(--amber); }
 .rec { margin-left: 6px; font-size: 10px; opacity: .7; }
 pre { white-space: pre-wrap; font: 12px/1.5 var(--mono); background: #0e121b; border: 1px solid var(--line); border-radius: 8px; padding: 8px; margin: 0; }
 
-.feed { border-left: 1px solid var(--line); background: #0d1119; display: grid; grid-template-rows: auto 1fr; min-height: 0; }
+.feed { border-left: 1px solid var(--line); background: #0d1119; display: grid; grid-template-rows: auto auto 1fr; min-height: 0; }
 .feed h2 { padding: 14px 16px 10px; font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); display: flex; align-items: center; gap: 8px; }
 .feed-title { flex: 1; display: flex; justify-content: space-between; gap: 8px; }
 .feed h2 #feed-rate { font: 11px var(--mono); color: var(--green); letter-spacing: 0; text-transform: none; }
 .feed-toggle { background: none; border: 1px solid transparent; color: var(--muted); border-radius: 6px; padding: 2px 6px; cursor: pointer; font-size: 14px; line-height: 1; }
 .feed-toggle:hover, .feed-toggle:focus-visible { border-color: var(--line); color: var(--text); }
+.feed-filtered { color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 1px 7px; font: 11px var(--mono); letter-spacing: 0; text-transform: none; }
+.feed-filters { display: flex; gap: 8px; align-items: center; padding: 0 12px 10px; }
+.feed-filters input { flex: 1; min-width: 0; background: var(--bg, #0a0d14); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; font: 12px var(--mono); }
+.feed-chip { display: inline-flex; align-items: center; gap: 4px; border: 1px solid var(--line); border-radius: 999px; padding: 1px 4px 1px 8px; font: 11px var(--mono); color: var(--text); }
+.feed-chip button, .feed .meta button.feed-id { background: none; border: 0; color: inherit; cursor: pointer; font: inherit; padding: 0 3px; }
+.feed .meta button.feed-id { color: var(--role); font-weight: bold; padding: 0; }
+.feed .meta button.feed-id:hover, .feed .meta button.feed-id:focus-visible { text-decoration: underline; }
+.feed-empty { padding: 8px; color: var(--muted); font-size: 12px; display: flex; gap: 8px; align-items: center; }
 .feed-unread { background: var(--amber); color: #1b1405; border-radius: 999px; padding: 1px 7px; font: 600 11px var(--mono); letter-spacing: 0; }
 body.feed-min .layout { grid-template-columns: 1fr 38px; }
 body.feed-min .feed { cursor: pointer; }
-body.feed-min .feed ol, body.feed-min #feed-rate { display: none; }
+body.feed-min .feed ol, body.feed-min #feed-rate, body.feed-min .feed-filters { display: none; }
+#feed-filtered { display: none; }
+body.feed-min #feed-filtered { display: inline-block; }
 body.feed-min .feed h2 { flex-direction: column-reverse; justify-content: flex-end; padding: 10px 0; height: 100%; box-sizing: border-box; }
 body.feed-min .feed-title { writing-mode: vertical-rl; flex: none; }
 body.feed-min .feed:hover { background: #121826; }
