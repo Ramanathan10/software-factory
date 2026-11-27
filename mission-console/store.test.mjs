@@ -1164,7 +1164,7 @@ test('return-to-build is accepted from publishing and refused from ci, merge and
   const open = toCi(store, 'pub-ci');
   assert.equal(store.handover('pub-ci').story.phase, 'ci');
   assert.throws(() => open('return-to-build', { detail: 'From ci.' }), error => error.status === 409);
-  open('pr-ready', { head: 'c'.repeat(40), detail: 'Checks and review passed.' });
+  open('pr-ready', { detail: 'Checks and review passed.' });
   assert.equal(store.handover('pub-ci').story.phase, 'merge');
   assert.throws(() => open('return-to-build', { detail: 'From merge.' }), error => error.status === 409);
 });
