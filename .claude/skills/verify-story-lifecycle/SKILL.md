@@ -27,7 +27,9 @@ description: Check a change to the story store's lifecycle against every story s
 node --test mission-console/lifecycle-model.test.mjs
 ```
 
-It takes about 12 seconds and explores about 17,600 states and 95,000 accepted events. `node --test` runs it with everything else, so CI runs it on every pull request.
+It takes about 4 to 5 minutes and explores about 208,600 states and 2.6 million accepted events, against a limit of 240,000 states set in `explore`. `node --test` runs it with everything else, so CI runs it on every pull request.
+
+When it fails with "More than N story states", first drop from `abstract` a field that no guard reads in the states that grew. Raise the limit only when every remaining state is one the store can tell apart, and update the numbers above in the same change.
 
 ## Read a failure
 
