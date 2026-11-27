@@ -29,10 +29,35 @@ test('a story that is not being cleaned up can always still merge', () => {
   assert.deepEqual(stuck.map(([, node]) => story(node)), [], 'these stories can never reach closed');
 });
 
-test('the merge of a registered pull request closes the story from any open PR phase', () => {
-  const refused = live.filter(([, { state }]) => state.pr && ['ci', 'merge', 'retro'].includes(state.phase) && !state.cleanup)
+test('the merge of a registered pull request closes the story from ci or merge', () => {
+  const refused = live.filter(([, { state }]) => state.pr && ['ci', 'merge'].includes(state.phase) && !state.cleanup)
     .filter(([id, { state }]) => follow(states, id, [...(state.worker ? ['release-worker'] : []), 'merged'])?.phase !== 'closed');
   assert.deepEqual(refused.map(([, node]) => story(node)), [], 'merged was refused after these events');
+});
+
+test('from retro, merged then the retro handoff closes the story, and a merged retro takes neither a second merge nor a replan', () => {
+  const after = (id, type) => states.get(id).edges.find(edge => edge.type === type)?.to;
+  const retros = live.filter(([, { state }]) => state.phase === 'retro' && state.pr && !state.cleanup && !state.blocked);
+  assert.ok(retros.some(([, { state }]) => state.worker) && retros.some(([, { state }]) => !state.worker), 'the explorer reaches retro with and without a worker');
+  const wrong = [];
+  for (const [id, { state }] of retros) {
+    const merged = state.retro?.merged;
+    if (merged) {
+      for (const type of ['merged', 'replan']) if (after(id, type)) wrong.push(type + ' was accepted on a merged retro after ' + story(states.get(id)));
+    } else {
+      const held = after(id, 'merged');
+      const heldState = held && states.get(held).state;
+      if (heldState?.phase !== 'retro' || !heldState.retro?.merged) wrong.push('merged did not hold the retro after ' + story(states.get(id)));
+      else if (Boolean(heldState.worker) !== Boolean(state.worker)) wrong.push('merged changed the retro worker after ' + story(states.get(id)));
+    }
+    if (merged || after(id, 'merged')) {
+      const held = merged ? id : after(id, 'merged');
+      const idle = states.get(held).state.worker ? after(held, 'release-worker') : held;
+      const closed = idle && after(idle, 'handoff');
+      if (!closed || states.get(closed).state.phase !== 'closed') wrong.push('the retro handoff did not close the story after ' + story(states.get(id)) + ' then merged');
+    }
+  }
+  assert.deepEqual(wrong, []);
 });
 
 test('a worker is assigned only in a phase that has one, and a phase never changes under it', () => {

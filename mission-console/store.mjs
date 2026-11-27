@@ -152,7 +152,7 @@ const jarvisNotice = input => input.type === 'question' && typeof input.question
 function apply(story, input, now) {
   requireThat(story.harness || ['select-harness', 'release-worker'].includes(input.type), 'Select the story harness first.', 409);
   requireThat(!story.blocked || jarvisNotice(input) || ['resume', 'answer', 'replan', 'assign-worktree', 'release-worker', 'select-harness', 'merged', 'turn-started', 'turn-ended', ...jarvisTurnEvents].includes(input.type),
-    'Resume or replan the blocked story first.', 409);
+    story.retro?.mergedAt ? 'Resume the blocked story first.' : 'Resume or replan the blocked story first.', 409);
   switch (input.type) {
     case 'select-harness':
       requireThat(!story.harness && !story.worker && story.phase !== 'closed',
@@ -315,7 +315,7 @@ function apply(story, input, now) {
       if (story.phase === 'retro') {
         requireThat(['ci', 'merge'].includes(story.retro?.returnPhase), 'Retro return phase is unavailable.', 409);
         const lessons = string(input.detail, 'retro lessons');
-        story.phase = story.retro.returnPhase;
+        story.phase = story.retro.mergedAt ? 'closed' : story.retro.returnPhase;
         story.retro.completedAt = now;
         story.retro.detail = lessons;
         return lessons;
@@ -353,6 +353,7 @@ function apply(story, input, now) {
     case 'replan':
       requireThat(story.phase !== 'planning' && story.phase !== 'closed',
         'This phase cannot reopen planning.', 409);
+      requireThat(!story.retro?.mergedAt, 'The pull request has merged; finish the retro.', 409);
       story.phase = 'planning';
       delete story.blocked;
       delete story.readyHead;
@@ -419,6 +420,13 @@ function apply(story, input, now) {
       return string(input.detail, 'new head or check regression');
     case 'merged':
       requireThat(['ci', 'merge', 'retro', 'pr-review'].includes(story.phase), 'There is no open PR to reconcile in this phase.', 409);
+      if (story.phase === 'retro') {
+        requireThat(!story.retro.mergedAt, 'The merge is already recorded.', 409);
+        story.retro.mergedAt = now;
+        story.retro.mergeDetail = string(input.detail, 'merge evidence');
+        delete story.blocked;
+        return story.retro.mergeDetail;
+      }
       story.phase = 'closed';
       delete story.blocked;
       return string(input.detail, 'merge evidence');

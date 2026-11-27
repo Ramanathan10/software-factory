@@ -12,7 +12,7 @@ description: Check a change to the story store's lifecycle against every story s
 | Every field a guard in `store.mjs` reads is modeled | The model silently stops seeing a guard | |
 | Every reachable phase is in `roles.mjs`, and every phase there is reachable | A story moves to a phase the dashboard cannot show, or a phase is dead | |
 | A story not being cleaned up can always still reach `closed` | A story is stuck with no event that moves it | |
-| From `ci`, `merge`, `retro` or `pr-review` with a registered PR, `merged` (after `release-worker` if a worker is assigned) closes the story | GitHub merged the PR and the story stays open | 3c60828: a stale `blocked` refused `merged` |
+| From `ci`, `merge`, `retro` or `pr-review` with a registered PR, `merged` (after `release-worker` if a worker is assigned) closes the story, except from `retro`, where `merged` holds the story in `retro` with its worker until the retro `handoff` closes it | GitHub merged the PR and the story stays open, or a retro that merged is closed under its worker and the owner cannot answer | 3c60828: a stale `blocked` refused `merged` |
 | A worker exists only in a worker phase, and no event changes the phase under it | A worker keeps running on a phase that is no longer its own | |
 | A story awaiting cleanup never changes phase | Cleanup races with work on the same story | |
 | Every event the Jarvis phase table names is accepted in or into that row's phases | Jarvis is told to record an event the store refuses | d989158: the owner's change request on the comparison had no `return-to-build` |
@@ -52,4 +52,4 @@ Never weaken a property to make a change pass. If the change is meant to alter t
 - `mission-console/roles.mjs`: `phases`
 - `skills/jarvis/SKILL.md`: the table under "5. Check handoffs and keep the console current"
 
-Last confirmed to describe these files at commit `d57386a`. When any of them changes, rerun the model. Move this commit forward only after you have checked that `guarded`, `eventInputs` and the properties still describe the code at the new commit.
+Last confirmed to describe these files at commit `373a026`. When any of them changes, rerun the model. Move this commit forward only after you have checked that `guarded`, `eventInputs` and the properties still describe the code at the new commit.
