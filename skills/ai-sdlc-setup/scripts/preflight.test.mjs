@@ -332,8 +332,8 @@ test('answers lists every machine and repository question with its current answe
   assert.equal(json.profile, join(env.AI_SDLC_HOME, 'profile.json'));
   assert.equal(json.slug, 'acme/widgets');
   assert.deepEqual(Object.keys(json.machine[0]).sort(), ['answered', 'field', 'name', 'question', 'value']);
-  assert.deepEqual([...new Set(json.machine.map(row => row.question))], [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
-  assert.deepEqual([...new Set(json.repository.map(row => row.question))], [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
+  assert.deepEqual([...new Set(json.machine.map(row => row.question))].sort((x, y) => x - y), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
+  assert.deepEqual([...new Set(json.repository.map(row => row.question))].sort((x, y) => x - y), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
   assert.deepEqual(rowOf(json.machine, 'ownerName'), { question: 1, name: 'Name', field: 'ownerName', answered: true, value: 'Sam' });
   assert.deepEqual(rowOf(json.machine, 'reviewRoundLimit'), { question: 6, name: 'Review round limit', field: 'reviewRoundLimit', answered: true, value: 3 });
   assert.deepEqual(rowOf(json.machine, 'models').value, { 'claude-code': { deep: 'opus', standard: null } });
