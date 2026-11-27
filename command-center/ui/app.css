@@ -311,7 +311,7 @@ body.feed-min .layout { grid-template-columns: 1fr 38px; }
 body.feed-min .feed { cursor: pointer; }
 body.feed-min .feed ol, body.feed-min #feed-rate, body.feed-min .feed-filters { display: none; }
 #feed-filtered { display: none; }
-body.feed-min #feed-filtered { display: inline-block; }
+body.feed-min #feed-filtered { display: inline-block; writing-mode: vertical-rl; }
 body.feed-min .feed h2 { flex-direction: column-reverse; justify-content: flex-end; padding: 10px 0; height: 100%; box-sizing: border-box; }
 body.feed-min .feed-title { writing-mode: vertical-rl; flex: none; }
 body.feed-min .feed:hover { background: #121826; }

@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { readFileSync } from 'node:fs';
 import { lanes, phases, roles } from '../mission-console/roles.mjs';
 
 const loose = new Proxy(function () {}, {
@@ -267,4 +268,28 @@ test('events hidden by the repository filter are not new once the filter widens'
   pickRepo('');
   assert.ok(rowWith('Beta newest'));
   assert.equal(newRows().length, 0);
+});
+
+test('index.html is valid UTF-8', () => {
+  const bytes = readFileSync(new URL('./ui/index.html', import.meta.url));
+  assert.doesNotThrow(() => new TextDecoder('utf-8', { fatal: true }).decode(bytes));
+});
+
+test('the chip clear button shows a multiplication sign', () => {
+  const html = readFileSync(new URL('./ui/index.html', import.meta.url), 'utf8');
+  assert.match(html, /id="feed-story-clear"[^>]*>(×|&times;)<\/button>/);
+});
+
+test('the filtered marker is vertical in the minimized rail', () => {
+  const css = readFileSync(new URL('./ui/app.css', import.meta.url), 'utf8');
+  const rule = css.match(/body\.feed-min #feed-filtered\s*\{([^}]*)\}/)[1];
+  assert.match(rule, /writing-mode:\s*vertical-rl/);
+});
+
+test('a frame with a hundred thousand events still renders and marks only new events', () => {
+  const many = Array.from({ length: 150000 }, (_, index) => entry(1000 + 150000 - index, 'activity', 'bulk'));
+  frame([alpha(many), beta(betaEvents)]);
+  frame([alpha([entry(999999, 'activity', 'Huge fresh'), ...many]), beta(betaEvents)]);
+  assert.equal(rowWith('Huge fresh').className, 'new');
+  assert.equal(newRows().length, 1);
 });

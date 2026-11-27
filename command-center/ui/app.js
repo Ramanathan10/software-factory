@@ -703,7 +703,7 @@ function renderFeed() {
   const events = feedEntries(shownStories, { keyword: feedKeyword, story: feedStory });
   const fresh = freshEntries(events, feedMaxSeq);
   const freshSeqs = new Set(fresh.map(event => event.seq));
-  feedMaxSeq = Math.max(feedMaxSeq ?? 0, ...stories.flatMap(story => (story.events ?? []).map(event => event.seq)));
+  feedMaxSeq = stories.reduce((top, story) => (story.events ?? []).reduce((each, event) => Math.max(each, event.seq), top), feedMaxSeq ?? 0);
   for (const event of fresh) eventTimes.push(Date.now());
   if (feedMinimized() && fresh.length) { unread += fresh.length; showUnread(); }
   $('feed-filtered').hidden = !feedFiltered();
