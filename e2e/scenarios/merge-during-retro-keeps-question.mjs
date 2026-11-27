@@ -58,6 +58,8 @@ export async function run(rig) {
     expect(acted.worker.session === first.session, 'A different session acted on the answer.');
     await rig.until('the acknowledgement', () => rig.acknowledged(story, answer.seq));
     await rig.until('the story to close', () => rig.snapshot(story).phase === 'closed');
+    const released = rig.event(story, 'release-worker');
+    expect(released?.detail === 'E2E lessons: drop', 'The worker did not release itself with the lessons: ' + released?.detail);
     const closed = rig.snapshot(story);
     expect(closed.retro.detail === 'E2E lessons: drop', 'The lessons were not recorded: ' + closed.retro.detail);
     await rig.until('the second turn process to end', () => rig.processEnded(rig.history(story).filter(item => item.type === 'turn-started').at(-1).worker.turn.pid));
