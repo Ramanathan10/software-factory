@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync } from 'node:fs';
+import { Agent, request as httpRequest } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
@@ -206,6 +207,115 @@ test('a decision that did not reach the worker is handed again on the next deliv
   assert.deepEqual(handed, [answer.seq, answer.seq]);
 });
 
+function released(service, story = 'tl-1') {
+  const worker = find(service, story).worker;
+  service.recordEvent({ story, type: 'release-worker', assignment: worker.id, detail: 'Done.' });
+  return worker;
+}
+
+function handing(t, onDecision) {
+  const directory = mkdtempSync(join(tmpdir(), 'console-deliver-'));
+  const service = createConsoleService({ dbPath: join(directory, 'stories.db'), decisionDelayMs: 5, onDecision });
+  t.after(() => { service.close(); rmSync(directory, { recursive: true, force: true }); });
+  service.createStory({ story: 'tl-1', title: 'T', detail: 'B', branch: 'b', worktree: '/w', harness: 'Codex' });
+  service.recordEvent({ story: 'tl-1', type: 'question', question: 'q', prompt: 'Which?', options: ['a', 'b'], recommended: 0 });
+  service.recordEvent({ story: 'tl-1', type: 'assign-worker', session: 'worker-1' });
+  return service;
+}
+
+test('a decision is handed with the session and the assignment of one snapshot of the story', async t => {
+  const calls = [];
+  const service = handing(t, async decision => { calls.push(decision); return 'worker'; });
+  const worker = find(service, 'tl-1').worker;
+  service.recordEvent({ story: 'tl-1', type: 'answer', question: 'q', answer: 0 });
+  await service.deliverPending('tl-1');
+  assert.deepEqual([calls[0].session, calls[0].assignment], ['worker-1', worker.id]);
+});
+
+test('a decision whose delivery came back stale is handed again to the worker assigned by then, and is handed to nobody else', async t => {
+  const calls = [];
+  let service;
+  const onDecision = async decision => {
+    calls.push({ ...decision });
+    if (calls.length === 1) {
+      released(service);
+      service.recordEvent({ story: 'tl-1', type: 'assign-worker', session: 'worker-2' });
+      return 'stale';
+    }
+    return 'worker';
+  };
+  service = handing(t, onDecision);
+  const first = find(service, 'tl-1').worker;
+  const answer = service.recordEvent({ story: 'tl-1', type: 'answer', question: 'q', answer: 0 });
+  const result = await service.deliverPending('tl-1');
+  const second = find(service, 'tl-1').worker;
+  assert.deepEqual(calls.map(call => [call.session, call.assignment, call.seqs]), [['worker-1', first.id, [answer.seq]], ['worker-2', second.id, [answer.seq]]]);
+  assert.deepEqual([result.told, result.seqs], ['worker', [answer.seq]]);
+  assert.deepEqual((await service.deliverPending('tl-1')).seqs, [], 'the answer the replacement has is not handed again');
+});
+
+test('a decision stays handed on through a second release before the first re-hand ends', async t => {
+  const calls = [];
+  let service;
+  const onDecision = async decision => {
+    calls.push({ ...decision });
+    if (calls.length <= 2) {
+      released(service);
+      service.recordEvent({ story: 'tl-1', type: 'assign-worker', session: 'worker-' + (calls.length + 1) });
+      return 'stale';
+    }
+    return 'worker';
+  };
+  service = handing(t, onDecision);
+  const answer = service.recordEvent({ story: 'tl-1', type: 'answer', question: 'q', answer: 0 });
+  const result = await service.deliverPending('tl-1');
+  assert.deepEqual(calls.map(call => call.session), ['worker-1', 'worker-2', 'worker-3']);
+  assert.deepEqual([result.told, result.seqs], ['worker', [answer.seq]]);
+});
+
+test('a delivery request while a stale decision is being handed again gets nothing, and no decision is handed twice', async t => {
+  const calls = [];
+  const overlapping = [];
+  let service;
+  const onDecision = async decision => {
+    calls.push({ ...decision });
+    if (calls.length === 1) {
+      released(service);
+      service.recordEvent({ story: 'tl-1', type: 'assign-worker', session: 'worker-2' });
+      return 'stale';
+    }
+    overlapping.push(await service.deliverPending('tl-1'));
+    return 'worker';
+  };
+  service = handing(t, onDecision);
+  const answer = service.recordEvent({ story: 'tl-1', type: 'answer', question: 'q', answer: 0 });
+  await service.deliverPending('tl-1');
+  assert.deepEqual(overlapping.map(result => result.seqs), [[]]);
+  assert.deepEqual(calls.map(call => call.seqs), [[answer.seq], [answer.seq]]);
+});
+
+test('a stale decision that finds no worker is handed on with no session, and is free to be handed again once one is assigned', async t => {
+  const calls = [];
+  let service;
+  const onDecision = async decision => {
+    calls.push({ ...decision });
+    if (calls.length === 1) {
+      released(service);
+      return 'stale';
+    }
+    return decision.session ? 'worker' : 'coordinator';
+  };
+  service = handing(t, onDecision);
+  const answer = service.recordEvent({ story: 'tl-1', type: 'answer', question: 'q', answer: 0 });
+  const result = await service.deliverPending('tl-1');
+  assert.deepEqual([calls[1].session, calls[1].assignment], [undefined, undefined]);
+  assert.deepEqual([result.told, result.seqs], ['nobody', [answer.seq]]);
+  assert.ok(service.pending().some(event => event.seq === answer.seq), 'the answer is still pending');
+  service.recordEvent({ story: 'tl-1', type: 'assign-worker', session: 'worker-2' });
+  const again = await service.deliverPending('tl-1');
+  assert.deepEqual([again.told, again.seqs, calls[2].session], ['worker', [answer.seq], 'worker-2']);
+});
+
 test('/api/attachment stores a same-origin screenshot per story, serves it, and rejects non-images or other origins', async t => {
   const service = fixture(t);
   service.createStory(base);
@@ -253,4 +363,279 @@ test('/api/history returns every event of a story, beyond the 40 the snapshot ke
   assert.ok(events.some(event => event.detail === 'Observation 0'));
   assert.equal((await fetch(url + 'api/history?story=missing')).status, 404);
   assert.equal((await fetch(url + 'api/history?story=' + encodeURIComponent('../x'))).status, 400);
+});
+
+function turnHanding(t, { before = false } = {}) {
+  const turns = [];
+  const calls = [];
+  const service = handing(t, async decision => {
+    calls.push({ ...decision });
+    let end;
+    const ended = new Promise(resolve => { end = resolve; });
+    turns.push(end);
+    if (before) end(1);
+    decision.carriedBy?.(ended);
+    return 'worker';
+  });
+  const answer = service.recordEvent({ story: 'tl-1', type: 'answer', question: 'q', answer: 0 });
+  const settle = () => new Promise(resolve => setTimeout(resolve, 20));
+  return { service, turns, calls, answer, settle };
+}
+
+test('a decision is handed with a way to say which turn carries it', async t => {
+  const { service, calls } = turnHanding(t);
+  await service.deliverPending('tl-1');
+  assert.equal(typeof calls[0].carriedBy, 'function');
+});
+
+for (const code of [1, 0, null]) {
+  test('a decision whose carrying turn ended with ' + code + ' and no acknowledgement is handed again by the next delivery', async t => {
+    const { service, turns, calls, answer, settle } = turnHanding(t);
+    assert.deepEqual((await service.deliverPending('tl-1')).seqs, [answer.seq]);
+    turns[0](code);
+    await settle();
+    const again = await service.deliverPending('tl-1');
+    assert.deepEqual([again.told, again.seqs, calls.length], ['worker', [answer.seq], 2]);
+  });
+}
+
+test('a decision whose carrying turn ended before the hand returned is handed again by the next delivery', async t => {
+  const { service, calls, answer } = turnHanding(t, { before: true });
+  assert.deepEqual((await service.deliverPending('tl-1')).seqs, [answer.seq]);
+  const again = await service.deliverPending('tl-1');
+  assert.deepEqual([again.seqs, calls.length], [[answer.seq], 2]);
+});
+
+test('a decision is handed to nobody while the turn carrying it runs, and again once it ended', async t => {
+  const { service, turns, calls, answer, settle } = turnHanding(t);
+  await service.deliverPending('tl-1');
+  assert.deepEqual((await service.deliverPending('tl-1')).seqs, []);
+  assert.deepEqual((await service.deliverPending('tl-1')).seqs, []);
+  assert.equal(calls.length, 1);
+  turns[0](1);
+  await settle();
+  assert.deepEqual((await service.deliverPending('tl-1')).seqs, [answer.seq]);
+  assert.equal(calls.length, 2);
+});
+
+test('a decision the dashboard batch handed is handed to nobody while its turn runs, and by delivery once it ended', async t => {
+  const calls = [];
+  const ends = [];
+  const directory = mkdtempSync(join(tmpdir(), 'console-deliver-'));
+  const service = createConsoleService({
+    dbPath: join(directory, 'stories.db'), decisionDelayMs: 5,
+    onDecision: async decision => {
+      calls.push(decision.seqs);
+      decision.carriedBy?.(new Promise(resolve => ends.push(resolve)));
+      return 'worker';
+    },
+  });
+  const server = await service.startServer();
+  t.after(async () => { await server.close(); service.close(); rmSync(directory, { recursive: true, force: true }); });
+  service.createStory({ story: 'tl-1', title: 'T', detail: 'B', branch: 'b', worktree: '/w', harness: 'Codex' });
+  const { revision } = service.recordEvent({ story: 'tl-1', type: 'question', question: 'q', prompt: 'Which?', options: ['a', 'b'], recommended: 0 });
+  service.recordEvent({ story: 'tl-1', type: 'assign-worker', session: 'worker-1' });
+  const posted = await fetch(server.url + 'api/decision', {
+    method: 'POST', headers: { 'Content-Type': 'application/json', Origin: server.url.slice(0, -1) },
+    body: JSON.stringify({ story: 'tl-1', type: 'answer', question: 'q', answer: 0, revision: revision + 1 }),
+  }).then(response => response.json());
+  await new Promise(resolve => setTimeout(resolve, 40));
+  assert.deepEqual(calls, [[posted.seq]], 'the dashboard batch handed the answer');
+  assert.deepEqual((await service.deliverPending('tl-1')).seqs, [], 'its turn is still running');
+  assert.equal(ends.length, 1, 'the batch told the service which turn carries the answer');
+  ends[0](1);
+  await new Promise(resolve => setTimeout(resolve, 20));
+  assert.deepEqual((await service.deliverPending('tl-1')).seqs, [posted.seq]);
+});
+
+test('a decision handed again is reserved again while its second turn runs, and a turn that ended earlier releases nothing of it', async t => {
+  const { service, turns, calls, answer, settle } = turnHanding(t);
+  await service.deliverPending('tl-1');
+  turns[0](1);
+  await settle();
+  assert.deepEqual((await service.deliverPending('tl-1')).seqs, [answer.seq]);
+  await settle();
+  assert.deepEqual((await service.deliverPending('tl-1')).seqs, [], 'the second turn is still running');
+  assert.equal(calls.length, 2);
+  turns[1](1);
+  await settle();
+  assert.deepEqual((await service.deliverPending('tl-1')).seqs, [answer.seq]);
+});
+
+test('an acknowledged decision is not handed again when its turn ends', async t => {
+  const { service, turns, calls, answer, settle } = turnHanding(t);
+  await service.deliverPending('tl-1');
+  service.ack(answer.seq);
+  turns[0](0);
+  await settle();
+  assert.deepEqual((await service.deliverPending('tl-1')).seqs, []);
+  assert.equal(calls.length, 1);
+});
+
+test('a decision handed again after its turn ended goes to the worker assigned then', async t => {
+  const { service, turns, calls, answer, settle } = turnHanding(t);
+  await service.deliverPending('tl-1');
+  released(service);
+  service.recordEvent({ story: 'tl-1', type: 'assign-worker', session: 'worker-2' });
+  assert.deepEqual((await service.deliverPending('tl-1')).seqs, [], 'the released worker\'s turn still carries it');
+  turns[0](1);
+  await settle();
+  const again = await service.deliverPending('tl-1');
+  assert.deepEqual([again.seqs, calls.map(call => call.session)], [[answer.seq], ['worker-1', 'worker-2']]);
+});
+
+test('a decision delivered, acknowledged and released before the dashboard batch fires is not handed again by the batch', async t => {
+  const calls = [];
+  const ends = [];
+  const directory = mkdtempSync(join(tmpdir(), 'console-deliver-'));
+  const service = createConsoleService({
+    dbPath: join(directory, 'stories.db'), decisionDelayMs: 80,
+    onDecision: async decision => {
+      calls.push(decision.seqs);
+      decision.carriedBy?.(new Promise(resolve => ends.push(resolve)));
+      return 'worker';
+    },
+  });
+  const server = await service.startServer();
+  t.after(async () => { await server.close(); service.close(); rmSync(directory, { recursive: true, force: true }); });
+  service.createStory({ story: 'tl-1', title: 'T', detail: 'B', branch: 'b', worktree: '/w', harness: 'Codex' });
+  const { revision } = service.recordEvent({ story: 'tl-1', type: 'question', question: 'q', prompt: 'Which?', options: ['a', 'b'], recommended: 0 });
+  service.recordEvent({ story: 'tl-1', type: 'assign-worker', session: 'worker-1' });
+  const posted = await fetch(server.url + 'api/decision', {
+    method: 'POST', headers: { 'Content-Type': 'application/json', Origin: server.url.slice(0, -1) },
+    body: JSON.stringify({ story: 'tl-1', type: 'answer', question: 'q', answer: 0, revision: revision + 1 }),
+  }).then(response => response.json());
+  assert.deepEqual((await service.deliverPending('tl-1')).seqs, [posted.seq]);
+  service.ack(posted.seq);
+  ends[0](0);
+  await new Promise(resolve => setTimeout(resolve, 150));
+  assert.deepEqual(calls, [[posted.seq]]);
+});
+
+function deliverFixture(t, told) {
+  const handed = [];
+  const directory = mkdtempSync(join(tmpdir(), 'console-deliver-'));
+  const service = createConsoleService({ dbPath: join(directory, 'stories.db'), onDecision: async decision => { handed.push(...decision.seqs); return told; } });
+  t.after(() => { service.close(); rmSync(directory, { recursive: true, force: true }); });
+  service.createStory({ story: 'tl-1', title: 'T', detail: 'B', branch: 'b', worktree: '/w', harness: 'Codex' });
+  service.recordEvent({ story: 'tl-1', type: 'question', question: 'q', prompt: 'Which?', options: ['a', 'b'], recommended: 0 });
+  const answer = service.recordEvent({ story: 'tl-1', type: 'answer', question: 'q', answer: 0 });
+  return { service, handed, answer };
+}
+
+test('delivering to a story with no worker says nobody was told, why, and leaves the decision pending', async t => {
+  const { service, handed, answer } = deliverFixture(t, 'coordinator');
+  const reply = await service.deliverPending('tl-1');
+  assert.deepEqual(reply, { story: 'tl-1', seqs: [answer.seq], told: 'nobody',
+    reason: 'No worker is assigned to tl-1, so no worker was told; the decisions stay pending. Staff the phase, then deliver.' });
+  assert.ok(service.pending().some(event => event.seq === answer.seq), 'the answer stays pending');
+  assert.equal((await service.deliverPending('tl-1')).told, 'nobody');
+  assert.deepEqual(handed, [answer.seq, answer.seq], 'it is handed again on the next delivery');
+});
+
+test('delivering to a story with a worker keeps the coordinator reply and adds no reason', async t => {
+  const { service, handed, answer } = deliverFixture(t, 'coordinator');
+  service.recordEvent({ story: 'tl-1', type: 'assign-worker', session: 'worker-1' });
+  const reply = await service.deliverPending('tl-1');
+  assert.deepEqual(reply, { story: 'tl-1', seqs: [answer.seq], told: 'coordinator' });
+  assert.deepEqual(handed, [answer.seq]);
+});
+
+test('delivering with nothing pending or a worker told keeps today\'s replies', async t => {
+  const { service, answer } = deliverFixture(t, 'worker');
+  service.recordEvent({ story: 'tl-1', type: 'assign-worker', session: 'worker-1' });
+  assert.deepEqual(await service.deliverPending('tl-1'), { story: 'tl-1', seqs: [answer.seq], told: 'worker' });
+  assert.deepEqual(await service.deliverPending('tl-1'), { story: 'tl-1', seqs: [], told: 'nobody' });
+});
+
+test('a delivery that onDecision already reports as nobody carries no invented reason', async t => {
+  const { service, answer } = deliverFixture(t, 'nobody');
+  assert.deepEqual(await service.deliverPending('tl-1'), { story: 'tl-1', seqs: [answer.seq], told: 'nobody' });
+});
+
+function streamPost(url, path, size, { agent = false, type = 'application/json' } = {}) {
+  return new Promise((resolve, reject) => {
+    const request = httpRequest(url + path, {
+      method: 'POST',
+      agent,
+      headers: { Origin: url.slice(0, -1), 'Content-Type': type, 'Content-Length': size },
+    }, response => {
+      const parts = [];
+      response.on('data', part => parts.push(part));
+      response.on('error', reject);
+      response.on('end', () => resolve({ status: response.statusCode, text: Buffer.concat(parts).toString('utf8'), reusedSocket: request.reusedSocket }));
+    });
+    request.on('error', reject);
+    const chunk = Buffer.alloc(65536, 0x61);
+    let sent = 0;
+    const pump = () => {
+      while (sent < size) {
+        const length = Math.min(chunk.length, size - sent);
+        sent += length;
+        if (!request.write(chunk.subarray(0, length))) {
+          request.once('drain', pump);
+          return;
+        }
+      }
+      request.end();
+    };
+    pump();
+  });
+}
+
+function getJson(url, path, agent) {
+  return new Promise((resolve, reject) => {
+    const request = httpRequest(url + path, { agent }, response => {
+      const parts = [];
+      response.on('data', part => parts.push(part));
+      response.on('error', reject);
+      response.on('end', () => resolve({ status: response.statusCode, reusedSocket: request.reusedSocket }));
+    });
+    request.on('error', reject);
+    request.end();
+  });
+}
+
+test('an oversized decision gets 413 on a fresh connection, not a reset', async t => {
+  const service = fixture(t);
+  service.createStory(base);
+  const { url, close } = await service.startServer(0);
+  t.after(close);
+  for (const size of [200 * 1000, 5 * 1000 * 1000, 5 * 1000 * 1000, 5 * 1000 * 1000]) {
+    const reply = await streamPost(url, 'api/decision', size);
+    assert.equal(reply.status, 413, 'size ' + size);
+    assert.deepEqual(JSON.parse(reply.text), { error: 'Decision exceeds 32 KiB.' });
+  }
+});
+
+test('an oversized screenshot gets 413 on a fresh connection, not a reset', async t => {
+  const service = fixture(t);
+  service.createStory(base);
+  const { url, close } = await service.startServer(0);
+  t.after(close);
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const reply = await streamPost(url, 'api/attachment?story=tl-1', 11 * 1024 * 1024, { type: 'image/png' });
+    assert.equal(reply.status, 413, 'attempt ' + attempt);
+    assert.deepEqual(JSON.parse(reply.text), { error: 'Screenshot exceeds 10 MiB.' });
+  }
+});
+
+test('after an oversized body the keep-alive connection is reused for the next request', async t => {
+  const service = fixture(t);
+  service.createStory(base);
+  const { url, close } = await service.startServer(0);
+  const agent = new Agent({ keepAlive: true, maxSockets: 1 });
+  t.after(async () => {
+    agent.destroy();
+    await close();
+  });
+  await getJson(url, 'api/stories', agent);
+  for (let round = 0; round < 3; round += 1) {
+    const rejected = await streamPost(url, 'api/decision', 5 * 1000 * 1000, { agent });
+    assert.equal(rejected.status, 413, 'round ' + round);
+    assert.equal(rejected.reusedSocket, true, 'oversized post reused the socket in round ' + round);
+    const next = await getJson(url, 'api/stories', agent);
+    assert.equal(next.status, 200, 'round ' + round);
+    assert.equal(next.reusedSocket, true, 'follow-up reused the socket in round ' + round);
+  }
 });

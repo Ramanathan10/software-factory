@@ -1,6 +1,6 @@
 import { newlyWaiting, titleFor } from './attention.js';
 import { badgeSvg } from './badge.js';
-import { jarvisStatus } from './jarvis.js';
+import { jarvisHold, jarvisStatus } from './jarvis.js';
 import { renderMarkdown } from './markdown.js';
 
 const $ = id => document.getElementById(id);
@@ -11,7 +11,7 @@ const eventRoles = {
   create: 'coordinator', question: 'planner', 'draft-plan': 'planner', plan: 'planner',
   answer: 'approver', approve: 'approver', 'comparison-choice': 'approver', 'request-cleanup': 'approver',
   'assign-worker': 'coordinator', 'release-worker': 'coordinator', handoff: 'coordinator',
-  'pr-opened': 'coordinator', 'pr-observed': 'watcher', 'pr-ready': 'watcher', 'pr-review-start': 'watcher', merged: 'watcher',
+  'pr-opened': 'watcher', 'pr-observed': 'watcher', 'pr-ready': 'watcher', 'pr-review-start': 'watcher', merged: 'watcher',
 };
 
 let meta = { roles: {}, phases: {} };
@@ -142,22 +142,26 @@ const elapsed = (from, to) => {
 };
 
 function ownerOf(story) {
+  if (jarvisHolds(story)) return 'coordinator';
   if (story.worker) return story.worker.role;
   if (openQuestions(story).length) return 'approver';
   return meta.phases[story.phase]?.[0] ?? 'coordinator';
 }
 const openQuestions = story => (story.questions ?? []).filter(question => !question.answer);
 const waitingOnYou = story => story.phase === 'approval' || story.phase === 'comparison-choice' || openQuestions(story).length > 0;
+const jarvisHolds = story => !story.worker && !story.blocked && story.phase !== 'closed' && !waitingOnYou(story) && jarvisHold(story);
 const idleReasons = {
   scout: 'no scout session active', gates: 'waiting for the deterministic gates', mutation: 'waiting for the mutation check', retro: 'waiting for the retro',
   planning: 'no planner session active', testing: 'no tester session active', red: 'waiting to verify red',
   building: 'no implementer session active', review: 'waiting for review to start', comparison: 'waiting for before-and-after capture',
-  diagram: 'waiting for the diagram', publishing: 'waiting on release pipeline before the PR opens',
+  diagram: 'waiting for the diagram', publishing: 'no publisher session active',
   ci: 'waiting on pipeline checks', merge: 'waiting on reviewer approval and merge', 'pr-review': 'waiting for the PR review worker',
 };
 const idleReason = story => idleReasons[story.phase] ?? 'no active worker';
 function isBusy(story) {
   if (story.phase === 'closed' || story.blocked || waitingOnYou(story)) return false;
+  const held = jarvisHolds(story);
+  if (held) return held === 'checking';
   if (story.worker) return Boolean(story.worker.turn) || !story.worker.lastTurn;
   return Boolean(story.activity?.at) && Date.now() - Date.parse(story.activity.at) < ACTIVE_MS;
 }
@@ -265,7 +269,8 @@ function storyCard(story) {
   const busy = isBusy(story);
   const waiting = waitingOnYou(story);
   const last = story.events?.[0];
-  const idle = !busy && !waiting && !story.blocked;
+  const held = jarvisHolds(story);
+  const idle = !busy && !waiting && !story.blocked && !held;
   const label = alias(role) + ' · ' + (meta.phases[story.phase]?.[1] ?? story.phase);
   const placement = story.id + ':' + story.phase;
   const arriving = !seenCards.has(placement);
@@ -283,7 +288,7 @@ function storyCard(story) {
     last && (waiting || story.blocked) && el('p', { class: 'last' }, last.detail),
     reviewState(story),
     el('div', { class: 'owner' },
-      !busy && el('span', { class: 'who' }, story.blocked ? 'Blocked' : waiting ? 'Waiting on you' : jarvisStatus(story) ?? 'Idle · ' + idleReason(story)),
+      (!busy || held) && el('span', { class: 'who' }, story.blocked ? 'Blocked' : waiting ? 'Waiting on you' : jarvisStatus(story) ?? (story.phase === 'retro' && story.retro?.mergedAt ? 'Merged · finishing retro' : 'Idle · ' + idleReason(story))),
       el('span', { class: 'aside' },
         el('span', { class: 'links' },
           hasDesign(story) && el('a', { href: '#', onclick: event => { event.preventDefault(); event.stopPropagation(); openDesign(story.id); } }, 'Plan'),
@@ -346,7 +351,8 @@ function renderTrack(items) {
       const waiting = waitingOnYou(story);
       const at = columnIndex(story);
       const last = story.events?.[0];
-      const idle = !busy && !waiting && !story.blocked;
+      const held = jarvisHolds(story);
+      const idle = !busy && !waiting && !story.blocked && !held;
       return el('article', {
         class: ['track', busy && 'busy', waiting && 'waiting', story.blocked && 'blocked', idle && 'idle'].filter(Boolean).join(' '),
         'data-role': role, tabindex: 0,
@@ -361,7 +367,7 @@ function renderTrack(items) {
             }, elapsed(story.createdAt))),
           el('h3', {}, story.title),
           el('div', { class: 'owner' },
-            el('span', {}, (meta.phases[story.phase]?.[1] ?? columns[at]?.name ?? story.phase) + (story.blocked ? ' · blocked' : waiting ? ' · waiting on you' : idle ? ' · ' + (jarvisStatus(story) ?? 'idle, ' + idleReason(story)) : '')),
+            el('span', {}, (meta.phases[story.phase]?.[1] ?? columns[at]?.name ?? story.phase) + (story.blocked ? ' · blocked' : waiting ? ' · waiting on you' : idle || held ? ' · ' + (jarvisStatus(story) ?? 'idle, ' + idleReason(story)) : '')),
             busy && el('span', { class: 'dots' }, el('i'), el('i'), el('i')))),
         el('div', { class: 'track-run' },
           el('ol', { class: 'steps' }, boardColumns().map((column, index) =>

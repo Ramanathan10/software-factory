@@ -7,6 +7,7 @@ import { openStore, workerPhases } from '../mission-console/store.mjs';
 const decisions = new Set(['answer', 'approve', 'plan-feedback', 'comparison-choice', 'request-cleanup']);
 const [command, ...args] = process.argv.slice(2);
 const home = process.env.AI_SDLC_HOME;
+process.on('exit', () => appendFileSync(join(home, 'scripted-turns.jsonl'), JSON.stringify({ pid: process.pid, event: 'exited' }) + '\n'));
 const actor = process.env.AI_SDLC_ACTOR;
 const after = flag => (args.includes(flag) ? args[args.indexOf(flag) + 1] : undefined);
 const resumed = args.includes('--resume') || (args[0] === 'exec' && args[1] === 'resume');
@@ -82,8 +83,15 @@ async function coordinate() {
     if (Date.now() > deadline) fail('A worker turn on story ' + id + ' was still running after ' + book.turnMs / 1000 + ' s.');
     await sleep(250);
   }
+  const wake = store.history(id).filter(event => event.type === 'jarvis-woken').length;
+  const planned = book.jarvis?.find(entry => entry.wake === wake);
+  if (planned) {
+    for (const step of planned.steps) perform(step);
+    return;
+  }
   const { story, pending } = read();
   if (!story.worker && workerPhases.has(story.phase) && story.questions.every(question => question.answer)) {
+    if (story.phase === 'publishing') for (const event of pending) if (event.type === 'comparison-choice') ack(event.seq);
     serve('start', book.next);
     if (story.pendingDecision) serve('deliver');
   }

@@ -664,7 +664,140 @@ test('the retro runs while the PR is open and may be followed by the merge', t =
   assert.equal(store.snapshot()[0].phase, 'ci');
   record('retro-start', { detail: 'Second pass.' });
   record('merged', { detail: 'Merged during the retro.' });
+  assert.equal(store.snapshot()[0].phase, 'retro', 'a merge during the retro holds the story in the retro');
+  record('handoff', { detail: 'Second lessons.' });
   assert.equal(store.snapshot()[0].phase, 'closed');
+});
+
+function toRetro(store, story, { returnPhase = 'ci' } = {}) {
+  start(store, story);
+  const record = writer(store, story);
+  toGreen(record);
+  record('handoff', { detail: 'Gates passed.', command: 'npm run lint' });
+  record('handoff', { detail: 'No survivors.', command: 'npx stryker run' });
+  record('handoff', { detail: 'Review passed.' });
+  record('comparison-choice', { run: false });
+  record('pr-opened', { url: 'https://github.com/example/repo/pull/9' });
+  if (returnPhase === 'merge') record('pr-ready', { detail: 'Checks passed.' });
+  record('retro-start', { detail: 'Review lessons.' });
+  return record;
+}
+
+const storyOf = (store, story) => store.snapshot().find(item => item.id === story);
+
+function holdWithWorkerAndQuestion(store, story) {
+  const record = toRetro(store, story);
+  record('assign-worker', { session: 'retro-session' });
+  const assignment = storyOf(store, story).worker.id;
+  record('question', { question: 'retro-1', prompt: 'Keep the lesson?', options: ['Keep', 'Drop'], recommended: 0, assignment });
+  record('merged', { detail: 'Merged at 1234abc.' });
+  return { record, assignment };
+}
+
+test('a merge during the retro keeps the phase and the retro worker, and records the merge on the retro', t => {
+  const store = fixture(t)();
+  const { assignment } = holdWithWorkerAndQuestion(store, 'held');
+  const held = storyOf(store, 'held');
+  assert.equal(held.phase, 'retro');
+  assert.equal(held.worker.id, assignment, 'the retro worker is still assigned');
+  assert.ok(Date.parse(held.retro.mergedAt) > 0, 'story.retro.mergedAt records when the merge was recorded');
+  assert.match(JSON.stringify(held.retro), /Merged at 1234abc\./, 'the merge evidence is kept on story.retro');
+});
+
+test('after a merge during the retro the owner can answer its open question and the worker can ask another', t => {
+  const store = fixture(t)();
+  const { record, assignment } = holdWithWorkerAndQuestion(store, 'asked');
+  record('answer', { question: 'retro-1', answer: 0 });
+  assert.equal(storyOf(store, 'asked').questions[0].answer, 'Keep');
+  record('question', { question: 'retro-2', prompt: 'Record it in the runbook?', options: ['Yes', 'No'], recommended: 0, assignment });
+  record('answer', { question: 'retro-2', answer: 1 });
+  assert.equal(storyOf(store, 'asked').questions[1].answer, 'No');
+  assert.equal(storyOf(store, 'asked').phase, 'retro');
+});
+
+test('the retro handoff on a merged retro closes the story and keeps the lessons', t => {
+  const store = fixture(t)();
+  const { record, assignment } = holdWithWorkerAndQuestion(store, 'closes');
+  record('answer', { question: 'retro-1', answer: 1 });
+  record('release-worker', { assignment, detail: 'Retro done.' });
+  record('handoff', { detail: 'Lesson: answer before the merge.' });
+  const closed = storyOf(store, 'closes');
+  assert.equal(closed.phase, 'closed');
+  assert.equal(closed.retro.detail, 'Lesson: answer before the merge.');
+  assert.ok(Date.parse(closed.retro.completedAt) > 0);
+});
+
+test('a merge during the retro clears a blocker on the held story', t => {
+  const store = fixture(t)();
+  const record = toRetro(store, 'stuck');
+  record('blocked', { detail: 'Retro worker cannot reach the runbook.' });
+  assert.equal(storyOf(store, 'stuck').blocked, 'Retro worker cannot reach the runbook.');
+  record('merged', { detail: 'Merged at 1234abc.' });
+  const held = storyOf(store, 'stuck');
+  assert.equal(held.phase, 'retro');
+  assert.equal(held.blocked, undefined, 'the held retro stays blocked after the merge');
+});
+
+test('a retro handoff with no merge recorded still returns to the phase the retro started from', t => {
+  const store = fixture(t)();
+  const record = toRetro(store, 'unmerged', { returnPhase: 'merge' });
+  record('handoff', { detail: 'Lessons.' });
+  const back = storyOf(store, 'unmerged');
+  assert.equal(back.phase, 'merge');
+  assert.equal(back.retro.mergedAt, undefined);
+});
+
+test('a held retro refuses a second merge and refuses to reopen planning, while an unmerged retro can replan', t => {
+  const store = fixture(t)();
+  toRetro(store, 'plain')('replan', { detail: 'Scope changed.' });
+  assert.equal(storyOf(store, 'plain').phase, 'planning');
+
+  const record = toRetro(store, 'again');
+  record('merged', { detail: 'Merged.' });
+  assert.equal(storyOf(store, 'again').phase, 'retro');
+  assert.throws(() => record('merged', { detail: 'Merged again.' }), error => error.status === 409);
+  assert.throws(() => record('replan', { detail: 'Reopen.' }), error => error.status === 409);
+  assert.equal(storyOf(store, 'again').phase, 'retro');
+});
+
+test('a blocked held retro tells the owner to resume, since replan is refused there', t => {
+  const store = fixture(t)();
+  const record = toRetro(store, 'stuck-held');
+  record('merged', { detail: 'Merged.' });
+  record('blocked', { detail: 'Retro worker cannot reach the runbook.' });
+  assert.throws(() => record('handoff', { detail: 'Lessons.' }), error => error.status === 409 && /Resume the blocked story first/.test(error.message) && !/replan/i.test(error.message));
+  const unmerged = toRetro(store, 'stuck-open');
+  unmerged('blocked', { detail: 'Stuck.' });
+  assert.throws(() => unmerged('handoff', { detail: 'Lessons.' }), /Resume or replan/);
+});
+
+test('a held retro whose worker is gone takes a new retro worker, whose handoff closes the story', t => {
+  const store = fixture(t)();
+  const { record, assignment } = holdWithWorkerAndQuestion(store, 'restaffed');
+  record('release-worker', { assignment, detail: 'The worker crashed.' });
+  assert.equal(storyOf(store, 'restaffed').phase, 'retro');
+  record('assign-worker', { session: 'retro-session-2' });
+  assert.equal(storyOf(store, 'restaffed').worker.session, 'retro-session-2');
+  record('answer', { question: 'retro-1', answer: 0 });
+  record('release-worker', { assignment: storyOf(store, 'restaffed').worker.id, detail: 'Retro done.' });
+  record('handoff', { detail: 'Lessons.' });
+  assert.equal(storyOf(store, 'restaffed').phase, 'closed');
+});
+
+test('a closed story refuses questions and answers, and a merge from ci, merge or pr-review still closes it', t => {
+  const store = fixture(t)();
+  for (const from of ['ci', 'merge', 'pr-review']) {
+    const story = 'from-' + from;
+    const record = toRetro(store, story);
+    record('handoff', { detail: 'Lessons.' });
+    if (from === 'merge') record('pr-ready', { detail: 'Checks passed.' });
+    if (from === 'pr-review') record('pr-review-start', { detail: 'Comment.' });
+    record('question', { question: 'open-1', prompt: 'Still open?', options: ['Yes', 'No'], recommended: 0 });
+    record('merged', { detail: 'Merged.' });
+    assert.equal(storyOf(store, story).phase, 'closed', 'merged from ' + from + ' closes the story');
+    assert.throws(() => record('answer', { question: 'open-1', answer: 0 }), error => error.status === 409 && /closed/.test(error.message));
+    assert.throws(() => record('question', { question: 'open-2', prompt: 'Another?', options: ['Yes', 'No'], recommended: 0 }), error => error.status === 409 && /closed/.test(error.message));
+  }
 });
 
 test('document evidence accepts markdown, json, and text only', t => {
@@ -992,4 +1125,93 @@ test('readiness with no head is accepted while there is no observation', t => {
   const record = toCi(store, 'unwatched');
   record('pr-ready', { detail: 'The pull request is not on github.com.' });
   assert.equal(store.handover('unwatched').story.phase, 'merge');
+});
+
+function toPublishing(store, story) {
+  start(store, story);
+  const record = writer(store, story);
+  toGreen(record);
+  record('handoff', { detail: 'Gates passed.', command: 'node --test' });
+  record('handoff', { detail: 'No survivors.', command: 'npx stryker run' });
+  record('handoff', { detail: 'Reviewed.' });
+  record('comparison-choice', { run: false });
+  assert.equal(store.handover(story).story.phase, 'publishing');
+  return record;
+}
+
+test('a worker can be assigned in publishing as Hawkeye and records its work there', t => {
+  const store = fixture(t)();
+  const record = toPublishing(store, 'pub-worker');
+  record('assign-worker', { session: 'publisher-session' });
+  const { worker } = store.handover('pub-worker').story;
+  assert.equal(worker.role, 'watcher');
+  assert.equal(worker.session, 'publisher-session');
+  record('activity', { assignment: worker.id, detail: 'Merged origin/main and reran the gates.' });
+  const evidence = join(mkdtempSync(join(tmpdir(), 'pub-')), 'publish-diagram.png');
+  writeFileSync(evidence, Buffer.from('89504e470d0a1a0a', 'hex'));
+  t.after(() => rmSync(join(evidence, '..'), { recursive: true, force: true }));
+  record('artifact', { assignment: worker.id, kind: 'diagram', path: evidence, detail: 'Publishing exits.' });
+  record('release-worker', { assignment: store.handover('pub-worker').story.worker.id, detail: 'Pull request opened.' });
+  assert.equal(store.handover('pub-worker').story.worker, undefined);
+});
+
+test('return-to-build is accepted from publishing and refused from ci, merge and building', t => {
+  const store = fixture(t)();
+  const record = toPublishing(store, 'pub-back');
+  record('return-to-build', { detail: 'Merging origin/main conflicts in greet.mjs: merge origin/main and resolve these.' });
+  assert.equal(store.handover('pub-back').story.phase, 'building');
+  assert.throws(() => record('return-to-build', { detail: 'Again.' }), error => error.status === 409 && /Return to build from review, the deterministic gates, the comparison, publishing, or PR review\./.test(error.message));
+  const open = toCi(store, 'pub-ci');
+  assert.equal(store.handover('pub-ci').story.phase, 'ci');
+  assert.throws(() => open('return-to-build', { detail: 'From ci.' }), error => error.status === 409);
+  open('pr-ready', { head: 'c'.repeat(40), detail: 'Checks and review passed.' });
+  assert.equal(store.handover('pub-ci').story.phase, 'merge');
+  assert.throws(() => open('return-to-build', { detail: 'From merge.' }), error => error.status === 409);
+});
+
+test('pr-opened is refused while a publisher is assigned and accepted after it releases', t => {
+  const store = fixture(t)();
+  const record = toPublishing(store, 'pub-open');
+  record('assign-worker', { session: 'publisher-session' });
+  assert.throws(() => record('pr-opened', { url: REVIEW_PR }), error => error.status === 409);
+  assert.equal(store.handover('pub-open').story.phase, 'publishing');
+  record('release-worker', { assignment: store.handover('pub-open').story.worker.id, detail: 'Pushed and opened.' });
+  record('pr-opened', { url: REVIEW_PR });
+  assert.equal(store.handover('pub-open').story.phase, 'ci');
+});
+
+test('a second pass through publishing accepts the same pull request URL and refuses another', t => {
+  const store = fixture(t)();
+  const record = toCi(store, 'pub-twice');
+  record('pr-review-start', { detail: 'One comment asks for a larger change.' });
+  record('return-to-build', { detail: 'The owner asked for a larger change.' });
+  record('handoff', { detail: 'Verified green.', command: 'npm test' });
+  record('handoff', { detail: 'Gates pass.', command: 'node --test' });
+  record('handoff', { detail: 'No survivors.', command: 'npx stryker run' });
+  record('handoff', { detail: 'Reviewed.' });
+  record('comparison-choice', { run: false });
+  assert.equal(store.handover('pub-twice').story.phase, 'publishing');
+  record('assign-worker', { session: 'second-publisher' });
+  assert.equal(store.handover('pub-twice').story.worker.role, 'watcher');
+  record('release-worker', { assignment: store.handover('pub-twice').story.worker.id, detail: 'Pushed to the open pull request.' });
+  assert.throws(() => record('pr-opened', { url: 'https://github.com/acme/widgets/pull/99' }), error => error.status === 409);
+  record('pr-opened', { url: REVIEW_PR });
+  assert.equal(store.handover('pub-twice').story.phase, 'ci');
+});
+
+test('a publisher releases, starts diagram work, and a new publisher is assigned when the diagram returns', t => {
+  const store = fixture(t)();
+  const record = toPublishing(store, 'pub-diagram');
+  record('assign-worker', { session: 'publisher-session' });
+  assert.throws(() => record('diagram-start', { detail: 'Show the exits.' }), error => error.status === 409);
+  record('release-worker', { assignment: store.handover('pub-diagram').story.worker.id, detail: 'A diagram is due.' });
+  record('diagram-start', { detail: 'Show the exits.' });
+  assert.equal(store.handover('pub-diagram').story.phase, 'diagram');
+  record('assign-worker', { session: 'rocket-session' });
+  assert.equal(store.handover('pub-diagram').story.worker.role, 'diagrammer');
+  record('release-worker', { assignment: store.handover('pub-diagram').story.worker.id, detail: 'Diagram drawn.' });
+  record('handoff', { detail: 'Diagram done.' });
+  assert.equal(store.handover('pub-diagram').story.phase, 'publishing');
+  record('assign-worker', { session: 'publisher-again' });
+  assert.equal(store.handover('pub-diagram').story.worker.role, 'watcher');
 });

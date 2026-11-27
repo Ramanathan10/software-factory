@@ -29,10 +29,35 @@ test('a story that is not being cleaned up can always still merge', () => {
   assert.deepEqual(stuck.map(([, node]) => story(node)), [], 'these stories can never reach closed');
 });
 
-test('the merge of a registered pull request closes the story from any open PR phase', () => {
-  const refused = live.filter(([, { state }]) => state.pr && ['ci', 'merge', 'retro'].includes(state.phase) && !state.cleanup)
+test('the merge of a registered pull request closes the story from ci or merge', () => {
+  const refused = live.filter(([, { state }]) => state.pr && ['ci', 'merge'].includes(state.phase) && !state.cleanup)
     .filter(([id, { state }]) => follow(states, id, [...(state.worker ? ['release-worker'] : []), 'merged'])?.phase !== 'closed');
   assert.deepEqual(refused.map(([, node]) => story(node)), [], 'merged was refused after these events');
+});
+
+test('from retro, merged then the retro handoff closes the story, and a merged retro takes neither a second merge nor a replan', () => {
+  const after = (id, type) => states.get(id).edges.find(edge => edge.type === type)?.to;
+  const retros = live.filter(([, { state }]) => state.phase === 'retro' && state.pr && !state.cleanup && !state.blocked);
+  assert.ok(retros.some(([, { state }]) => state.worker) && retros.some(([, { state }]) => !state.worker), 'the explorer reaches retro with and without a worker');
+  const wrong = [];
+  for (const [id, { state }] of retros) {
+    const merged = state.retro?.merged;
+    if (merged) {
+      for (const type of ['merged', 'replan']) if (after(id, type)) wrong.push(type + ' was accepted on a merged retro after ' + story(states.get(id)));
+    } else {
+      const held = after(id, 'merged');
+      const heldState = held && states.get(held).state;
+      if (heldState?.phase !== 'retro' || !heldState.retro?.merged) wrong.push('merged did not hold the retro after ' + story(states.get(id)));
+      else if (Boolean(heldState.worker) !== Boolean(state.worker)) wrong.push('merged changed the retro worker after ' + story(states.get(id)));
+    }
+    if (merged || after(id, 'merged')) {
+      const held = merged ? id : after(id, 'merged');
+      const idle = states.get(held).state.worker ? after(held, 'release-worker') : held;
+      const closed = idle && after(idle, 'handoff');
+      if (!closed || states.get(closed).state.phase !== 'closed') wrong.push('the retro handoff did not close the story after ' + story(states.get(id)) + ' then merged');
+    }
+  }
+  assert.deepEqual(wrong, []);
 });
 
 test('a worker is assigned only in a phase that has one, and a phase never changes under it', () => {
@@ -67,6 +92,14 @@ test('the store accepts every event the Jarvis phase table records, in or into i
     }
   }
   assert.deepEqual(missing, [], 'skills/jarvis/SKILL.md tells Jarvis to record events the store refuses in those phases');
+});
+
+test('the Jarvis phase table sends a publishing story back to build, and the store accepts it', () => {
+  const table = jarvisTable(readFileSync(new URL('../skills/jarvis/SKILL.md', import.meta.url), 'utf8'));
+  const row = table.find(item => item.phases.includes('publishing') && item.phases.includes('ci'));
+  assert.ok(row, 'no Jarvis phase table row covers publishing and ci');
+  for (const type of ['return-to-build', 'question', 'blocked', 'pr-opened']) assert.ok(row.events.includes(type), 'the publishing row does not name ' + type);
+  assert.ok(live.some(([, node]) => node.state.phase === 'publishing' && node.edges.some(edge => edge.type === 'return-to-build')), 'the store refuses return-to-build in publishing');
 });
 
 test('a background Jarvis turn changes nothing but its own record, is never refused by a blocker or cleanup, and never runs twice', () => {
@@ -151,4 +184,37 @@ test('diagram work starts only from publishing, ci or merge and always returns t
 test('the explorer observes every status the store accepts for a pull request', () => {
   const statuses = eventInputs('evidence').filter(([type, input]) => type === 'pr-observed' && !input.observation.review).map(([, input]) => input.observation.status);
   assert.deepEqual([...new Set(statuses)].sort(), ['closed', 'failed', 'merged', 'no-checks', 'passed', 'running'], 'pr-observed inputs miss a status observePr accepts');
+});
+
+const publishing = live.filter(([, { state }]) => state.phase === 'publishing');
+const staffed = publishing.filter(([, { state }]) => state.worker && !state.blocked && !state.cleanup);
+const bare = publishing.filter(([, { state }]) => !state.worker && !state.blocked && !state.cleanup);
+const edgeTo = (id, type) => states.get(id).edges.find(edge => edge.type === type)?.to;
+
+test('a worker can be assigned in publishing, and return-to-build leaves publishing for building only', () => {
+  assert.ok(bare.some(([id]) => edgeTo(id, 'assign-worker')), 'assign-worker is never accepted in publishing');
+  const back = publishing.filter(([id]) => edgeTo(id, 'return-to-build'));
+  assert.ok(back.length, 'return-to-build is never accepted in publishing');
+  const wrong = back.filter(([id]) => states.get(edgeTo(id, 'return-to-build')).state.phase !== 'building');
+  assert.deepEqual(wrong.map(([, node]) => story(node)), [], 'return-to-build from publishing landed outside building');
+  const refused = live.filter(([id, { state }]) => ['ci', 'merge'].includes(state.phase) && edgeTo(id, 'return-to-build'));
+  assert.deepEqual(refused.map(([, node]) => story(node)), [], 'return-to-build was accepted in ci or merge');
+});
+
+test('pr-opened is refused while a publisher is assigned and accepted once it is released', () => {
+  assert.ok(staffed.length, 'no reachable story has a worker in publishing');
+  assert.deepEqual(staffed.filter(([id]) => edgeTo(id, 'pr-opened')).map(([, node]) => story(node)), [], 'pr-opened was accepted with a publisher assigned');
+  assert.ok(bare.some(([id]) => states.get(edgeTo(id, 'pr-opened') ?? id).state.phase === 'ci'), 'pr-opened is never accepted in publishing once the worker is released');
+});
+
+test('a publisher can release and start diagram work, and the diagram handoff returns to publishing where a worker is assigned again', () => {
+  assert.ok(staffed.length, 'no reachable story has a worker in publishing');
+  const path = (id, types) => types.reduce((at, type) => at && edgeTo(at, type), id);
+  const drawing = staffed.map(([id]) => path(id, ['release-worker', 'diagram-start'])).filter(Boolean);
+  assert.ok(drawing.length, 'a publisher cannot release and then start diagram work');
+  assert.deepEqual(drawing.filter(id => states.get(id).state.phase !== 'diagram' || states.get(id).state.diagram?.returnPhase !== 'publishing'), [], 'diagram work from publishing did not store publishing as its return phase');
+  const returned = drawing.map(id => edgeTo(id, 'handoff')).filter(Boolean);
+  assert.ok(returned.length, 'the diagram handoff is never accepted');
+  assert.deepEqual(returned.filter(id => states.get(id).state.phase !== 'publishing'), [], 'a diagram handoff from publishing landed elsewhere');
+  assert.ok(returned.some(id => edgeTo(id, 'assign-worker')), 'assign-worker is refused in publishing after the diagram returns');
 });

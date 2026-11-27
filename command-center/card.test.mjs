@@ -39,6 +39,7 @@ class Node {
 const ids = new Map();
 const intervals = [];
 const sources = [];
+const viewButtons = ['lanes', 'agents', 'track', 'archive'].map(name => { const button = new Node('button'); button.setAttribute('data-view', name); return button; });
 const meta = { roles, phases, columns: lanes(phases, 2) };
 Object.assign(globalThis, {
   document: {
@@ -46,7 +47,7 @@ Object.assign(globalThis, {
     createElement: tag => new Node(tag),
     createElementNS: (space, tag) => new Node(tag),
     getElementById: id => ids.get(id) ?? ids.set(id, new Node('div')).get(id),
-    querySelectorAll: () => [],
+    querySelectorAll: selector => selector === '.views button' ? viewButtons : [],
     querySelector: () => null,
     addEventListener() {},
   },
@@ -64,6 +65,7 @@ const turn = { pid: 1, log: 'x.log', at: now() };
 const fixtures = {
   busy: { ...base, id: 'BUSY-1', repo: 'acme/one', phase: 'testing', worker: { id: 'w1', role: 'tester', session: 's1', turn } },
   idle: { ...base, id: 'IDLE-1', repo: 'acme/two', phase: 'testing', worker: { id: 'w2', role: 'tester', session: 's2', lastTurn: { outcome: 'ended', at: now(), code: 0 } } },
+  publisher: { ...base, id: 'PUBL-1', repo: 'acme/one', phase: 'publishing', worker: { id: 'w5', role: 'watcher', session: 's5', lastTurn: { outcome: 'ended', at: now(), code: 0 } } },
   waiting: { ...base, id: 'WAIT-1', repo: 'acme/one', phase: 'approval', events: [{ seq: 1, at: now(), type: 'plan', detail: 'Plan ready.' }] },
   blocked: { ...base, id: 'BLOCK-1', repo: 'acme/two', phase: 'building', blocked: true, worker: { id: 'w3', role: 'implementer', session: 's3', turn }, events: [{ seq: 2, at: now(), type: 'blocked', detail: 'Stuck.' }] },
 };
@@ -174,6 +176,12 @@ test('the bottom row shows status words only when the story is not busy, and the
   }
 });
 
+test('an unstaffed publishing card says no publisher session is active, not that it waits on a release pipeline', () => {
+  const text = card('publisher').textContent;
+  assert.ok(text.includes('Idle · no publisher session active'), 'the publishing card says: ' + text);
+  assert.ok(!text.includes('release pipeline'), 'the publishing card still mentions a release pipeline');
+});
+
 test('app.css keeps no rule for the repository line, the phase pill or the pulse dot', () => {
   const css = read('./ui/app.css');
   for (const selector of ['.card .repo', '.card header .phase', '.pulse']) {
@@ -235,4 +243,243 @@ test('the stall flag appears on the next tick once 24 hours pass without review 
   } finally {
     Date.now = realNow;
   }
+});
+
+const show = list => sources.at(-1).listeners.stories({ data: JSON.stringify({ stories: list }) });
+const press = node => node.listeners.click.forEach(listener => listener({ preventDefault() {}, stopPropagation() {}, currentTarget: node }));
+const useView = name => press(viewButtons.find(button => button.getAttribute('data-view') === name));
+const boardCard = id => walk(ids.get('board')).find(node => node.tag === 'article' && node.classes().includes('card') && walk(node).some(child => child.classes?.().includes('id') && child.textContent === id));
+const tile = role => walk(ids.get('crew')).find(node => node.tag === 'button' && node.attributes['data-role'] === role);
+const tileState = role => ['busy', 'queued', 'idle', 'needs'].find(name => tile(role).classes().includes(name));
+const boardIds = () => walk(ids.get('board')).filter(node => node.tag === 'article' && node.classes().includes('card')).map(node => walk(node).find(child => child.classes?.().includes('id')).textContent);
+const wordsOf = id => walk(boardCard(id)).find(node => node.classes?.().includes('who'))?.textContent;
+const glyph = id => walk(boardCard(id).children.find(child => child?.tag === 'header')).find(node => node.classes?.().includes('avatar'));
+const jarvisTurn = { session: 'jarvis-1', handled: 1, turn: { pid: 2, log: 'jarvis.log', at: now() } };
+const waitingFor = { since: ago(4), why: 'tester handed off red' };
+const waitingWords = 'Waiting on Jarvis · 4m · tester handed off red';
+const ownerWords = roles.coordinator.alias + ' · ' + roles.coordinator.job;
+const hold = {
+  checking: { ...base, id: 'JCHK-1', phase: 'building', jarvis: jarvisTurn },
+  waking: { ...base, id: 'JWAK-1', phase: 'building', jarvis: { session: 'jarvis-1', handled: 1, waking: now() } },
+  both: { ...base, id: 'JBTH-1', phase: 'building', jarvis: jarvisTurn, waitingOnJarvis: waitingFor },
+  waiting: { ...base, id: 'JWAI-1', phase: 'review', waitingOnJarvis: waitingFor, activity: { at: now() } },
+  control: { ...base, id: 'JCTL-1', phase: 'building', worker: { id: 'w9', role: 'implementer', session: 's9', turn } },
+};
+const jarvisBadge = id => {
+  const found = glyph(id);
+  assert.ok(found, id + ' has no glyph');
+  assert.ok(walk(found).some(node => node.tag === 'svg'), id + ' glyph is not a badge: ' + found.textContent);
+  assert.ok((found.getAttribute('title') ?? '').startsWith(roles.coordinator.alias + ' · '), id + ' glyph is not the Jarvis badge: ' + found.getAttribute('title'));
+  return found;
+};
+
+test('a story with no worker and a Jarvis turn running or about to start carries the moving Jarvis badge and says Jarvis is checking', () => {
+  show([hold.checking, hold.waking, hold.both]);
+  for (const key of ['checking', 'waking', 'both']) {
+    const id = hold[key].id;
+    assert.ok(jarvisBadge(id).classes().includes('moving'), id + ' Jarvis badge is still');
+    assert.equal(boardCard(id).attributes['data-role'], 'coordinator', id + ' is not attributed to Jarvis');
+    assert.ok(boardCard(id).classes().includes('busy'), id + ' card is not busy');
+    assert.equal(wordsOf(id), 'Jarvis is checking', id + ' card words');
+    assert.ok(!boardCard(id).textContent.includes('··'), id + ' card still shows the placeholder');
+  }
+});
+
+test('a story waiting on Jarvis carries the still Jarvis badge, even with activity in the last ten minutes', () => {
+  show([hold.waiting]);
+  const id = hold.waiting.id;
+  assert.ok(!jarvisBadge(id).classes().includes('moving'), 'the waiting badge moves');
+  assert.equal(boardCard(id).attributes['data-role'], 'coordinator');
+  assert.ok(!boardCard(id).classes().includes('busy'), 'the waiting card is busy');
+  assert.equal(wordsOf(id), waitingWords);
+});
+
+test('the crew tile of Jarvis lists a story it is checking as busy and the tile of the phase role drops it', () => {
+  show([hold.checking, hold.waking]);
+  assert.equal(tileState('coordinator'), 'busy');
+  assert.ok(tile('coordinator').textContent.includes('JCHK-1') && tile('coordinator').textContent.includes('JWAK-1'), 'the Jarvis tile does not list both stories: ' + tile('coordinator').textContent);
+  assert.ok(!tile('implementer').textContent.includes('JCHK-1') && !tile('implementer').textContent.includes('JWAK-1'), 'the implementer tile still lists them');
+  assert.equal(tileState('implementer'), 'idle');
+});
+
+test('the crew tile of Jarvis lists a story waiting on it as queued and the tile of the phase role drops it', () => {
+  show([hold.waiting]);
+  assert.equal(tileState('coordinator'), 'queued');
+  assert.ok(tile('coordinator').textContent.includes('JWAI-1'), 'the Jarvis tile does not list the waiting story');
+  assert.ok(!tile('reviewer').textContent.includes('JWAI-1'), 'the reviewer tile still lists it');
+  assert.equal(tileState('reviewer'), 'idle');
+});
+
+test('the Agents-working stat counts Jarvis while it is checking and not while a story only waits on it', () => {
+  show([hold.checking, hold.control]);
+  assert.equal(ids.get('stat-agents').textContent, '2');
+  show([hold.waiting, hold.control]);
+  assert.equal(ids.get('stat-agents').textContent, '1');
+});
+
+test('the Jarvis filter shows exactly the stories Jarvis holds', () => {
+  show([hold.checking, hold.waking, hold.waiting, hold.control]);
+  press(tile('coordinator'));
+  try {
+    assert.deepEqual(boardIds().sort(), ['JCHK-1', 'JWAI-1', 'JWAK-1']);
+  } finally {
+    press(tile('coordinator'));
+  }
+  assert.equal(boardIds().length, 4, 'the filter did not clear');
+});
+
+test('a lane is hot while Jarvis checks a story in it and not while a story there only waits on Jarvis', () => {
+  const laneOf = id => walk(ids.get('board')).find(node => node.classes?.().includes('lane') && walk(node).includes(boardCard(id)));
+  show([hold.checking]);
+  assert.ok(laneOf('JCHK-1').classes().includes('hot'), 'the lane of the checked story is not hot');
+  show([hold.waiting]);
+  assert.ok(!laneOf('JWAI-1').classes().includes('hot'), 'the lane of the waiting story is hot');
+});
+
+test('the Agents swimlanes place a story under Jarvis, hot while checking, and keep the control under its worker', () => {
+  useView('agents');
+  try {
+    show([hold.checking, hold.waiting, hold.control]);
+    const swim = role => walk(ids.get('board')).find(node => node.classes?.().includes('swim') && node.attributes['data-role'] === role);
+    const listed = role => walk(swim(role)).filter(node => node.classes?.().includes('id')).map(node => node.textContent).sort();
+    assert.deepEqual(listed('coordinator'), ['JCHK-1', 'JWAI-1']);
+    assert.deepEqual(listed('implementer'), ['JCTL-1']);
+    assert.ok(swim('coordinator').classes().includes('hot'), 'the Jarvis swimlane is not hot');
+    show([hold.waiting]);
+    assert.ok(!swim('coordinator').classes().includes('hot'), 'a swimlane holding only a waiting story is hot');
+  } finally {
+    useView('lanes');
+  }
+});
+
+test('the track view says Jarvis is checking, or what Jarvis waits for, without repeating the story id', () => {
+  useView('track');
+  try {
+    show([hold.checking, hold.waiting]);
+    const row = id => walk(ids.get('board')).find(node => node.tag === 'article' && node.classes().includes('track') && walk(node).some(child => child.classes?.().includes('id') && child.textContent === id));
+    assert.ok(row('JCHK-1').textContent.includes('Jarvis is checking'), 'the track row does not say Jarvis is checking: ' + row('JCHK-1').textContent);
+    assert.ok(!row('JCHK-1').textContent.includes('Jarvis is checking JCHK-1'), 'the track row repeats the story id');
+    assert.equal(row('JCHK-1').attributes['data-role'], 'coordinator');
+    assert.ok(row('JWAI-1').textContent.includes(waitingWords));
+    assert.equal(row('JWAI-1').attributes['data-role'], 'coordinator');
+  } finally {
+    useView('lanes');
+  }
+});
+
+const detailRows = async story => {
+  const win = document.getElementById('detail');
+  if (!win.querySelector('.win-title')) { const title = new Node('span'); title.className = 'win-title'; win.append(title); }
+  show([story]);
+  press(boardCard(story.id));
+  await new Promise(resolve => setTimeout(resolve, 0));
+  return Object.fromEntries(walk(ids.get('detail-body')).filter(node => node.classes?.().includes('row')).map(node => [node.children[0].textContent, node.children[1].textContent]));
+};
+
+test('the story window names Jarvis as the owner while it checks or waits, and its Jarvis row has no story id', async () => {
+  const checking = await detailRows(hold.checking);
+  assert.equal(checking.Owner, ownerWords);
+  assert.equal(checking.Jarvis, 'Jarvis is checking');
+  const waiting = await detailRows(hold.waiting);
+  assert.equal(waiting.Owner, ownerWords);
+  assert.equal(waiting.Jarvis, waitingWords);
+});
+
+const idleWorker = { id: 'w5', role: 'implementer', session: 's5', lastTurn: { outcome: 'ended', at: now(), code: 0 } };
+const keeps = {
+  idleWorker: { story: { ...base, id: 'KEEP-1', phase: 'building', worker: idleWorker, jarvis: jarvisTurn }, role: 'implementer', words: 'Jarvis is checking' },
+  idleWorkerWaiting: { story: { ...base, id: 'KEEP-2', phase: 'building', worker: idleWorker, waitingOnJarvis: waitingFor }, role: 'implementer', words: waitingWords },
+  question: { story: { ...base, id: 'KEEP-3', phase: 'building', questions: [{ id: 'q', prompt: 'Which way?', options: [] }], jarvis: jarvisTurn, waitingOnJarvis: waitingFor }, role: 'approver', words: 'Waiting on you' },
+  blocked: { story: { ...base, id: 'KEEP-4', phase: 'building', blocked: true, jarvis: jarvisTurn, waitingOnJarvis: waitingFor }, role: 'implementer', words: 'Blocked' },
+  approval: { story: { ...base, id: 'KEEP-5', phase: 'approval', jarvis: jarvisTurn, waitingOnJarvis: waitingFor }, role: 'approver', words: 'Waiting on you' },
+  comparison: { story: { ...base, id: 'KEEP-6', phase: 'comparison-choice', jarvis: jarvisTurn, waitingOnJarvis: waitingFor }, role: 'approver', words: 'Waiting on you' },
+};
+
+test('an assigned worker, an open question, a blocker, approval and comparison-choice keep their owner while Jarvis checks or is waited on', () => {
+  show(Object.values(keeps).map(each => each.story));
+  for (const [name, { story, role }] of Object.entries(keeps)) {
+    assert.equal(boardCard(story.id).attributes['data-role'], role, name + ' changed owner');
+    assert.ok(!(glyph(story.id).getAttribute('title') ?? '').startsWith(roles.coordinator.alias), name + ' shows the Jarvis badge');
+    assert.ok(!glyph(story.id).classes().includes('moving'), name + ' glyph moves');
+    assert.ok(!boardCard(story.id).classes().includes('busy'), name + ' card is busy');
+  }
+  assert.ok(!/KEEP-/.test(tile('coordinator').textContent), 'the Jarvis tile lists a story it does not hold: ' + tile('coordinator').textContent);
+});
+
+test('an idle assigned worker keeps the story and its placeholder glyph beside the shorter Jarvis words', () => {
+  show(Object.values(keeps).map(each => each.story));
+  for (const name of ['idleWorker', 'idleWorkerWaiting']) assert.equal(glyph(keeps[name].story.id).textContent, '··', name + ' glyph');
+  for (const [name, { story, words }] of Object.entries(keeps)) assert.equal(wordsOf(story.id), words, name + ' words');
+});
+
+test('a running worker turn keeps the story and its moving badge while Jarvis is waited on', () => {
+  show([{ ...hold.control, id: 'KEEP-7', waitingOnJarvis: waitingFor, jarvis: jarvisTurn }]);
+  assert.equal(boardCard('KEEP-7').attributes['data-role'], 'implementer');
+  assert.ok(glyph('KEEP-7').classes().includes('moving'));
+  assert.equal(tileState('coordinator'), 'idle');
+});
+
+test('once the Jarvis turn ends and nothing waits on Jarvis, the story returns to its phase role', () => {
+  show([hold.checking, hold.waiting]);
+  assert.equal(boardCard('JCHK-1').attributes['data-role'], 'coordinator');
+  const ended = { ...hold.checking, jarvis: { session: 'jarvis-1', handled: 1, lastTurn: { outcome: 'ended', at: now(), code: 0 } } };
+  const answered = { ...hold.waiting, waitingOnJarvis: undefined };
+  show([ended, answered]);
+  assert.equal(boardCard('JCHK-1').attributes['data-role'], 'implementer');
+  assert.equal(glyph('JCHK-1').textContent, '··');
+  assert.equal(boardCard('JWAI-1').attributes['data-role'], 'reviewer');
+  assert.equal(tileState('coordinator'), 'idle');
+  assert.ok(tile('coordinator').textContent.includes('standing by'));
+});
+
+test('the track view marks a story with no hold as idle and a story waiting on Jarvis as not idle', () => {
+  useView('track');
+  try {
+    show([hold.waiting, { ...base, id: 'JIDL-1', phase: 'building' }]);
+    const row = id => walk(ids.get('board')).find(node => node.tag === 'article' && node.classes().includes('track') && walk(node).some(child => child.classes?.().includes('id') && child.textContent === id));
+    assert.ok(row('JIDL-1').classes().includes('idle'), 'a story with no hold is not idle');
+    assert.ok(!row('JWAI-1').classes().includes('idle'), 'a story waiting on Jarvis is idle');
+  } finally {
+    useView('lanes');
+  }
+});
+
+const held = {
+  idle: { ...base, id: 'HELD-1', repo: 'acme/one', phase: 'retro', pr: 'https://github.com/acme/one/pull/7',
+    retro: { returnPhase: 'ci', startedAt: ago(30), mergedAt: ago(5), detail: 'Merged.' },
+    worker: { id: 'w9', role: 'coordinator', session: 's9', lastTurn: { outcome: 'ended', at: now(), code: 0 } } },
+  asking: { ...base, id: 'HELD-2', repo: 'acme/one', phase: 'retro', pr: 'https://github.com/acme/one/pull/8',
+    retro: { returnPhase: 'ci', startedAt: ago(30), mergedAt: ago(5), detail: 'Merged.' },
+    questions: [{ id: 'retro-1', prompt: 'Keep the lesson?', options: ['Keep', 'Drop'], recommended: 0 }],
+    worker: { id: 'w10', role: 'coordinator', session: 's10', lastTurn: { outcome: 'ended', at: now(), code: 0 } } },
+  running: { ...base, id: 'HELD-3', repo: 'acme/one', phase: 'retro', pr: 'https://github.com/acme/one/pull/9',
+    retro: { returnPhase: 'ci', startedAt: ago(30) },
+    worker: { id: 'w11', role: 'coordinator', session: 's11', lastTurn: { outcome: 'ended', at: now(), code: 0 } } },
+};
+
+test('a story held in the retro after its merge is labelled as merged and finishing the retro, and an unmerged retro is not', () => {
+  show([held.idle, held.running]);
+  assert.ok(boardCard('HELD-1').textContent.includes('Merged · finishing retro'), 'the held story card does not say it is merged and finishing the retro: ' + boardCard('HELD-1').textContent);
+  assert.ok(!boardCard('HELD-3').textContent.includes('Merged · finishing retro'), 'a retro with no merge is labelled as merged');
+});
+
+test('only a story in the retro phase reads as merged and finishing the retro, even if it kept retro.mergedAt', () => {
+  show([{ ...held.idle, id: 'HELD-4', phase: 'ci' }]);
+  assert.ok(boardCard('HELD-4'), 'the story outside the retro has no card');
+  assert.ok(!boardCard('HELD-4').textContent.includes('Merged · finishing retro'), 'a story that left the retro is labelled as finishing it: ' + boardCard('HELD-4').textContent);
+});
+
+test('a held retro is in Waiting on you only while a question is open, and it is not in the Archive until it closes', () => {
+  show([held.idle]);
+  assert.ok(!boardCard('HELD-1').classes().includes('waiting'), 'a held retro with no open question is waiting on the owner');
+  assert.equal(ids.get('stat-waiting').textContent, '0');
+  assert.equal(ids.get('stat-shipped').textContent, '0', 'a held retro is counted as shipped');
+  show([held.asking]);
+  assert.ok(boardCard('HELD-2').classes().includes('waiting'), 'a held retro with an open question is not waiting on the owner');
+  assert.equal(wordsOf('HELD-2'), 'Waiting on you');
+  assert.equal(ids.get('stat-waiting').textContent, '1');
+  assert.equal(ids.get('stat-shipped').textContent, '0', 'a held retro is counted as shipped');
+  show([{ ...held.asking, phase: 'closed' }]);
+  assert.equal(ids.get('stat-shipped').textContent, '1');
+  assert.equal(ids.get('stat-waiting').textContent, '0');
 });

@@ -9,7 +9,7 @@ Follow this when the person asks to install, set up, or try the factory, or says
 1. From the root of this checkout, run `node install.mjs`. It needs Node 22 or newer and installs no packages.
 2. Tell the person what it printed, harness by harness. Three results need them:
    - "No supported harness was found": ask which harness they use, then run it again with that name, for example `node install.mjs claude-code`.
-   - "blocked": a skill of the same name is already in their harness. `node install.mjs --replace` moves theirs aside to `<name>.bak-<time>`; ask before running it.
+   - "blocked": a skill of the same name is already in their harness. `node install.mjs --replace` moves theirs aside into the harness's `ai-sdlc-backups` folder and deletes nothing; ask before running it.
    - "Story sessions will not start": pass on the fix it names.
 3. Stop there. This chat loaded its skills before the install, so it cannot run a story. Tell the person to restart the harness, open a chat in the repository they want work done in, which must have an `origin` remote, and say "Be Jarvis. Run AI SDLC." The first run asks the setup questions once.
 

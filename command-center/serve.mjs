@@ -7,7 +7,7 @@ import { harnessKey } from '../mission-console/roles.mjs';
 import { InputError, workerPhases } from '../mission-console/store.mjs';
 import { watchOnce } from '../mission-console/watcher.mjs';
 import { createConsoleService, DEFAULT_DB_PATH } from './console-service.mjs';
-import { createCoordinator } from './coordinator.mjs';
+import { commandLine, createCoordinator } from './coordinator.mjs';
 import { createSupervisor } from './supervisor.mjs';
 import { isMain } from '../mission-console/is-main.mjs';
 
@@ -26,14 +26,15 @@ export function loadAdapters(table = harnesses, send = messageWorker) {
     .map(harness => [harnessKey(harness), { messageWorker: (message, options) => send({ harness, ...message }, options) }]));
 }
 
-export async function deliver({ story, seqs, types, session, worktree, phase, onTurn, after }, adapter, log = console.log) {
+export async function deliver({ story, seqs, types, session, worktree, phase, onTurn, after, current, pending }, adapter, log = console.log) {
   const event = '[Mission Console event] The owner recorded ' + types.join(', ') + ' on story ' + story + ' (event seq ' + seqs.join(', ') + '). ';
   let reason = !adapter ? 'its harness has no adapter' : !session ? 'no worker is assigned' : '';
   if (!reason) {
     try {
-      await adapter.messageWorker({ session, worktree, phase, prompt: event + 'Read the console, act on these events, acknowledge them, and continue.' }, { onTurn, after });
-      return 'worker';
+      const sent = await adapter.messageWorker({ session, worktree, phase, prompt: event + 'Read the console, act on these events, acknowledge them, and continue.' }, { onTurn, after, current, pending });
+      return sent === 'acknowledged' ? sent : 'worker';
     } catch (error) {
+      if (error.code === 'STALE_ASSIGNMENT') return 'stale';
       reason = 'the worker could not be messaged (' + error.message + ')';
     }
   }
@@ -51,7 +52,7 @@ export async function deliver({ story, seqs, types, session, worktree, phase, on
   return 'nobody';
 }
 
-export async function startStoryWorker({ story: id, prompt, expectedPhase }, { service, supervisor, launch = startWorker, prepare }) {
+export async function startStoryWorker({ story: id, prompt, expectedPhase, carriedBy }, { service, supervisor, launch = startWorker, prepare }) {
   const startable = () => {
     const story = service.snapshot().find(story => story.id === id);
     if (!story) throw new InputError('Story does not exist.', 404);
@@ -72,7 +73,7 @@ export async function startStoryWorker({ story: id, prompt, expectedPhase }, { s
   let turn;
   let started;
   try {
-    started = await launch({ harness: story.harness, worktree: story.worktree, prompt, phase: story.phase }, { onTurn: running => { turn = running; } });
+    started = await launch({ harness: story.harness, worktree: story.worktree, prompt, phase: story.phase }, { onTurn: running => { turn = running; carriedBy?.(running.ended); } });
   } catch (error) {
     throw Object.assign(error, { status: 502, expose: true });
   }
@@ -107,7 +108,8 @@ function jarvisKickoff(story, news, dbPath, port) {
   const serve = factoryFile('command-center/serve.mjs');
   return [
     'You are the background Jarvis for story ' + story.id + ' in ' + story.harness + '. The Command Center woke you because the story needs its coordinator. This is one turn: act on the news, then end the turn.',
-    'News (event seq: type): ' + news.map(event => event.seq + ': ' + event.type).join(', ') + '.',
+    news.length ? 'News (event seq: type): ' + news.map(event => event.seq + ': ' + event.type).join(', ') + '.'
+      : 'No news: nobody is working on ' + story.id + ' in ' + story.phase + ': no worker, nothing pending, no open question. Staff it, or record blocked or a question.',
     'Read first, completely, and follow: ' + factoryFile('skills/jarvis/BACKGROUND.md'),
     'Factory runbook: ' + factoryFile('skills/jarvis/RUNBOOK.md') + '\nAI SDLC skill: ' + factoryFile('skills/ai-sdlc/SKILL.md'),
     'Console CLI: node ' + factoryFile('mission-console/jarvis.mjs') + '\nConsole database: ' + dbPath,
@@ -180,7 +182,7 @@ export async function start({ port = DEFAULT_PORT, dbPath = DEFAULT_DB_PATH, ada
       const story = service.snapshot().find(story => story.id === decision.story);
       if (!story?.worker && story?.phase === 'testing' && !story.blocked && !story.cleanup && decision.types.includes('approve') && row(story.harness).workers === 'command-line') {
         try {
-          await beginWorker({ story: story.id, expectedPhase: 'testing', automatic: true, prompt: 'Continue the approved test-first phase.' });
+          await beginWorker({ story: story.id, expectedPhase: 'testing', automatic: true, carriedBy: decision.carriedBy, prompt: 'Continue the approved test-first phase.' });
           return 'worker';
         } catch (error) {
           blockTestStart(story.id, error);
@@ -190,12 +192,21 @@ export async function start({ port = DEFAULT_PORT, dbPath = DEFAULT_DB_PATH, ada
       }
       if (story && row(story.harness).workers === 'command-line') {
         const notices = coordinator.notices(story.id, decision.seqs);
+        if (decision.stale && !decision.session) coordinator.owe(story.id, decision.seqs);
         if (notices.length || !decision.session) coordinator.nudge();
         if (!decision.session || notices.length === decision.seqs.length) return 'coordinator';
         decision = { ...decision, seqs: decision.seqs.filter(seq => !notices.includes(seq)) };
       }
-      const onTurn = turn => supervisor.track({ story: decision.story, ...turn });
-      return deliver({ ...decision, worktree: story?.worktree, phase: story?.phase, onTurn, after: supervisor.idle(decision.story) },
+      const onTurn = turn => {
+        supervisor.track({ story: decision.story, ...turn });
+        decision.carriedBy?.(turn.ended);
+      };
+      const current = () => service.snapshot().find(item => item.id === decision.story)?.worker?.id === decision.assignment;
+      const pending = () => {
+        const owed = new Set(service.store.pendingFor(decision.story).map(record => record.seq));
+        return decision.seqs.some(seq => owed.has(seq));
+      };
+      return deliver({ ...decision, worktree: story?.worktree, phase: story?.phase, onTurn, after: supervisor.idle(decision.story), current, pending },
         adapters.get(harnessKey(story?.harness)));
     },
     onStartWorker: beginWorker,
@@ -213,7 +224,8 @@ export async function start({ port = DEFAULT_PORT, dbPath = DEFAULT_DB_PATH, ada
     coordinator = createCoordinator({ service, launch, adapters, quietMs, busy: id => starts.has(id),
       kickoff: (story, news) => jarvisKickoff(story, news, dbPath, Number(new URL(server.url).port)) });
     for (const story of service.snapshot()) {
-      if (story.phase === 'testing' && !story.worker && !story.blocked && !story.cleanup) {
+      const staffed = story.worker && commandLine(story);
+      if (staffed || (story.phase === 'testing' && !story.worker && !story.blocked && !story.cleanup)) {
         service.deliverPending(story.id).catch(error => console.error('Pending approval on ' + story.id + ' could not be delivered: ' + error.message));
       }
     }

@@ -14,7 +14,7 @@ Run the steps in order. Steps 1 and 2 happen once per session, except that the p
 - [ ] 3. Intake: record the story and start its worker
 - [ ] 4. Route each decision the owner makes to the story's worker
 - [ ] 5. Check each handoff and keep the console current
-- [ ] 6. Close the story: release the worker and report
+- [ ] 6. Close the story: release the worker (a worker holding a merged retro releases itself with the lessons) and report
 
 The [factory runbook](RUNBOOK.md) gives the detail behind steps 3 to 6: the calls each harness uses, the worker kickoff, the event chain, and decision handling.
 
@@ -73,10 +73,10 @@ When a worker ends its turn, read the console and check the evidence it recorded
 | 4. Required gates and mutation | `gates`, `mutation` | `handoff` with each gate's command and result; `return-to-build` on a failing gate; `return-to-testing` for surviving mutants |
 | 5. Adversarial review | `review` | `handoff` with the verdict; `return-to-build` with a verified finding; a `question` when the review reaches the profile's review round limit or otherwise escalates to the owner |
 | 6. Before and after | `comparison-choice`, `comparison` | The profile or the approved spec already decided this. Record `comparison-choice` with that answer instead of asking again, then `artifact` for each `before`, `after`, or `recording` (a text capture, such as command output, is registered as a `document` whose detail starts with BEFORE or AFTER, since those kinds take only images and video), and a `question` asking the owner to accept the comparison. Their acceptance is followed by `handoff`; a change they ask for is `return-to-build` with their comment. |
-| 7. Architecture diagram | `diagram` | When the profile or the spec asks for one: `diagram-start` with the scope from publishing, before the pull request opens, `artifact` of kind `diagram`, `handoff` |
-| 8. Pull request | `publishing`, `ci`, `merge`, `closed` | `pr-opened` with the URL; `activity` with `pipeline` for a required pipeline run; `pr-ready` for the reviewed head, always with the head of Hawkeye's latest observation when one exists, even if the watcher has stopped. With no observation, omit the head only when the PR is not on github.com or no watcher is running; while a watcher runs, wait for its first observation, then supply that head. When it is refused for "CI failed", "Checks still running", "No checks reported" or "Hawkeye has not observed this pull request yet", the story stays in CI and Jarvis waits for the next observation, restarting the watcher if none arrives; when it is refused for "PR merged", record `merged`; when it is refused for "PR closed without merge", ask the owner with a `question`; when it is refused for a missing or mismatched head, resend with the observed head; and `pr-review-start` naming the threads when it is refused for unresolved threads; `pr-recheck` on a new head; `merged` |
+| 7. Architecture diagram | `diagram` | When the profile or the spec asks for one: the publisher records `diagram-start` with the scope as its first step, before the pull request opens; staff Rocket, whose `artifact` of kind `diagram` and `handoff` return the story to publishing, then restaff the publisher |
+| 8. Pull request | `publishing`, `ci`, `merge`, `closed` | Before starting the publisher, acknowledge (the console's ack command) the story's pending `comparison-choice`, or the daemon delivers it and resumes the publisher after it releases. Start Hawkeye's publisher (kickoff: run "Publishing" in phase 8 of the ai-sdlc skill), which records `return-to-build` on a merge conflict or a story-caused gate failure, `blocked` and a `question` when the gate fails on the default branch too, and `pr-opened` with the URL; `activity` with `pipeline` for a required pipeline run; `pr-ready` for the reviewed head, always with the head of Hawkeye's latest observation when one exists, even if the watcher has stopped. With no observation, omit the head only when the PR is not on github.com or no watcher is running; while a watcher runs, wait for its first observation, then supply that head. When it is refused for "CI failed", "Checks still running", "No checks reported" or "Hawkeye has not observed this pull request yet", the story stays in CI and Jarvis waits for the next observation, restarting the watcher if none arrives; when it is refused for "PR merged", record `merged`; when it is refused for "PR closed without merge", ask the owner with a `question`; when it is refused for a missing or mismatched head, resend with the observed head; and `pr-review-start` naming the threads when it is refused for unresolved threads; `pr-recheck` on a new head; `merged` |
 | 8. PR review | `pr-review` | `pr-review-start` naming the new feedback, then start Hawkeye's worker; the worker records `question` per comment, the owner's `answer`, `activity` with the posted comment ids, `handoff` back to ci with the review keys it read as seen, or, when an answer asks for more, a reply on that item that it is going back to build and `return-to-build` with the keys it read as seen |
-| 9. Retro | `retro` | `retro-start` while the pull request is open; `handoff` with the lessons |
+| 9. Retro | `retro` | `retro-start` while the pull request is open; `handoff` with the lessons. On a merge during the retro, record `merged` without `release-worker` and message no one: the retro worker keeps its assignment, reads `story.retro.mergedAt` in its handover, and gets the owner's answers. Once every retro question is answered it records `release-worker` with the lessons (or that there were none) as its detail, and no `handoff`; the story stays in the retro with no worker, which wakes Jarvis, who checks that no retro question is open (with one open, it restaffs the retro), checks the lessons, records the closing `handoff` with them, and reports them (a background turn reports in the handoff's detail) |
 
 Keep the console honest while this happens:
 
@@ -89,7 +89,7 @@ Keep the console honest while this happens:
 
 ## 6. Close the story
 
-Release a worker with `release-worker` before changing phases or assigning a replacement, and when its story is merged or cleaned up. Report to the owner what was merged, the retro's lessons, and anything left open. The full event reference, the command line, recovery, and cleanup are in the Mission Console reference, the file at `commandCenter.reference`.
+Release a worker with `release-worker` before changing phases or assigning a replacement, and when its story is merged or cleaned up, except a story merged during its retro: that retro worker stays assigned until it releases itself with the lessons (phase 9 above). Report to the owner what was merged, the retro's lessons, and anything left open. The full event reference, the command line, recovery, and cleanup are in the Mission Console reference, the file at `commandCenter.reference`.
 
 ## Roles
 
@@ -105,7 +105,7 @@ Use this persona map when coordinating. Accept a skill name or a role name as a 
 | Doctor Strange | Independent reviewer | `adversarial-code-review` |
 | Bruce Banner | Before-and-after verifier | `before-and-after` |
 | Rocket | Architecture diagram designer | `diagram-design` |
-| Hawkeye | Factory and PR watcher | Routes the owner's console decisions to workers; observes CI, merge status and review feedback; runs PR review |
+| Hawkeye | Factory and PR watcher | Opens the pull request; routes the owner's console decisions to workers; observes CI, merge status and review feedback; runs PR review |
 | Fury | Human approver | The owner makes the plan and workflow decisions |
 
 The console's own labels come from `roles.mjs`, beside the `console` file.

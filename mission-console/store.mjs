@@ -5,7 +5,7 @@ import { extname, isAbsolute } from 'node:path';
 import { documentTypes, mediaTypes } from './media.mjs';
 import { harnessKey, phases, roles } from './roles.mjs';
 
-export const workerPhases = new Set(['scout', 'planning', 'testing', 'red', 'building', 'gates', 'mutation', 'review', 'comparison', 'diagram', 'ci', 'retro', 'pr-review']);
+export const workerPhases = new Set(['scout', 'planning', 'testing', 'red', 'building', 'gates', 'mutation', 'review', 'comparison', 'diagram', 'publishing', 'ci', 'retro', 'pr-review']);
 const transitions = {
   scout: 'planning',
   testing: 'red',
@@ -153,7 +153,7 @@ const jarvisNotice = input => input.type === 'question' && typeof input.question
 function apply(story, input, now) {
   requireThat(story.harness || ['select-harness', 'release-worker'].includes(input.type), 'Select the story harness first.', 409);
   requireThat(!story.blocked || jarvisNotice(input) || ['resume', 'answer', 'replan', 'assign-worktree', 'release-worker', 'select-harness', 'merged', 'turn-started', 'turn-ended', ...jarvisTurnEvents].includes(input.type),
-    'Resume or replan the blocked story first.', 409);
+    story.retro?.mergedAt ? 'Resume the blocked story first.' : 'Resume or replan the blocked story first.', 409);
   switch (input.type) {
     case 'select-harness':
       requireThat(!story.harness && !story.worker && story.phase !== 'closed',
@@ -316,7 +316,7 @@ function apply(story, input, now) {
       if (story.phase === 'retro') {
         requireThat(['ci', 'merge'].includes(story.retro?.returnPhase), 'Retro return phase is unavailable.', 409);
         const lessons = string(input.detail, 'retro lessons');
-        story.phase = story.retro.returnPhase;
+        story.phase = story.retro.mergedAt ? 'closed' : story.retro.returnPhase;
         story.retro.completedAt = now;
         story.retro.detail = lessons;
         return lessons;
@@ -342,7 +342,7 @@ function apply(story, input, now) {
       story.phase = 'pr-review';
       return 'Hawkeye started PR review · ' + story.prReview.detail;
     case 'return-to-build':
-      requireThat(['review', 'gates', 'comparison', 'pr-review'].includes(story.phase), 'Return to build from review, the deterministic gates, the comparison, or PR review.', 409);
+      requireThat(['review', 'gates', 'comparison', 'publishing', 'pr-review'].includes(story.phase), 'Return to build from review, the deterministic gates, the comparison, publishing, or PR review.', 409);
       if (story.phase === 'review') story.reviewRounds = (story.reviewRounds ?? 0) + 1;
       if (story.phase === 'pr-review') markSeen(story, input.seen);
       story.phase = 'building';
@@ -354,6 +354,7 @@ function apply(story, input, now) {
     case 'replan':
       requireThat(story.phase !== 'planning' && story.phase !== 'closed',
         'This phase cannot reopen planning.', 409);
+      requireThat(!story.retro?.mergedAt, 'The pull request has merged; finish the retro.', 409);
       story.phase = 'planning';
       delete story.blocked;
       delete story.readyHead;
@@ -421,6 +422,13 @@ function apply(story, input, now) {
       return string(input.detail, 'new head or check regression');
     case 'merged':
       requireThat(['ci', 'merge', 'retro', 'pr-review'].includes(story.phase), 'There is no open PR to reconcile in this phase.', 409);
+      if (story.phase === 'retro') {
+        requireThat(!story.retro.mergedAt, 'The merge is already recorded.', 409);
+        story.retro.mergedAt = now;
+        story.retro.mergeDetail = string(input.detail, 'merge evidence');
+        delete story.blocked;
+        return story.retro.mergeDetail;
+      }
       story.phase = 'closed';
       delete story.blocked;
       return string(input.detail, 'merge evidence');

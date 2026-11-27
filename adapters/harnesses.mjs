@@ -273,6 +273,11 @@ export async function messageWorker({ harness, session, worktree, prompt, phase 
   turns.set(session, new Promise(resolve => { finish = resolve; }));
   try {
     await previous;
+    if (options.current && !options.current()) throw Object.assign(new Error('The assignment changed before the message could be sent.'), { code: 'STALE_ASSIGNMENT' });
+    if (options.pending && !options.pending()) {
+      finish();
+      return 'acknowledged';
+    }
     const log = logFor(session, options.env);
     const child = run(invocation, { worktree, prompt, log, phase, spawnProcess: options.spawnProcess });
     child.once('close', finish).once('error', finish);

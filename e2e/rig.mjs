@@ -80,8 +80,17 @@ export async function openRig({ entry, turnMs, tally, profile: overrides = {} })
   const origin = 'http://127.0.0.1:' + port;
   const store = openStore(db);
   let daemonOutput = '';
-  const daemon = spawn(process.execPath, [daemonFile, String(port)], { env, stdio: ['ignore', 'pipe', 'pipe'] });
-  for (const stream of [daemon.stdout, daemon.stderr]) stream.on('data', chunk => { daemonOutput += chunk; });
+  let daemon;
+  const startDaemon = () => {
+    daemonOutput = '';
+    daemon = spawn(process.execPath, [daemonFile, String(port)], { env, stdio: ['ignore', 'pipe', 'pipe'] });
+    for (const stream of [daemon.stdout, daemon.stderr]) stream.on('data', chunk => { daemonOutput += chunk; });
+  };
+  const stopDaemon = async () => {
+    daemon.kill();
+    await new Promise(resolve => (daemon.exitCode === null && daemon.signalCode === null ? daemon.once('close', resolve) : resolve()));
+  };
+  startDaemon();
 
   const everyEvent = () => store.snapshot().flatMap(story => store.history(story.id));
   const turnsFile = join(home, 'scripted-turns.jsonl');
@@ -116,6 +125,8 @@ export async function openRig({ entry, turnMs, tally, profile: overrides = {} })
       : resolve(JSON.parse(out)))));
   };
 
+  const failedAllowed = new Map();
+
   const rig = {
     harness: entry.name,
     root, home, db, env, profile, github, turnMs,
@@ -126,8 +137,8 @@ export async function openRig({ entry, turnMs, tally, profile: overrides = {} })
     launcher,
     jarvisWakes: story => rig.history(story).filter(item => item.type === 'jarvis-woken'),
     quietMs,
-    playbook(story, { next = 'You are the next scripted worker for story ' + story + '.', turns = [] } = {}) {
-      writeFileSync(join(playbooks, story + '.json'), JSON.stringify({ story, db, console: consoleCli, serve: launcher, port, turnMs, next, turns }, null, 2));
+    playbook(story, { next = 'You are the next scripted worker for story ' + story + '.', turns = [], jarvis = [] } = {}) {
+      writeFileSync(join(playbooks, story + '.json'), JSON.stringify({ story, db, console: consoleCli, serve: launcher, port, turnMs, next, turns, jarvis }, null, 2));
     },
     gh: (...args) => ['node', standIn, github, ...args],
     calls: () => (existsSync(calls) ? readFileSync(calls, 'utf8').split(/\r?\n/).filter(Boolean).map(line => JSON.parse(line)) : []),
@@ -138,10 +149,12 @@ export async function openRig({ entry, turnMs, tally, profile: overrides = {} })
     acknowledged: (story, seq) => !store.pendingFor(story).some(item => item.seq === seq),
     daemonSaid: pattern => pattern.test(daemonOutput),
     processEnded: ended,
+    expectFailedTurns: (story, count) => failedAllowed.set(story, count),
     create(story, { scouted = true, ...fields } = {}) {
       const created = store.record({ story, key: story + '-create', type: 'create', title: 'End-to-end check ' + story, detail: 'Exercise the factory with scripted workers.', branch: 'e2e', worktree, harness: entry.name, ...fields });
       if (scouted) store.record({ story, key: story + '-scout', type: 'handoff', revision: created.revision, detail: 'Context pack ready.' });
     },
+    record: (story, type, fields = {}) => store.record({ story, type, revision: rig.snapshot(story).revision, key: story + '-' + type + '-' + Date.now() + '-' + Math.random().toString(36).slice(2), ...fields }),
     start: (story, kickoff) => launch('start', story, kickoff),
     deliver: story => launch('deliver', story),
     async decide(body) {
@@ -167,6 +180,11 @@ export async function openRig({ entry, turnMs, tally, profile: overrides = {} })
       }
     },
     worker: (story, turns, what, check) => rig.until(what, check, turnMs, () => rig.turnsEnded(story, turns)),
+    async restart() {
+      await stopDaemon();
+      startDaemon();
+      await rig.until('the Command Center to start again', () => daemonOutput.includes('Command Center: '), 15000);
+    },
     async step(label, body) {
       tally.steps += 1;
       const number = tally.steps;
@@ -186,7 +204,8 @@ export async function openRig({ entry, turnMs, tally, profile: overrides = {} })
         const turns = store.history(story.id).toReversed().filter(item => ['turn-started', 'turn-ended', 'release-worker'].includes(item.type));
         const doubled = turns.find((item, at) => item.type === 'turn-started' && turns[at + 1]?.type === 'turn-started');
         expect(!doubled, story.id + ' has two turns running at once (seq ' + doubled?.seq + ').');
-        const bad = turns.find(item => item.type === 'turn-ended' && item.worker.lastTurn.outcome !== 'ended');
+        let spared = failedAllowed.get(story.id) ?? 0;
+        const bad = turns.find(item => item.type === 'turn-ended' && item.worker.lastTurn.outcome !== 'ended' && !(item.worker.lastTurn.outcome === 'failed' && spared-- > 0));
         expect(!bad, story.id + ' has a turn that ' + bad?.worker.lastTurn.outcome + ': ' + bad?.detail);
       }
       await rig.until('worker processes to end', () => !running().length, 30000);
@@ -218,9 +237,8 @@ export async function openRig({ entry, turnMs, tally, profile: overrides = {} })
           if (error.code !== 'ESRCH') console.log('# A worker process could not be stopped (' + error.message + ').');
         }
       }
-      daemon.kill();
+      await stopDaemon();
       store.close();
-      await new Promise(resolve => (daemon.exitCode === null ? daemon.once('close', resolve) : resolve()));
       if (keep) {
         console.log('# Kept for inspection: ' + root + '\n# Worker logs: ' + join(home, 'workers') + '\n# Command Center output:\n' + daemonOutput.trim().split('\n').map(line => '#   ' + line).join('\n'));
       } else {
