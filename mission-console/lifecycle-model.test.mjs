@@ -54,10 +54,17 @@ test('merged from an open phase with a registered PR closes the story when its r
 });
 
 test('merged in the retro is accepted with the retro worker assigned, which keeps its assignment', () => {
-  const staffed = merging.filter(([, { state }]) => state.phase === 'retro' && state.worker);
+  const staffed = merging.filter(([, { state }]) => state.phase === 'retro' && state.worker && state.retro?.returnPhase !== 'closed');
   assert.ok(staffed.length, 'the explorer reaches the retro with a worker assigned');
   const wrong = staffed.filter(([id]) => { const held = follow(states, id, ['merged']); return held?.phase !== 'retro' || held.retro.returnPhase !== 'closed' || !held.worker; });
   assert.deepEqual(wrong.map(([, node]) => story(node)), [], 'merged was refused, or released the worker, after these events');
+});
+
+test('a retro of a merged story refuses replan and a second merge', () => {
+  const held = live.filter(([, { state }]) => state.phase === 'retro' && state.retro?.returnPhase === 'closed');
+  assert.ok(held.length, 'the explorer reaches a merged retro');
+  const wrong = held.flatMap(([id, node]) => ['replan', 'merged'].filter(type => edgeTo(id, type)).map(type => type + ' was accepted after ' + story(node)));
+  assert.deepEqual(wrong, []);
 });
 
 test('a merged story accepts the lessons handoff only once its worker is released', () => {

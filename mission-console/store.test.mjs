@@ -1362,3 +1362,71 @@ test('Hawkeye polls a story in diagram, wakes Jarvis for a merge, and stops poll
   assert.deepEqual(await watchOnce(store, { readPr }), []);
   assert.equal(polls, 2, 'a story observed merged is not polled again');
 });
+
+test('a retro of a merged story refuses replan and keeps its retro, while an unmerged retro still replans', t => {
+  const store = fixture(t)();
+  const merged = toRetro(store, 'replan-merged');
+  merged('merged', { detail: 'GitHub reports the PR merged.' });
+  const before = store.handover('replan-merged').story;
+  const events = store.history('replan-merged').length;
+  assert.throws(() => merged('replan', { detail: 'A scope decision.' }), error => error.status === 409 && /The pull request has merged; finish the retro\./.test(error.message));
+  const after = store.handover('replan-merged').story;
+  assert.equal(after.phase, 'retro');
+  assert.deepEqual(after.retro, before.retro);
+  assert.equal(after.revision, before.revision);
+  assert.equal(store.history('replan-merged').length, events);
+  const open = toRetro(store, 'replan-open');
+  assert.equal(store.handover('replan-open').story.retro.returnPhase, 'ci');
+  open('replan', { detail: 'A scope decision.' });
+  assert.equal(store.handover('replan-open').story.phase, 'planning');
+  assert.equal(store.handover('replan-open').story.retro, undefined);
+});
+
+test('a second merge in a merged retro is refused and changes nothing', t => {
+  const store = fixture(t)();
+  const record = toRetro(store, 'twice');
+  record('merged', { detail: 'GitHub reports the PR merged.' });
+  const before = store.handover('twice').story;
+  const events = store.history('twice').length;
+  assert.throws(() => record('merged', { detail: 'Merged again.' }), error => error.status === 409 && /The merge is already recorded\./.test(error.message));
+  const after = store.handover('twice').story;
+  assert.equal(after.revision, before.revision);
+  assert.equal(store.history('twice').length, events);
+  assert.deepEqual(after.retro, before.retro);
+});
+
+test('a repeated closed or merged observation outside the watched phases records nothing and keeps the stored review', t => {
+  const store = fixture(t)();
+  for (const status of ['closed', 'merged']) {
+    for (const make of [toDiagram, toBuilding]) {
+      const id = 'keep-' + make.name + '-' + status;
+      const record = toCi(store, id);
+      record('pr-observed', seenPr('passed', { review: review(['IC_1', 'PRRT_2:PRRC_2']) }));
+      const stored = store.handover(id).story.prObservation.review;
+      assert.ok(stored, 'the review was observed in ci');
+      if (make === toDiagram) record('diagram-start', { detail: 'Show the flow.' });
+      else {
+        record('pr-review-start', { detail: 'One comment.' });
+        record('return-to-build', { detail: 'A larger change.' });
+      }
+      record('pr-observed', seenPr(status));
+      assert.deepEqual(store.handover(id).story.prObservation.review, stored, 'the first ' + status + ' observation keeps the review in ' + make.name);
+      const seen = store.handover(id).story;
+      const events = store.history(id).length;
+      assert.deepEqual(record('pr-observed', seenPr(status)), { unchanged: true }, 'a repeated ' + status + ' records nothing in ' + make.name);
+      const after = store.handover(id).story;
+      assert.equal(after.revision, seen.revision);
+      assert.equal(store.history(id).length, events);
+      assert.deepEqual(after.prObservation.review, stored);
+    }
+  }
+  const back = toCi(store, 'keep-back');
+  back('pr-observed', seenPr('passed', { review: review(['IC_1']) }));
+  const stored = store.handover('keep-back').story.prObservation.review;
+  back('diagram-start', { detail: 'Show the flow.' });
+  back('pr-observed', seenPr('closed'));
+  back('pr-observed', seenPr('closed'));
+  back('handoff', { detail: 'Diagram done.' });
+  assert.equal(store.handover('keep-back').story.phase, 'ci');
+  assert.deepEqual(store.handover('keep-back').story.prObservation.review, stored);
+});
