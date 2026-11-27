@@ -30,7 +30,7 @@ test('install never installs a maintainer skill', t => {
 });
 
 test('no tracked file outside docs/specs names a maintainer skill under .claude/skills', () => {
-  const old = new RegExp(`\.claude/skills/(${names.join('|')})`);
+  const old = new RegExp(`\\.claude/skills/(${names.join('|')})`);
   const offenders = tracked.filter(file => !file.startsWith('docs/specs/') && existsSync(join(repo, file)) && old.test(readFileSync(join(repo, file), 'utf8')));
   assert.deepEqual(offenders, []);
 });

@@ -18,7 +18,7 @@ The three skills for working on the factory itself (delete-comment, verify-decis
 | Claude Code | `.claude/skills` | No: falls back to the AGENTS.md list. It loses `/delete-comment` as a slash command and automatic use by description. (code.claude.com/docs/en/skills) |
 | Codex | `.agents/skills`, from the working directory up to the project root | Yes (learn.chatgpt.com/docs/build-skills) |
 | GitHub Copilot | `.github/skills`, `.claude/skills`, `.agents/skills` | Yes (docs.github.com/en/copilot/concepts/agents/about-agent-skills) |
-| Cursor | `.agents/skills` | Yes |
+| Cursor | `.agents/skills` | Yes, not checked against Cursor's docs |
 
 ## Rejected
 - Keeping them in `.claude/skills`: Codex would stay on the fallback.
