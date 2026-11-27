@@ -26,13 +26,13 @@ export function loadAdapters(table = harnesses, send = messageWorker) {
     .map(harness => [harnessKey(harness), { messageWorker: (message, options) => send({ harness, ...message }, options) }]));
 }
 
-export async function deliver({ story, seqs, types, session, worktree, phase, onTurn, after, current }, adapter, log = console.log) {
+export async function deliver({ story, seqs, types, session, worktree, phase, onTurn, after, current, pending }, adapter, log = console.log) {
   const event = '[Mission Console event] The owner recorded ' + types.join(', ') + ' on story ' + story + ' (event seq ' + seqs.join(', ') + '). ';
   let reason = !adapter ? 'its harness has no adapter' : !session ? 'no worker is assigned' : '';
   if (!reason) {
     try {
-      await adapter.messageWorker({ session, worktree, phase, prompt: event + 'Read the console, act on these events, acknowledge them, and continue.' }, { onTurn, after, current });
-      return 'worker';
+      const sent = await adapter.messageWorker({ session, worktree, phase, prompt: event + 'Read the console, act on these events, acknowledge them, and continue.' }, { onTurn, after, current, pending });
+      return sent === 'acknowledged' ? sent : 'worker';
     } catch (error) {
       if (error.code === 'STALE_ASSIGNMENT') return 'stale';
       reason = 'the worker could not be messaged (' + error.message + ')';
@@ -202,7 +202,11 @@ export async function start({ port = DEFAULT_PORT, dbPath = DEFAULT_DB_PATH, ada
         decision.carriedBy?.(turn.ended);
       };
       const current = () => service.snapshot().find(item => item.id === decision.story)?.worker?.id === decision.assignment;
-      return deliver({ ...decision, worktree: story?.worktree, phase: story?.phase, onTurn, after: supervisor.idle(decision.story), current },
+      const pending = () => {
+        const owed = new Set(service.store.pendingFor(decision.story).map(record => record.seq));
+        return decision.seqs.some(seq => owed.has(seq));
+      };
+      return deliver({ ...decision, worktree: story?.worktree, phase: story?.phase, onTurn, after: supervisor.idle(decision.story), current, pending },
         adapters.get(harnessKey(story?.harness)));
     },
     onStartWorker: beginWorker,
@@ -220,7 +224,8 @@ export async function start({ port = DEFAULT_PORT, dbPath = DEFAULT_DB_PATH, ada
     coordinator = createCoordinator({ service, launch, adapters, quietMs, busy: id => starts.has(id),
       kickoff: (story, news) => jarvisKickoff(story, news, dbPath, Number(new URL(server.url).port)) });
     for (const story of service.snapshot()) {
-      if (story.phase === 'testing' && !story.worker && !story.blocked && !story.cleanup) {
+      const staffed = story.worker && row(story.harness).workers === 'command-line';
+      if (staffed || (story.phase === 'testing' && !story.worker && !story.blocked && !story.cleanup)) {
         service.deliverPending(story.id).catch(error => console.error('Pending approval on ' + story.id + ' could not be delivered: ' + error.message));
       }
     }

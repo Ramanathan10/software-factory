@@ -76,7 +76,12 @@ export function createSupervisor({ service, verdict = turnVerdict, alive = isAli
   const running = id => {
     if ([...owned].some(key => key.startsWith(id + ':'))) return true;
     const story = find(id);
-    if (story?.worker) return adopted(id, story.worker.turn);
+    if (story?.worker) {
+      const turn = story.worker.turn;
+      if (!turn) return false;
+      if (!adopted(id, turn)) finish(id, turn.pid, null, true);
+      return Boolean(find(id)?.worker?.turn);
+    }
     const release = story && service.store.history(id).find(event => event.type === 'release-worker');
     const turn = release?.worker?.turn;
     const key = id + ':' + release?.seq;
