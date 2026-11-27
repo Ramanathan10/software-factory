@@ -19,7 +19,7 @@ The owner answers questions, approves plans and asks for changes in the Command 
 
 ## Consequences
 - After a restart the new daemon cannot know what the old one handed, so a decision may be handed once more. That is allowed because the worker acknowledges only after acting.
-- These rules are checked over every interleaving by `command-center/delivery-model.mjs` (ADR 0015). Past failures it found: `serve.mjs deliver` handed every pending decision again (fixed in 05c45f7); 05c45f7 filtered on `sent` but marked it only once the turn was running, so an overlapping batch still handed one answer twice; a decision handed while the kickoff turn ran started a second turn; after a restart a message started a second turn beside the one the earlier daemon left; a daemon that restarted while a new turn settled found no turn in the store to wait for. Each has a test named in `.claude/skills/verify-decision-delivery/SKILL.md`.
+- These rules are checked over every interleaving by `command-center/delivery-model.mjs` (ADR 0015). Past failures it found: `serve.mjs deliver` handed every pending decision again (fixed in 05c45f7); 05c45f7 filtered on `sent` but marked it only once the turn was running, so an overlapping batch still handed one answer twice; a decision handed while the kickoff turn ran started a second turn; after a restart a message started a second turn beside the one the earlier daemon left; a daemon that restarted while a new turn settled found no turn in the store to wait for. Each has a test named in `.agents/skills/verify-decision-delivery/SKILL.md`.
 - Running a second daemon would break the one-turn rule; `serve.mjs` does not start a second one on a port the first already holds.
 
 ## Where
