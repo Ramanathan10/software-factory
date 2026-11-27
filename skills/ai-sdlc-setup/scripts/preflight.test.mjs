@@ -467,9 +467,9 @@ test('a github checklist that counts effort warns about the checklist entry', t 
   const warnings = staleWarnings(result);
   assert.equal(warnings.length, 1);
   assert.match(warnings[0], /repos\.acme\/widgets\.readiness\.checklist/);
-  assert.match(warnings[0], /effortSet/);
-  assert.match(warnings[0], /is not used when the tracker is github\./);
-  assert.match(warnings[0], /Remove it, or change the Work tracker answer \(ai-sdlc-setup repository question 11\)\.$/);
+  assert.equal(warnings[0], 'repos.acme/widgets.readiness.checklist entry effortSet is not used when the tracker is github. Remove that entry from the checklist, or change the Work tracker answer (ai-sdlc-setup repository question 11).');
+  const steps = trackerCheck(t, { tracker: 'github', checklist: ['prLinked', 'effortSet'] }).nextSteps.join('\n');
+  assert.match(steps, /Remove each readiness field or checklist entry a warning names/);
   assert.deepEqual(staleWarnings(trackerCheck(t, { tracker: 'linear', checklist: ['effortSet'] })), []);
 });
 
@@ -552,4 +552,16 @@ test('the setup skill sends a repository with no section to the interview before
 test('the skills answer a stale tracker warning by removing the field, not by re-asking the tracker question', () => {
   assert.match(skillText('ai-sdlc-setup'), /is not used when the tracker is[^\n]*removing/i);
   assert.match(skillText('ai-sdlc'), /is not used when the tracker is[^\n]*(report|tell)[^\n]*once/i);
+});
+
+test('the ask step does not cover a stale tracker warning when an answer is also missing', t => {
+  const { reviewRoundLimit, ...incomplete } = completeMachine;
+  const { repo, env } = workspace(t, { machineProfile: incomplete, repoEntry: { ...completeRepo, readiness: { tracker: 'none', checklist: ['prLinked'] } } });
+  const result = check(repo, withInstalledComponents(t, env));
+  assert.equal(staleWarnings(result).length, 1);
+  assert.match(result.warnings.join('\n'), /no answer for the .*reviewRoundLimit/);
+  const [ask, remove] = result.nextSteps;
+  assert.match(ask, /warning about an unanswered question or a missing model choice/);
+  assert.doesNotMatch(ask, /Work tracker|stale|is not used/);
+  assert.match(remove, /Remove each readiness field or checklist entry a warning names/);
 });

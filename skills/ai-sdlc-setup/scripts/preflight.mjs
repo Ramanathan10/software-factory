@@ -192,12 +192,12 @@ const trackerOnly = { none: null, github: ['organization', 'project', 'effortFie
 export function staleTrackerWarnings(readiness, slug) {
   if (typeOf(readiness) !== 'object' || !Object.hasOwn(trackerOnly, readiness.tracker)) return [];
   const { tracker } = readiness;
-  const message = (field, subject = field) =>
-    `repos.${slug}.readiness.${subject}${staleMarker}${tracker}. Remove it, or change the Work tracker answer (ai-sdlc-setup repository question 11).`;
+  const message = (subject, removal = 'Remove it') =>
+    `repos.${slug}.readiness.${subject}${staleMarker}${tracker}. ${removal}, or change the Work tracker answer (ai-sdlc-setup repository question 11).`;
   const unused = trackerOnly[tracker] ?? Object.keys(readiness).filter(field => field !== 'tracker');
   const stale = unused.filter(field => field in readiness).map(field => message(field));
   if (tracker === 'github' && Array.isArray(readiness.checklist) && readiness.checklist.includes('effortSet')) {
-    stale.push(message('checklist', 'checklist (effortSet)'));
+    stale.push(message('checklist entry effortSet', 'Remove that entry from the checklist'));
   }
   return stale;
 }
@@ -206,8 +206,8 @@ export function nextSteps({ problems, warnings, asks = [] }) {
   if (problems.length) return ['Follow the ai-sdlc-setup skill to fix each problem, then run the check again.'];
   const stale = warnings.filter(warning => warning.includes(staleMarker));
   return [
-    ...(asks.length ? ['Ask the owner each ai-sdlc-setup question a warning names, such as the Models question, one at a time, and save each answer to the profile.'] : []),
-    ...(stale.length ? ['Remove each readiness field a warning names from the profile, or change the Work tracker answer (ai-sdlc-setup repository question 11).'] : []),
+    ...(asks.length ? ['Ask the owner each ai-sdlc-setup question that a warning about an unanswered question or a missing model choice names, such as the Models question, one at a time, and save each answer to the profile.'] : []),
+    ...(stale.length ? ['Remove each readiness field or checklist entry a warning names from the profile, or change the Work tracker answer (ai-sdlc-setup repository question 11).'] : []),
     ...(warnings.length > asks.length + stale.length ? ['Install each missing component with the owner\'s approval, or record it in declinedComponents so it is not raised again.'] : []),
     'Name a feature or bug to start a story with the ai-sdlc skill.',
     'Say "Be Jarvis" to run several stories in parallel and follow them in the Command Center.',
