@@ -288,7 +288,7 @@ function storyCard(story) {
     last && (waiting || story.blocked) && el('p', { class: 'last' }, last.detail),
     reviewState(story),
     el('div', { class: 'owner' },
-      (!busy || held) && el('span', { class: 'who' }, story.blocked ? 'Blocked' : waiting ? 'Waiting on you' : jarvisStatus(story) ?? 'Idle · ' + idleReason(story)),
+      (!busy || held) && el('span', { class: 'who' }, story.blocked ? 'Blocked' : waiting ? 'Waiting on you' : jarvisStatus(story) ?? (story.phase === 'retro' && story.retro?.mergedAt ? 'Merged · finishing retro' : 'Idle · ' + idleReason(story))),
       el('span', { class: 'aside' },
         el('span', { class: 'links' },
           hasDesign(story) && el('a', { href: '#', onclick: event => { event.preventDefault(); event.stopPropagation(); openDesign(story.id); } }, 'Plan'),
