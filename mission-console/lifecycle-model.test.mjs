@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { canReach, explore, follow, guarded, jarvisEvents, jarvisInputs, jarvisTable, unguarded } from './lifecycle-model.mjs';
+import { canReach, eventInputs, explore, follow, guarded, jarvisEvents, jarvisInputs, jarvisTable, unguarded } from './lifecycle-model.mjs';
 import { phases } from './roles.mjs';
 import { workerPhases } from './store.mjs';
 
@@ -146,4 +146,9 @@ test('diagram work starts only from publishing, ci or merge and always returns t
   assert.deepEqual(open.filter(phase => !entered.has(phase)), [], 'diagram-start is never accepted in these phases');
   const back = new Set(returns.map(({ next }) => next.phase));
   assert.deepEqual([...back].sort(), [...open].sort(), 'a diagram handoff returns to each of publishing, ci and merge');
+});
+
+test('the explorer observes every status the store accepts for a pull request', () => {
+  const statuses = eventInputs('evidence').filter(([type, input]) => type === 'pr-observed' && !input.observation.review).map(([, input]) => input.observation.status);
+  assert.deepEqual([...new Set(statuses)].sort(), ['closed', 'failed', 'merged', 'no-checks', 'passed', 'running'], 'pr-observed inputs miss a status observePr accepts');
 });
