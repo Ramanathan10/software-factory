@@ -100,6 +100,11 @@ function reviewOf(review) {
   };
 }
 
+const labels = {
+  failed: 'CI failed', passed: 'Reported checks passed', running: 'Checks still running',
+  'no-checks': 'No checks reported', merged: 'PR merged', closed: 'PR closed without merge',
+};
+
 function observePr(story, input, now) {
   requireThat(['ci', 'merge', 'pr-review'].includes(story.phase) && story.pr && input.url === story.pr,
     'The registered PR is no longer being watched.', 409);
@@ -121,10 +126,6 @@ function observePr(story, input, now) {
   const priorHead = previous?.head ?? story.readyHead;
   const newHead = Boolean(priorHead && priorHead !== current.head);
   const reconcileReady = story.phase === 'merge' && !previous && !story.readyHead;
-  const labels = {
-    failed: 'CI failed', passed: 'Reported checks passed', running: 'Checks still running',
-    'no-checks': 'No checks reported', merged: 'Merge observed', closed: 'PR closed without merge',
-  };
   const listed = current.failures.length ? ' · ' + current.failures.join(', ') : '';
   const feedback = fresh.length > 0;
   const said = feedback ? ' · New feedback · ' + fresh.length + (fresh.length === 1 ? ' item' : ' items') : '';
@@ -404,8 +405,9 @@ function apply(story, input, now) {
       samePhase(story, 'ci');
       if (input.head !== undefined || story.prObservation) {
         requireThat(validHead(input.head), 'Supply the head this readiness decision covers.');
-        requireThat(!story.prObservation || input.head === story.prObservation.head,
-          'Readiness evidence does not cover the observed head.', 409);
+        requireThat(story.prObservation, 'Hawkeye has not observed this pull request yet.', 409);
+        requireThat(input.head === story.prObservation.head, 'Readiness evidence does not cover the observed head.', 409);
+        requireThat(story.prObservation.status === 'passed', labels[story.prObservation.status] + ' on the observed head.', 409);
         const review = story.prObservation?.review;
         requireThat(!review?.changesRequested.length, 'Changes are requested on the observed head by ' + review?.changesRequested.join(', ') + '.', 409);
         requireThat(!review?.unresolved, review?.unresolved + ' unresolved review ' + (review?.unresolved === 1 ? 'thread remains' : 'threads remain') + ' on the observed head.', 409);
