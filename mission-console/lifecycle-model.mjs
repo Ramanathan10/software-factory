@@ -11,7 +11,7 @@ const HEADS = ['a'.repeat(40), 'b'.repeat(40)];
 
 export const guarded = ['phase', 'harness', 'branch', 'questions', 'worker', 'blocked', 'cleanup', 'pr', 'prObservation', 'readyHead', 'diagram', 'retro', 'prReview', 'jarvis', 'deleted'];
 export const unguarded = ['id', 'title', 'brief', 'worktree', 'revision', 'createdAt', 'updatedAt', 'activity', 'draftPlan', 'plan',
-  'feedback', 'reviewRounds', 'comparisonRequested', 'files', 'artifacts', 'pipeline', 'repo', 'prPosted', 'prSeen'];
+  'feedback', 'reviewRounds', 'comparisonRequested', 'files', 'artifacts', 'pipeline', 'repo', 'prPosted', 'prSeen', 'conflictFresh'];
 
 const blocking = review => review.changesRequested.length > 0 || review.unresolved > 0;
 

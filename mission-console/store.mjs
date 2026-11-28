@@ -142,6 +142,10 @@ function observePr(story, input, now) {
     const live = new Set(review.keys);
     story.prSeen = [...[...seen].filter(key => !live.has(key)), ...live].slice(-1000);
   }
+  if (['ci', 'merge'].includes(story.phase)) {
+    if (merge !== 'conflicting') delete story.conflictFresh;
+    else story.conflictFresh = [...new Set([...(conflict ? [] : story.conflictFresh ?? []), ...fresh])];
+  }
   const checks = !checksSame && (newHead || reconcileReady || ['failed', 'passed', 'merged', 'closed'].includes(status) ||
     Boolean(previous && ['failed', 'passed', 'closed'].includes(previous.status)));
   return { detail, feedback, conflict, wake: checks || feedback || conflict };
@@ -346,12 +350,18 @@ function apply(story, input, now) {
       requireThat(['ci', 'merge'].includes(story.phase) && story.pr, 'Start PR review while the pull request is open.', 409);
       story.prReview = { returnPhase: 'ci', startedAt: now, detail: string(input.detail, 'review feedback') };
       delete story.readyHead;
+      delete story.conflictFresh;
       story.phase = 'pr-review';
       return 'Hawkeye started PR review · ' + story.prReview.detail;
     case 'return-to-build':
       requireThat(['review', 'gates', 'comparison', 'publishing', 'ci', 'merge', 'pr-review'].includes(story.phase), 'Return to build from review, the deterministic gates, the comparison, publishing, CI, merge, or PR review.', 409);
       delete story.readyHead;
-      if (['ci', 'merge'].includes(story.phase)) delete story.prObservation;
+      if (['ci', 'merge'].includes(story.phase)) {
+        delete story.prObservation;
+        if (story.conflictFresh) story.prSeen = (story.prSeen ?? []).filter(key => !story.conflictFresh.includes(key));
+      }
+      if (story.phase === 'pr-review' && story.prObservation?.merge === 'conflicting') delete story.prObservation;
+      delete story.conflictFresh;
       if (story.phase === 'review') story.reviewRounds = (story.reviewRounds ?? 0) + 1;
       if (story.phase === 'pr-review') markSeen(story, input.seen);
       story.phase = 'building';
@@ -365,6 +375,8 @@ function apply(story, input, now) {
         'This phase cannot reopen planning.', 409);
       requireThat(!story.retro?.mergedAt, 'The pull request has merged; finish the retro.', 409);
       story.phase = 'planning';
+      if (story.prObservation?.merge === 'conflicting') delete story.prObservation;
+      delete story.conflictFresh;
       delete story.blocked;
       delete story.readyHead;
       delete story.draftPlan;

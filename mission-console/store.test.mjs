@@ -1825,3 +1825,95 @@ test('after a conflict returns the story to build, the old observation is gone a
   assert.throws(() => record('pr-ready', { head: REVIEW_HEAD, detail: 'Checks passed.' }),
     error => error.status === 409 && /has not observed/.test(error.message));
 });
+
+function rebuildAndReopen(record, fromPlanning = false) {
+  if (fromPlanning) {
+    record('plan', { detail: 'Plan.' });
+    record('approve');
+    record('handoff', { detail: 'Tests ready.' });
+    record('handoff', { detail: 'Valid red.', command: 'npm test' });
+    record('handoff', { detail: 'Verified green.', command: 'npm test' });
+  } else record('handoff', { detail: 'Resolved.', command: 'npm test' });
+  record('handoff', { detail: 'Gates passed.', command: 'node --test' });
+  record('handoff', { detail: 'No survivors.', command: 'npx stryker run' });
+  record('handoff', { detail: 'Reviewed.' });
+  record('comparison-choice', { run: false });
+  record('pr-opened', { url: REVIEW_PR });
+}
+
+const notObserved = error => error.status === 409 && /has not observed/.test(error.message);
+
+test('a conflict stored in pr-review does not survive return-to-build, so pr-ready on the old head waits for a new observation', t => {
+  const store = fixture(t)();
+  const record = toCi(store, 'review-return');
+  record('pr-observed', mergeObserved('clean'));
+  record('pr-review-start', { detail: 'One new thread.' });
+  record('pr-observed', mergeObserved('conflicting'));
+  assert.equal(store.handover('review-return').story.prObservation.merge, 'conflicting');
+  record('return-to-build', { detail: RESOLVE });
+  assert.equal(store.handover('review-return').story.prObservation, undefined);
+  rebuildAndReopen(record);
+  assert.equal(store.handover('review-return').story.phase, 'ci');
+  assert.throws(() => record('pr-ready', { head: REVIEW_HEAD, detail: 'Checks passed.' }), notObserved);
+});
+
+test('a conflict observed before replan does not survive it, from ci, merge and pr-review', t => {
+  const store = fixture(t)();
+  for (const from of ['ci', 'merge', 'pr-review']) {
+    const id = 'replan-' + from;
+    const record = toCi(store, id);
+    record('pr-observed', mergeObserved('clean'));
+    if (from === 'merge') record('pr-ready', { head: REVIEW_HEAD, detail: 'Checks and review passed.' });
+    if (from === 'pr-review') record('pr-review-start', { detail: 'One new thread.' });
+    record('pr-observed', mergeObserved('conflicting'));
+    record('replan', { detail: 'The conflict needs a scope decision.' });
+    assert.equal(store.handover(id).story.prObservation, undefined, from);
+    rebuildAndReopen(record, true);
+    assert.equal(store.handover(id).story.phase, 'ci', from);
+    assert.throws(() => record('pr-ready', { head: REVIEW_HEAD, detail: 'Checks passed.' }), notObserved, from);
+  }
+});
+
+test('a clean observation survives return-to-build from pr-review and replan', t => {
+  const store = fixture(t)();
+  const kept = toCi(store, 'keep-return');
+  kept('pr-observed', mergeObserved('clean'));
+  kept('pr-review-start', { detail: 'One new thread.' });
+  kept('return-to-build', { detail: 'A larger change.' });
+  assert.equal(store.handover('keep-return').story.prObservation.merge, 'clean');
+  const planned = toCi(store, 'keep-replan');
+  planned('pr-observed', mergeObserved('clean'));
+  planned('replan', { detail: 'A scope decision.' });
+  assert.equal(store.handover('keep-replan').story.prObservation.merge, 'clean');
+});
+
+test('a comment fresh on the poll that found a conflict reaches Jarvis after the rebuild, and a handled comment does not come back', t => {
+  const store = fixture(t)();
+  for (const from of ['ci', 'merge']) {
+    const id = 'poll-both-' + from;
+    const record = toCi(store, id);
+    record('pr-observed', mergeObserved('clean', { review: review(['IC_0']) }));
+    if (from === 'merge') record('pr-ready', { head: REVIEW_HEAD, detail: 'Checks and review passed.' });
+    const both = record('pr-observed', mergeObserved('conflicting', { review: review(['IC_0', 'IC_1']) }));
+    const woke = pendingOf(store, id, both);
+    assert.equal(woke.conflict, true);
+    assert.equal(woke.feedback, true);
+    record('return-to-build', { detail: RESOLVE });
+    rebuildAndReopen(record);
+    const after = record('pr-observed', mergeObserved('clean', { review: review(['IC_0', 'IC_1']) }));
+    assert.equal(pendingOf(store, id, after).feedback, true, from);
+    assert.match(pendingOf(store, id, after).detail, /New feedback · 1 item\b/, from);
+    assert.equal(store.handover(id).story.conflictFresh, undefined, from);
+  }
+});
+
+test('a comment that arrives while the PR already conflicts is also asked about after the rebuild', t => {
+  const store = fixture(t)();
+  const record = toCi(store, 'late-comment');
+  record('pr-observed', mergeObserved('conflicting'));
+  record('pr-observed', mergeObserved('conflicting', { review: review(['IC_9']) }));
+  record('return-to-build', { detail: RESOLVE });
+  rebuildAndReopen(record);
+  const after = record('pr-observed', mergeObserved('clean', { review: review(['IC_9']) }));
+  assert.equal(pendingOf(store, 'late-comment', after).feedback, true);
+});
