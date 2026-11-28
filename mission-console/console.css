@@ -85,7 +85,14 @@ pre { margin: 5px 0 0; padding: 7px; white-space: pre-wrap; overflow-wrap: anywh
 summary { cursor: pointer; }
 details > p, #files details + details { margin-block-start: 8px; }
 fieldset { border: 0; padding: 0; margin: 0; min-inline-size: 0; }
-legend { font-weight: 600; margin-block: 8px; padding: 0; }
+.prompt { font-weight: 600; margin-block: 8px; }
+.md p, .md ul, .md ol, .md blockquote { margin: 6px 0; }
+.md ul, .md ol { padding-left: 20px; }
+.md > :first-child { margin-top: 0; }
+.md code { font-family: ui-monospace, monospace; font-size: 12px; }
+.md pre { margin: 6px 0; }
+.md-table { overflow-x: auto; }
+.md th, .md td { border: 1px solid var(--line); padding: 3px 6px; text-align: left; }
 label { display: flex; gap: 7px; align-items: baseline; padding: 4px 0; }
 textarea { display: block; width: 100%; resize: vertical; padding: 6px; margin-top: 5px; }
 #questions form + form { border-top: 1px solid var(--line); margin-top: 12px; }

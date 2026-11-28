@@ -577,6 +577,68 @@ test('a held retro is in Waiting on you only while a question is open, and it is
   assert.equal(ids.get('stat-waiting').textContent, '0');
 });
 
+const formatted = [
+  'Which docs should change?', '',
+  '1. First **bold** step', '2. Second step with `code`', '',
+  '- bullet one', '- bullet two', '',
+  '(a) lettered one', '(b) lettered two', '',
+  '<img src=x onerror=alert(1)>', '<script>alert(1)</script>', '[bad](javascript:alert(1))',
+].join('\n');
+const asking = { ...base, id: 'QFMT-9', repo: 'acme/one', phase: 'planning', questions: [{ id: 'docs', prompt: formatted, options: ['All', 'None'], recommended: 0 }] };
+
+const openQuestionCard = () => {
+  show([asking]);
+  press(tile('approver'));
+  const section = walk(ids.get('decisions')).find(node => node.tag === 'section' && node.classes().includes('question'));
+  assert.ok(section, 'the inbox rendered no question card');
+  const labelled = section.getAttribute('aria-labelledby');
+  const prompt = walk(section).find(node => node.attributes?.id === labelled);
+  return { section, labelled, prompt };
+};
+
+test('a question card renders its prompt as lists, paragraphs, line breaks, bold and code', () => {
+  const { prompt } = openQuestionCard();
+  try {
+    assert.ok(prompt, 'no element in the card has the id that the question group is labelled by');
+    const inside = tag => walk(prompt).filter(node => node.tag === tag);
+    assert.deepEqual(inside('ol').flatMap(list => list.children.map(item => item.textContent)), ['First bold step', 'Second step with code']);
+    assert.deepEqual(inside('ul').flatMap(list => list.children.map(item => item.textContent)), ['bullet one', 'bullet two']);
+    assert.ok(inside('p').length >= 3, 'blank lines did not make separate paragraphs: ' + inside('p').length + ' p');
+    assert.deepEqual(inside('strong').map(node => node.textContent), ['bold']);
+    assert.deepEqual(inside('code').map(node => node.textContent), ['code']);
+    const lettered = inside('p').find(node => node.textContent.includes('(a) lettered one'));
+    assert.ok(lettered && walk(lettered).some(node => node.tag === 'br'), 'the (a) and (b) lines have no br between them');
+    assert.ok(prompt.classes().includes('md') && prompt.classes().includes('q-prompt'), 'the prompt block lost q-prompt or lacks md: ' + prompt.className);
+  } finally {
+    press(tile('approver'));
+  }
+});
+
+test('a question card shows injected HTML and a javascript: link in a prompt as text and keeps the group labelled by the prompt', () => {
+  const { section, labelled, prompt } = openQuestionCard();
+  try {
+    assert.equal(labelled, 'q-QFMT-9-docs');
+    assert.ok(prompt, 'no element in the card has the id that the question group is labelled by');
+    assert.ok(!walk(section).some(node => ['img', 'script'].includes(node.tag)), 'an img or script node was built from the prompt');
+    assert.ok(!walk(section).some(node => node.tag === 'a' && /^javascript:/i.test(node.attributes?.href ?? '')), 'a javascript: link was rendered');
+    assert.ok(prompt.textContent.includes('<img src=x onerror=alert(1)>'), 'the img text is not shown literally');
+    assert.ok(prompt.textContent.includes('<script>alert(1)</script>'), 'the script text is not shown literally');
+    assert.ok(prompt.textContent.includes('[bad](javascript:alert(1))'), 'the javascript: link is not shown as text');
+  } finally {
+    press(tile('approver'));
+  }
+});
+
+test('a question card keeps its option buttons as plain text', () => {
+  const { section } = openQuestionCard();
+  try {
+    const choices = walk(section).find(node => node.classes?.().includes('choices'));
+    assert.deepEqual(choices.children.map(button => button.children[0]), ['All', 'None']);
+  } finally {
+    press(tile('approver'));
+  }
+});
+
 const shown = { ...base, id: 'CMPN-1', phase: 'comparison-choice' };
 const cmp = {
   waiting: { ...base, id: 'CMPW-1', phase: 'comparison-choice', waitingOnJarvis: waitingFor },

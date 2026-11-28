@@ -1,4 +1,5 @@
 import { refreshKey, reviewLabels } from './review.mjs';
+import { renderMarkdown as markdown } from '../command-center/ui/markdown.js';
 import { harnessKey, lanes, phases, roles } from './roles.mjs';
 
 const ui = id => document.getElementById(id);
@@ -25,6 +26,16 @@ function node(tag, text, classes) {
   const element = document.createElement(tag);
   if (text) element.textContent = text;
   if (classes) element.className = classes;
+  return element;
+}
+
+function build(tag, attrs = {}, ...children) {
+  const element = document.createElement(tag);
+  for (const [name, value] of Object.entries(attrs)) {
+    if (value === true) element.setAttribute(name, '');
+    else if (value !== false && value != null) element.setAttribute(name, value);
+  }
+  element.append(...children.flat().filter(child => child != null && child !== false));
   return element;
 }
 
@@ -148,7 +159,9 @@ function renderOverview() {
 function questionForm(story, question) {
   const form = node('form');
   const fields = node('fieldset');
-  fields.append(node('legend', question.prompt));
+  const promptId = 'prompt-' + story.id + '-' + question.id;
+  fields.setAttribute('aria-labelledby', promptId);
+  fields.append(build('div', { class: 'md prompt', id: promptId }, ...markdown(question.prompt, build, { breaks: true })));
   const custom = node('textarea');
   custom.rows = 3;
   custom.maxLength = 4000;

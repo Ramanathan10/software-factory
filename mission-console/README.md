@@ -134,7 +134,7 @@ The `ack` argument is the exact sequence number reported by `pending`. Use it on
 |---|---|
 | `create` | `title`, `detail` (brief), `branch`, `worktree`, and `harness` (for the full story), plus `repo`, the story's repository as `owner/name`, which the Command Center shows and filters by. Starts planning. |
 | `select-harness` | One-time migration for an older open story with no recorded harness and no active assignment. Set `harness` only after verifying the story used that harness. |
-| `question` | `question` (unique within the story), `prompt`, `options`, `recommended` (zero-based option index). |
+| `question` | `question` (unique within the story), `prompt`, `options`, `recommended` (zero-based option index). The prompt renders as Markdown: use `1.` or `-` lines for lists and a blank line between paragraphs; a single line break is kept. |
 | `answer` | `question` and `answer` (option index or custom text). Use the dashboard or record Fury's explicit response. |
 | `draft-plan` | `detail` contains the latest working plan while planning. Include the current `assignment` when a planner is assigned. Updating a draft does not request approval. |
 | `diagram-start` | `detail` gives Rocket's architecture diagram scope. Start from publishing, CI, or merge-ready, after the review and the comparison, and after releasing any existing worker; review and comparison refuse it. Assign Rocket in the diagram phase. Release him and record a `handoff` with the evidence. It returns to the phase it started from. |
