@@ -10,6 +10,7 @@ import { phaseTiers, phases, tiers } from '../mission-console/roles.mjs';
 process.env.AI_SDLC_HOME = mkdtempSync(join(tmpdir(), 'factory-home-'));
 after(() => rmSync(process.env.AI_SDLC_HOME, { recursive: true, force: true }));
 
+const claudeNotes = '\n\nNotes for Claude Code:\n- When you start a subagent with the Agent tool, pass run_in_background: false, so the call returns only with the subagent\'s result. This turn runs headless, and Claude Code stops a background subagent when the turn ends.';
 const restricted = { permissions: 'restricted', tools: ['git', 'npm'] };
 const unrestricted = { permissions: 'unrestricted', tools: [] };
 
@@ -157,7 +158,7 @@ test('a message to a new session waits for the kickoff turn startWorker began', 
   assert.equal(calls.length, 1, 'the message started a turn while the kickoff turn was running');
   calls[0].child.emit('close', 0);
   await message;
-  assert.deepEqual(calls.map(call => call.prompt), ['kickoff', 'The owner answered.']);
+  assert.deepEqual(calls.map(call => call.prompt), ['kickoff' + claudeNotes, 'The owner answered.']);
   calls[1].child.emit('close', 0);
 });
 
@@ -326,15 +327,26 @@ test('starting a worker returns the id it chose, or the id the program reports',
   const claude = fakeProgram();
   const first = await startWorker({ harness: 'Claude Code', worktree: '.', prompt: 'kickoff' }, { env, spawnProcess: claude.spawnProcess, settings: restricted, settleMs: 0 });
   assert.equal(claude.calls[0].args[2], first.session);
-  assert.equal(claude.calls[0].prompt, 'kickoff');
+  assert.equal(claude.calls[0].prompt, 'kickoff' + claudeNotes);
 
   const codex = fakeProgram('{"type":"thread.started","thread_id":"0199-abc"}\n');
   const second = await startWorker({ harness: 'Codex', worktree: '.', prompt: 'kickoff' }, { env, spawnProcess: codex.spawnProcess, settings: restricted, settleMs: 0 });
   assert.equal(second.session, '0199-abc');
+  assert.equal(codex.calls[0].prompt, 'kickoff');
 
   const silent = fakeProgram();
   await assert.rejects(startWorker({ harness: 'Codex', worktree: '.', prompt: 'kickoff' }, { env, spawnProcess: silent.spawnProcess, settings: restricted, settleMs: 0, waitMs: 300 }),
     /did not report a session id/);
+});
+
+test('a Claude Code start ends its prompt with the notes paragraph, and a Codex start adds nothing', async t => {
+  const env = home(t);
+  const claude = fakeProgram();
+  await startWorker({ harness: 'Claude Code', worktree: '.', prompt: 'kickoff for story T-1' }, { env, spawnProcess: claude.spawnProcess, settings: restricted, settleMs: 0 });
+  assert.equal(claude.calls[0].prompt, 'kickoff for story T-1\n\nNotes for Claude Code:\n- When you start a subagent with the Agent tool, pass run_in_background: false, so the call returns only with the subagent\'s result. This turn runs headless, and Claude Code stops a background subagent when the turn ends.');
+  const codex = fakeProgram('{"type":"thread.started","thread_id":"0199-def"}\n');
+  await startWorker({ harness: 'Codex', worktree: '.', prompt: 'kickoff for story T-1' }, { env, spawnProcess: codex.spawnProcess, settings: restricted, settleMs: 0 });
+  assert.equal(codex.calls[0].prompt, 'kickoff for story T-1');
 });
 
 test('the model and effort a session last ran on are read from the harness\'s own record of it', t => {
