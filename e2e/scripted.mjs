@@ -19,10 +19,10 @@ function fail(message) {
 }
 
 if (command === 'codex' && !resumed) console.log(JSON.stringify({ type: 'thread.started', thread_id: session }));
-appendFileSync(join(home, 'scripted-calls.jsonl'), JSON.stringify({ argv: [command, ...args], cwd: process.cwd(), session, actor }) + '\n');
+const prompt = readFileSync(0, 'utf8');
+appendFileSync(join(home, 'scripted-calls.jsonl'), JSON.stringify({ argv: [command, ...args], cwd: process.cwd(), session, actor, prompt }) + '\n');
 if (after('--model') === 'no-such-model-e2e') fail('The model no-such-model-e2e does not exist or you do not have access to it.');
 
-const prompt = readFileSync(0, 'utf8');
 const id = /story ([A-Za-z0-9-]+)/.exec(prompt)?.[1];
 if (!id) fail('The prompt names no story.');
 let book;
