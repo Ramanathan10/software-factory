@@ -1808,3 +1808,20 @@ test('return-to-build from ci waits for the CI worker to release', t => {
   const story = store.handover('ci-staffed').story;
   assert.deepEqual([story.phase, story.readyHead, story.worker], ['building', undefined, undefined]);
 });
+
+test('after a conflict returns the story to build, the old observation is gone and pr-ready on its head waits for a new observation', t => {
+  const store = fixture(t)();
+  const record = toCi(store, 'loop');
+  record('pr-observed', mergeObserved('conflicting'));
+  record('return-to-build', { detail: RESOLVE });
+  assert.equal(store.handover('loop').story.prObservation, undefined);
+  record('handoff', { detail: 'Resolved.', command: 'npm test' });
+  record('handoff', { detail: 'Gates passed.', command: 'node --test' });
+  record('handoff', { detail: 'No survivors.', command: 'npx stryker run' });
+  record('handoff', { detail: 'Reviewed.' });
+  record('comparison-choice', { run: false });
+  record('pr-opened', { url: REVIEW_PR });
+  assert.equal(store.handover('loop').story.phase, 'ci');
+  assert.throws(() => record('pr-ready', { head: REVIEW_HEAD, detail: 'Checks passed.' }),
+    error => error.status === 409 && /has not observed/.test(error.message));
+});

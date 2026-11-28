@@ -1,7 +1,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { openStore } from '../../mission-console/store.mjs';
-import { summarizePr, watchOnce } from '../../mission-console/watcher.mjs';
+import { PR_VIEW_FIELDS, summarizePr, watchOnce } from '../../mission-console/watcher.mjs';
 import { gh } from '../gh-stand-in.mjs';
 import { expect } from '../rig.mjs';
 
@@ -11,7 +11,6 @@ const story = 'E2E-CONFLICT';
 const url = 'https://github.com/e2e-owner/greetings/pull/1';
 const head = 'a'.repeat(40);
 const checks = [{ __typename: 'CheckRun', name: 'Tests', status: 'COMPLETED', conclusion: 'SUCCESS' }];
-const fields = 'url,state,headRefOid,statusCheckRollup,mergeable,mergeStateStatus';
 
 function seed(rig) {
   const store = openStore(rig.db);
@@ -37,7 +36,7 @@ function seed(rig) {
   }
 }
 
-const readPr = rig => async target => summarizePr(JSON.parse(gh(rig.github, ['pr', 'view', target, '--json', fields])));
+const readPr = rig => async target => summarizePr(JSON.parse(gh(rig.github, ['pr', 'view', target, '--json', PR_VIEW_FIELDS])));
 
 export async function run(rig) {
   rig.create(story);
@@ -93,5 +92,32 @@ export async function run(rig) {
     const now = rig.snapshot(story);
     expect(now.phase === 'building' && !now.readyHead && !now.worker, 'The story is in ' + now.phase + ' with readyHead ' + now.readyHead + ' and worker ' + now.worker?.role + ', not in building with neither.');
     expect(rig.jarvisWakes(story).some(wake => wake.seq < returned.seq), 'Jarvis was not woken before the return to build.');
+    expect(!now.prObservation, 'The stale observation survived the return to build: ' + JSON.stringify(now.prObservation));
+  });
+  await rig.step('after the rebuild and republish, pr-ready on the old head is refused until Hawkeye observes the new head', async () => {
+    const store = openStore(rig.db);
+    try {
+      const record = (type, input = {}) => {
+        const { revision } = store.snapshot().find(item => item.id === story);
+        return store.record({ story, type, revision, key: story + '-rebuild-' + revision, ...input });
+      };
+      record('handoff', { detail: 'E2E conflict resolved.', command: 'node --test' });
+      record('handoff', { detail: 'E2E gates.', command: 'node --test' });
+      record('handoff', { detail: 'E2E mutation.', command: 'node --test' });
+      record('handoff', { detail: 'E2E review.' });
+      record('comparison-choice', { run: false });
+      record('pr-opened', { url });
+      expect(rig.snapshot(story).phase === 'ci', 'The story did not return to ci after pr-opened.');
+      let refusal = '';
+      try {
+        record('pr-ready', { head, detail: 'E2E ready.' });
+      } catch (error) {
+        refusal = error.message;
+      }
+      expect(/has not observed this pull request yet/.test(refusal), 'pr-ready was not refused for the missing observation: ' + (refusal || 'accepted'));
+      expect(rig.snapshot(story).phase === 'ci', 'The refused pr-ready moved the story out of ci.');
+    } finally {
+      store.close();
+    }
   });
 }

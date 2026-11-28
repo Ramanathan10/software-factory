@@ -111,6 +111,8 @@ const reviewQuery = `query($owner: String!, $name: String!, $number: Int!) {
   }
 }`;
 
+export const PR_VIEW_FIELDS = 'url,state,headRefOid,statusCheckRollup,mergeable,mergeStateStatus';
+
 export async function readGitHubPr(url, signal, posted = []) {
   const canonical = githubPr(url);
   if (!canonical) throw new Error('Unsupported PR URL.');
@@ -119,7 +121,7 @@ export async function readGitHubPr(url, signal, posted = []) {
     signal, timeout: 15000, maxBuffer: 16 * 1024 * 1024, windowsHide: true,
     env: { ...process.env, GH_PROMPT_DISABLED: '1' },
   };
-  const { stdout } = await run('gh', ['pr', 'view', canonical, '--json', 'url,state,headRefOid,statusCheckRollup,mergeable,mergeStateStatus'], options);
+  const { stdout } = await run('gh', ['pr', 'view', canonical, '--json', PR_VIEW_FIELDS], options);
   const data = JSON.parse(stdout);
   if (githubPr(data.url)?.toLowerCase() !== canonical.toLowerCase()) throw new Error('GitHub returned a different PR.');
   const checks = summarizePr(data);

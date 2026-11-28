@@ -188,3 +188,8 @@ test('the merge answer does not change the check status, failures or head Hawkey
   const summary = watcher.summarizePr({ state: 'OPEN', headRefOid: HEAD.toUpperCase(), statusCheckRollup: green, mergeable: 'CONFLICTING', mergeStateStatus: 'DIRTY' });
   assert.deepEqual(summary, { head: HEAD, status: 'passed', failedCount: 0, failures: [], merge: 'conflicting' });
 });
+
+test('the production gh pr view asks for mergeable and mergeStateStatus', () => {
+  const fields = watcher.PR_VIEW_FIELDS.split(',');
+  assert.ok(fields.includes('mergeable') && fields.includes('mergeStateStatus'));
+});

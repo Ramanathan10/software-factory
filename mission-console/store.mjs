@@ -351,6 +351,7 @@ function apply(story, input, now) {
     case 'return-to-build':
       requireThat(['review', 'gates', 'comparison', 'publishing', 'ci', 'merge', 'pr-review'].includes(story.phase), 'Return to build from review, the deterministic gates, the comparison, publishing, CI, merge, or PR review.', 409);
       delete story.readyHead;
+      if (['ci', 'merge'].includes(story.phase)) delete story.prObservation;
       if (story.phase === 'review') story.reviewRounds = (story.reviewRounds ?? 0) + 1;
       if (story.phase === 'pr-review') markSeen(story, input.seen);
       story.phase = 'building';
