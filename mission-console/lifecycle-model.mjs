@@ -87,6 +87,8 @@ export function eventInputs(evidence) {
     ['comparison-choice', { run: true }],
     ['comparison-choice', { run: false }],
     ['pr-opened', { url: PR }],
+    ['pr-opened', { url: PR + '/files' }],
+    ['pr-opened', { url: 'https://GitHub.com/acme/widgets/pull/1#discussion_r1' }],
     ['pr-ready', detail],
     ...HEADS.map(head => ['pr-ready', { ...detail, head }]),
     ['pr-recheck', detail],
