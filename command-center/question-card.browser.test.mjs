@@ -133,12 +133,20 @@ before(async () => {
   await new Promise(resolve => legacy.once('listening', resolve));
 
   const profile = join(root, 'browser-profile');
-  browser = spawn(browserPath, ['--headless=new', '--remote-debugging-port=0', '--user-data-dir=' + profile, '--no-first-run', '--disable-gpu', '--window-size=1680,1050', 'about:blank'], { stdio: 'ignore' });
+  const flags = ['--headless=new', '--remote-debugging-port=0', '--user-data-dir=' + profile, '--no-first-run', '--disable-gpu', '--window-size=1680,1050'];
+  if (process.platform === 'linux') flags.push('--no-sandbox', '--disable-dev-shm-usage');
+  browser = spawn(browserPath, [...flags, 'about:blank'], { stdio: ['ignore', 'ignore', 'pipe'] });
+  let browserErrors = '';
+  let browserExit = null;
+  browser.stderr.on('data', chunk => { browserErrors = (browserErrors + chunk).slice(-4000); });
+  browser.once('exit', (code, signal) => { browserExit = { code, signal }; });
+  browser.once('error', error => { browserExit = { code: null, signal: null, error: String(error) }; });
   let debugPort;
-  for (let i = 0; i < 100 && !debugPort; i++) {
+  const portDeadline = Date.now() + 60000;
+  while (!debugPort && !browserExit && Date.now() < portDeadline) {
     try { debugPort = Number(readFileSync(join(profile, 'DevToolsActivePort'), 'utf8').split('\n')[0]); } catch { await sleep(100); }
   }
-  assert.ok(debugPort, 'the browser never reported a DevTools port');
+  assert.ok(debugPort, 'the browser never reported a DevTools port: ' + (browserExit ? 'it exited with ' + JSON.stringify(browserExit) : 'still running after 60 s') + '; ' + browserPath + ' ' + flags.join(' ') + '; stderr: ' + (browserErrors.trim() || '(empty)'));
   let pages;
   for (let i = 0; i < 50 && !pages?.some(each => each.type === 'page'); i++) {
     pages = await fetch('http://127.0.0.1:' + debugPort + '/json/list').then(response => response.json(), () => null);
