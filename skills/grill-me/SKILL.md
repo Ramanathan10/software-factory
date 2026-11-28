@@ -5,7 +5,7 @@ description: Interview the owner to settle the decisions behind a plan or design
 
 # Grill Me
 
-Map the idea as a design tree: each decision can unlock dependent decisions. Work in rounds. The frontier is the set of decisions whose prerequisites are settled; ask those questions together, with a recommended answer for each. Word each question so a simple "yes" accepts your recommendation. Wait for the owner's answers, update the tree, and ask the next frontier. Do not ask a question that depends on another unanswered question in the same round.
+Map the idea as a design tree: each decision can unlock dependent decisions. Work in rounds. The frontier is the set of decisions whose prerequisites are settled; ask those questions together, with a recommended answer for each. Word each question so a simple "yes" accepts your recommendation. The prompt renders as Markdown: use `1.` or `-` lines for lists and a blank line between paragraphs; a single line break is kept. Wait for the owner's answers, update the tree, and ask the next frontier. Do not ask a question that depends on another unanswered question in the same round.
 
 Find facts in the repository or environment yourself. Ask the owner to make decisions, not to retrieve facts you can inspect. When a fact is still being investigated, continue with independent questions and return to dependent ones afterward.
 

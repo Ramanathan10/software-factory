@@ -78,6 +78,7 @@ export const harnesses = {
     start: ({ session }) => ['-p', '--session-id', session],
     message: ({ session }) => ['-p', '--resume', session],
     model: name => ['--model', name],
+    notes: ["When you start a subagent with the Agent tool, pass run_in_background: false, so the call returns only with the subagent's result. This turn runs headless, and Claude Code stops a background subagent when the turn ends."],
     models: claudeModels,
     record: ({ session, env }) => {
       const projects = join(env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude'), 'projects');
@@ -302,7 +303,7 @@ export async function startWorker({ harness, worktree, prompt, phase }, options 
   }
   const session = randomUUID();
   const log = logFor(session, options.env);
-  const child = run(commandFor(harness, 'start', { session, phase }, options.settings), { worktree, prompt, log, phase, spawnProcess: options.spawnProcess });
+  const child = run(commandFor(harness, 'start', { session, phase }, options.settings), { worktree, prompt: entry.notes?.length ? prompt + '\n\nNotes for ' + entry.name + ':\n' + entry.notes.map(note => '- ' + note).join('\n') : prompt, log, phase, spawnProcess: options.spawnProcess });
   const ended = exit(child);
   const running = found => {
     turns.set(found, ended.then(() => {}));

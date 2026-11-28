@@ -98,7 +98,7 @@ Before you treat a failure as a bug, check that the step it names still matches 
 - `command-center/console-service.mjs`: `notify`, `hand`, `deliverPending`
 - `command-center/serve.mjs`: `deliver`, the `onDecision` passed in `start`
 - `command-center/coordinator.mjs`: `owe`, `unhandled`
-- `adapters/harnesses.mjs`: `messageWorker`, `startWorker`, `turns`
+- `adapters/harnesses.mjs`: `messageWorker`, `startWorker`, `turns` (`startWorker` appends a row's `notes` to the kickoff prompt in the expression it already passes to `run`: no new `await`, no change to the steps)
 - `command-center/supervisor.mjs`: `idle`, `sweep`, `adopted`
 
 Last confirmed to describe these files at the commit that last changed this skill: `git log -1 --format=%h -- .agents/skills/verify-decision-delivery/SKILL.md`. When any of them changes, rerun the model. Move this record forward to a new commit only after you have checked that the steps and `current` still match the code at that commit.

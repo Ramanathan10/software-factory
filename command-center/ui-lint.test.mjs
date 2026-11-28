@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 
-const files = ['command-center/ui/app.js', 'command-center/ui/markdown.js', 'command-center/ui/attention.js', 'command-center/ui/badge.js', 'command-center/ui/jarvis.js', 'mission-console/console.mjs'];
+const files = ['command-center/ui/app.js', 'command-center/ui/markdown.js', 'command-center/ui/attention.js', 'command-center/ui/badge.js', 'command-center/ui/feed.js', 'command-center/ui/jarvis.js', 'mission-console/console.mjs'];
 
 test('no element is guarded by a bare count, which renders 0 as text', () => {
   const found = [];

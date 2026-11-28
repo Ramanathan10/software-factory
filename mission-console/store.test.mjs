@@ -355,7 +355,10 @@ test('Hawkeye distinguishes absent, incomplete, and completed GitHub checks', ()
   assert.throws(() => summarizePr({ state: 'OPEN', headRefOid }), /incomplete/);
   assert.throws(() => summarizePr({ state: 'OPEN', headRefOid: [headRefOid], statusCheckRollup: [] }), /incomplete/);
   assert.equal(githubPr('https://github.com/example/repo/pull/12#discussion_r1'), 'https://github.com/example/repo/pull/12');
-  assert.equal(githubPr('https://example.com/example/repo/pull/12'), null);
+  assert.equal(githubPr('https://example.com/example/repo/pull/12'), 'https://example.com/example/repo/pull/12');
+  assert.equal(githubPr('https://example.com/example/repo/issues/12'), null);
+  assert.equal(githubPr('https://dev.azure.com/org/Proj/_git/repo/pullrequest/12'), null);
+  assert.equal(githubPr('https://github.com/example/repo/pull/12/files?x=1'), 'https://github.com/example/repo/pull/12');
   assert.equal(githubPr('https://user@github.com/example/repo/pull/12'), null);
 });
 

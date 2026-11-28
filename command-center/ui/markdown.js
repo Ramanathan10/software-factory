@@ -1,6 +1,6 @@
 const inline = (text, el) => {
   const out = [];
-  const pattern = /(`[^`]+`)|\*\*([^*]+)\*\*|__([^_]+)__|\*([^*\s][^*]*)\*|\[([^\]]+)\]\(([^)\s]+)\)/g;
+  const pattern = /(`[^`]+`)|\*\*([^*]+)\*\*|(?<![A-Za-z0-9_])__([^_]+)__(?![A-Za-z0-9_])|\*([^*\s][^*]*)\*|\[([^\]]+)\]\(([^)\s]+)\)/g;
   let last = 0;
   for (const match of text.matchAll(pattern)) {
     if (match.index > last) out.push(text.slice(last, match.index));
@@ -47,7 +47,7 @@ function list(lines, start, el) {
   return [el(ordered ? 'ol' : 'ul', {}, items.map(children => el('li', {}, ...children))), i];
 }
 
-export function renderMarkdown(text, el) {
+export function renderMarkdown(text, el, { breaks = false } = {}) {
   const lines = String(text ?? '').replace(/\r\n?/g, '\n').split('\n');
   const blocks = [];
   let i = 0;
@@ -83,7 +83,7 @@ export function renderMarkdown(text, el) {
     }
     const para = [line.trim()];
     for (i++; i < lines.length && lines[i].trim() && !listItem.test(lines[i]) && !headingLine.test(lines[i]) && !/^\s*(```|~~~|>)/.test(lines[i]); i++) para.push(lines[i].trim());
-    blocks.push(el('p', {}, ...inline(para.join(' '), el)));
+    blocks.push(el('p', {}, ...(breaks ? para.flatMap((text, n) => n ? [el('br'), ...inline(text, el)] : inline(text, el)) : inline(para.join(' '), el))));
   }
   return blocks;
 }

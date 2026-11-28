@@ -9,6 +9,7 @@ import { harnesses, launchProblem } from '../adapters/harnesses.mjs';
 import { isAlive } from '../command-center/supervisor.mjs';
 import { openStore } from '../mission-console/store.mjs';
 
+const claudeNote = 'When you start a subagent with the Agent tool, pass run_in_background: false, so the call returns only with the subagent\'s result. This turn runs headless, and Claude Code stops a background subagent when the turn ends.';
 const run = promisify(execFile);
 const slashes = path => path.replaceAll('\\', '/');
 const consoleCli = fileURLToPath(new URL('../mission-console/jarvis.mjs', import.meta.url));
@@ -226,6 +227,18 @@ export async function openRig({ entry, turnMs, tally, profile: overrides = {} })
           return expected.every((arg, at) => args[at] === arg);
         });
         expect(command === entry.command && shaped, 'A turn did not run with ' + entry.name + '\'s start or resume arguments: ' + JSON.stringify(call.argv));
+        const starts = entry.start({ session: call.session }).every((arg, at) => args[at] === arg) &&
+          !entry.message({ session: call.session }).every((arg, at) => args[at] === arg);
+        const prompt = call.prompt ?? '';
+        const paragraph = (name, notes) => '\n\nNotes for ' + name + ':\n' + notes.map(note => '- ' + note).join('\n');
+        const owned = entry.name === 'Claude Code' ? [claudeNote] : (entry.notes ?? []);
+        const who = (call.actor ?? 'worker') + ' session ' + call.session;
+        if (starts && owned.length) {
+          expect(prompt.endsWith(paragraph(entry.name, owned)), 'The first turn of ' + who + ' does not end with the notes for ' + entry.name + '.');
+        } else {
+          const stray = [['Claude Code', [claudeNote]], [entry.name, entry.notes ?? []]].find(([name, notes]) => notes.length && prompt.endsWith(paragraph(name, notes)));
+          expect(!stray, 'The ' + (starts ? 'first' : 'resumed') + ' turn of ' + who + ' carries the notes for ' + stray?.[0] + ', which it should not.');
+        }
       }
       return ran.length;
     },

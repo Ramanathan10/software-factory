@@ -21,7 +21,7 @@ Each scenario gets its own throwaway folder under the system's temporary directo
 
 ## How the scripts stand in for the model
 
-The rig starts `e2e/daemon.mjs` instead of `command-center/serve.mjs`. It runs the same Command Center with a 2 s settle, a 2 s Jarvis quiet period and a 250 ms poll, and starts `e2e/scripted.mjs` wherever the real code would start `claude` or `codex`, with the same arguments, working directory, environment and prompt. A Codex start prints a `thread_id` line first, as `codex exec --json` does. Every start appends a line to `scripted-calls.jsonl` in the rig's home, and after each scenario the runner checks those calls against the turns and Jarvis wakes the console recorded.
+The rig starts `e2e/daemon.mjs` instead of `command-center/serve.mjs`. It runs the same Command Center with a 2 s settle, a 2 s Jarvis quiet period and a 250 ms poll, and starts `e2e/scripted.mjs` wherever the real code would start `claude` or `codex`, with the same arguments, working directory, environment and prompt. A Codex start prints a `thread_id` line first, as `codex exec --json` does. Every start appends a line to `scripted-calls.jsonl` in the rig's home, which also carries the prompt, and after each scenario the runner checks those calls against the turns and Jarvis wakes the console recorded.
 
 A worker turn waits until the daemon assigns its session, then runs the first playbook entry that matches it. A turn run as Jarvis (`AI_SDLC_ACTOR=jarvis`) follows one fixed policy instead: with no worker in a phase that has one and no owner question left unanswered, it starts the next worker with the playbook's `next` kickoff, and delivers when an owner decision for the phase is pending; then it acknowledges the news it was given, except decisions. Given the model `no-such-model-e2e`, either kind of turn exits 1 before it reads a playbook.
 
@@ -43,7 +43,7 @@ A worker turn waits until the daemon assigns its session, then runs the first pl
 | `conflict-on-ready-pr` | A story in ci with a passed, clean PR and a CI worker between turns. The stand-in gh turns the PR CONFLICTING; the watcher wakes Jarvis with `conflict: true`, a scripted background Jarvis releases the worker and records `return-to-build`, and the story reaches building with no `readyHead`. The stand-in takes per-PR checks, `mergeable` and `mergeStateStatus`, defaulting to clean. |
 | `merge-during-diagram` | A pull request merges while Rocket draws a diagram started from ci. The watcher sees the merge in diagram and wakes Jarvis, which releases Rocket and records `merged`. The story goes to the retro with the merge recorded (`retro.mergedAt`), and the retro worker's handoff closes it. |
 
-After every scenario the runner also checks that each turn started and ended in order, that none failed or was lost, that no worker process is left running, and that every turn ran the scripted program with the harness's start or resume arguments.
+After every scenario the runner also checks that each turn started and ended in order, that none failed or was lost, that no worker process is left running, and that every turn ran the scripted program with the harness's start or resume arguments, and that every start in a harness whose row has `notes` ends with them, while resumed turns and starts in other harnesses carry none.
 
 ## A bug becomes a scenario
 
