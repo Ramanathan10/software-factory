@@ -579,7 +579,7 @@ function questionBlock(story, question, index, total) {
   area.value = draft.text;
   return el('section', { class: 'question' + (answered(draft) ? ' ready' : ''), role: 'group', 'aria-labelledby': promptId },
     el('small', { class: 'q-num' }, 'Question ' + (index + 1) + ' of ' + total + (answered(draft) ? ' · answered' : '')),
-    el('p', { class: 'q-prompt', id: promptId }, question.prompt),
+    el('div', { class: 'md q-prompt', id: promptId }, ...renderMarkdown(question.prompt, el, { breaks: true })),
     el('div', { class: 'choices' }, question.options.map((option, index) =>
       el('button', { type: 'button', 'aria-pressed': String(draft.choice === index),
         onclick: () => { draft.choice = draft.choice === index ? null : index; if (draft.choice !== null) draft.text = ''; refreshInbox(); } },
