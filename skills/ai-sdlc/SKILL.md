@@ -119,7 +119,7 @@ Record each command and its result. Report a gate the owner declined in the prof
 
 Read and follow `adversarial-code-review`. It is the single code review panel and already requires reviewers from distinct model classes. Keep it read-only. Send code to an additional provider only when the profile authorizes cross-model sharing; otherwise say so and review with what is authorized.
 
-Fix findings that clear its bar, rerun the gates affected by the fix, then review the fix the same way. When review has sent the change back as many times as the profile's review round limit and findings remain, stop and ask the owner how to proceed. Continue only when the review reports no remaining findings, or the owner explicitly accepts the ones left open.
+Fix findings that clear its bar, rerun the gates affected by the fix, then review the fix the same way. When review has sent the change back as many times as the profile's review round limit and findings remain, stop and ask the owner how to proceed. Continue only when the review reports no remaining findings, or the owner explicitly accepts the ones left open. Under a story in the console, a verdict with findings to fix (CONCERNS or BLOCK) ends the review with `return-to-build` listing them, which counts the round; `handoff` carries only a CLEAN or approving verdict, or one whose remaining findings the owner accepted.
 
 ## 6. Before and after
 
