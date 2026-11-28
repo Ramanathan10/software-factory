@@ -1917,3 +1917,57 @@ test('a comment that arrives while the PR already conflicts is also asked about 
   const after = record('pr-observed', mergeObserved('clean', { review: review(['IC_9']) }));
   assert.equal(pendingOf(store, 'late-comment', after).feedback, true);
 });
+
+test('a comment fresh on the conflict poll survives a later poll before the rebuild: a new head that is unknown, a new head that conflicts, or the same head behind or clean', t => {
+  const store = fixture(t)();
+  const both = review(['IC_0', 'IC_1']);
+  const polls = {
+    unknown: () => onHead(mergeObserved(undefined, { review: both }), OTHER_HEAD),
+    'new conflicting head': () => onHead(mergeObserved('conflicting', { review: both }), OTHER_HEAD),
+    behind: () => mergeObserved('behind', { review: both }),
+    clean: () => mergeObserved('clean', { review: both })
+  };
+  for (const [name, poll] of Object.entries(polls)) {
+    const id = 'survives-' + name.replace(/ /g, '-');
+    const record = toCi(store, id);
+    record('pr-observed', mergeObserved('clean', { review: review(['IC_0']) }));
+    record('pr-observed', mergeObserved('conflicting', { review: both }));
+    record('pr-observed', poll());
+    record('return-to-build', { detail: RESOLVE });
+    rebuildAndReopen(record);
+    const after = record('pr-observed', mergeObserved('clean', { review: both }));
+    assert.equal(pendingOf(store, id, after).feedback, true, name);
+    assert.match(pendingOf(store, id, after).detail, /New feedback · 1 item\b/, name);
+  }
+});
+
+test('a comment fresh on an earlier conflict poll does not wake again once the story was ready in between', t => {
+  const store = fixture(t)();
+  const record = toCi(store, 'earlier-episode');
+  record('pr-observed', mergeObserved('clean', { review: review(['IC_0']) }));
+  record('pr-observed', mergeObserved('conflicting', { review: review(['IC_0', 'IC_1']) }));
+  record('pr-observed', onHead(mergeObserved('clean', { review: review(['IC_0', 'IC_1']) }), OTHER_HEAD));
+  record('pr-ready', { head: OTHER_HEAD, detail: 'Checks and review passed.' });
+  assert.equal(store.handover('earlier-episode').story.conflictFresh, undefined);
+  record('pr-observed', onHead(mergeObserved('conflicting', { review: review(['IC_0', 'IC_1']) }), 'f'.repeat(40)));
+  record('return-to-build', { detail: RESOLVE });
+  rebuildAndReopen(record);
+  const after = record('pr-observed', mergeObserved('clean', { review: review(['IC_0', 'IC_1']) }));
+  assert.notEqual(pendingOf(store, 'earlier-episode', after)?.feedback, true);
+});
+
+test('replan from ci or merge asks about a comment fresh on the conflict poll once planning is done', t => {
+  const store = fixture(t)();
+  for (const from of ['ci', 'merge']) {
+    const id = 'replan-fresh-' + from;
+    const record = toCi(store, id);
+    record('pr-observed', mergeObserved('clean', { review: review(['IC_0']) }));
+    if (from === 'merge') record('pr-ready', { head: REVIEW_HEAD, detail: 'Checks and review passed.' });
+    record('pr-observed', mergeObserved('conflicting', { review: review(['IC_0', 'IC_1']) }));
+    record('replan', { detail: 'The conflict needs a scope decision.' });
+    rebuildAndReopen(record, true);
+    const after = record('pr-observed', mergeObserved('clean', { review: review(['IC_0', 'IC_1']) }));
+    assert.equal(pendingOf(store, id, after).feedback, true, from);
+    assert.match(pendingOf(store, id, after).detail, /New feedback · 1 item\b/, from);
+  }
+});

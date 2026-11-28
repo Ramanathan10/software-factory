@@ -143,8 +143,7 @@ function observePr(story, input, now) {
     story.prSeen = [...[...seen].filter(key => !live.has(key)), ...live].slice(-1000);
   }
   if (['ci', 'merge'].includes(story.phase)) {
-    if (merge !== 'conflicting') delete story.conflictFresh;
-    else story.conflictFresh = [...new Set([...(conflict ? [] : story.conflictFresh ?? []), ...fresh])];
+    if (merge === 'conflicting') story.conflictFresh = [...new Set([...(story.conflictFresh ?? []), ...fresh])];
   }
   const checks = !checksSame && (newHead || reconcileReady || ['failed', 'passed', 'merged', 'closed'].includes(status) ||
     Boolean(previous && ['failed', 'passed', 'closed'].includes(previous.status)));
@@ -374,6 +373,7 @@ function apply(story, input, now) {
       requireThat(story.phase !== 'planning' && story.phase !== 'closed',
         'This phase cannot reopen planning.', 409);
       requireThat(!story.retro?.mergedAt, 'The pull request has merged; finish the retro.', 409);
+      if (['ci', 'merge'].includes(story.phase) && story.conflictFresh) story.prSeen = (story.prSeen ?? []).filter(key => !story.conflictFresh.includes(key));
       story.phase = 'planning';
       if (story.prObservation?.merge === 'conflicting') delete story.prObservation;
       delete story.conflictFresh;
@@ -435,6 +435,7 @@ function apply(story, input, now) {
         requireThat(!review?.unresolved, review?.unresolved + ' unresolved review ' + (review?.unresolved === 1 ? 'thread remains' : 'threads remain') + ' on the observed head.', 409);
         story.readyHead = input.head;
       }
+      delete story.conflictFresh;
       story.phase = 'merge';
       return string(input.detail, 'current-head check and review evidence');
     case 'pr-recheck':
