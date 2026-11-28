@@ -88,7 +88,9 @@ function status(story) {
   if (story.phase === 'retro' && story.retro?.mergedAt) return { owner: 'coordinator', label: 'Merged · finishing retro' };
   const signal = story.prObservation?.status;
   if (['ci', 'merge'].includes(story.phase) && signal) {
-    const review = reviewLabels(story, Date.now()).map(said => ' · ' + said).join('');
+    const behind = story.prObservation.merge === 'behind' ? ' · Behind main' : '';
+    const review = reviewLabels(story, Date.now()).map(said => ' · ' + said).join('') + behind;
+    if (story.prObservation.merge === 'conflicting') return { owner, label: 'Merge conflict with main' + review, alert: true };
     if (story.phase === 'merge' && story.readyHead === story.prObservation.head && signal === 'passed') {
       return { owner, label: label + review };
     }

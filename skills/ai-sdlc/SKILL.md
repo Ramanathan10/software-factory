@@ -99,7 +99,7 @@ If the ladder's first step says an approved part should not exist, return to pha
 
 Turn the valid red test green without weakening or deleting its assertion. If the test encodes the wrong contract, return to the test author or phase 1 rather than silently changing it. Run the focused tests, then the relevant broader tests. Before handing off, check the change against each acceptance criterion in the spec. A criterion it does not meet is unfinished work, never a limitation to write into an ADR, a skill or the handoff: fix it, or return to phase 1 to change the criterion.
 
-A story returned from publishing with a merge conflict starts by merging the remote default branch and resolving it so every settled decision in the spec still holds. When the default branch decides a settled case differently and the two cannot both hold, return to phase 1 for that decision; do not rewrite the spec to match. A rule cited from another story counts only if that story decided it, not if it put the case out of scope.
+A story returned from publishing, ci or merge with a merge conflict starts by merging the remote default branch and resolving it so every settled decision in the spec still holds. When the default branch decides a settled case differently and the two cannot both hold, return to phase 1 for that decision; do not rewrite the spec to match. A rule cited from another story counts only if that story decided it, not if it put the case out of scope.
 
 ## 4. Required gates and mutation testing
 

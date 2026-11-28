@@ -40,7 +40,10 @@ export function summarizePr(data) {
     counts.failed > 0 ? 'failed' :
     counts.pending > 0 ? 'running' :
     counts.good > 0 ? 'passed' : 'no-checks';
-  return { head: data.headRefOid.toLowerCase(), status, failedCount: counts.failed, failures: [...names].sort().slice(0, 10) };
+  const merge = data.state !== 'OPEN' ? null :
+    data.mergeable === 'CONFLICTING' || data.mergeStateStatus === 'DIRTY' ? 'conflicting' :
+    data.mergeable === 'MERGEABLE' ? (data.mergeStateStatus === 'BEHIND' ? 'behind' : 'clean') : null;
+  return { head: data.headRefOid.toLowerCase(), status, failedCount: counts.failed, failures: [...names].sort().slice(0, 10), ...(merge && { merge }) };
 }
 
 const login = actor => actor?.login ?? 'ghost';
@@ -107,6 +110,8 @@ const reviewQuery = `query($owner: String!, $name: String!, $number: Int!) {
   }
 }`;
 
+export const PR_VIEW_FIELDS = 'url,state,headRefOid,statusCheckRollup,mergeable,mergeStateStatus';
+
 function withheld(env, host) {
   if (host.toLowerCase() === process.env.GH_HOST?.toLowerCase()) return env;
   for (const name of enterpriseTokens) delete env[name];
@@ -125,7 +130,7 @@ export async function readGitHubPr(url, signal, posted = [], { run: runner = run
   const found = pullRequestUrl(url);
   if (found?.kind !== 'github') throw new Error('Unsupported PR URL.');
   const options = readOptions(signal, found.host);
-  const { stdout } = await runner('gh', ['pr', 'view', found.canonical, '--json', 'url,state,headRefOid,statusCheckRollup'], options);
+  const { stdout } = await runner('gh', ['pr', 'view', found.canonical, '--json', PR_VIEW_FIELDS], options);
   const data = JSON.parse(stdout);
   if (pullRequestUrl(data.url)?.key !== found.key) throw new Error('GitHub returned a different PR.');
   const checks = summarizePr(data);

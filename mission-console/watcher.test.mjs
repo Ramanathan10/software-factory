@@ -152,3 +152,44 @@ test('an approval on the current head that has a comment is feedback; an empty a
   assert.deepEqual(review.keys, ['PRR_said']);
   assert.deepEqual([review.items[0].kind, review.items[0].author, review.items[0].excerpt], ['review', 'reviewer-a', 'Looks good, but drop the debug log.']);
 });
+
+const green = [{ __typename: 'CheckRun', name: 'Tests', status: 'COMPLETED', conclusion: 'SUCCESS' }];
+const mergeOf = (extra, state = 'OPEN') => watcher.summarizePr({ state, headRefOid: HEAD, statusCheckRollup: green, ...extra }).merge;
+
+test('Hawkeye reads a conflicting PR as conflicting, from either GitHub field', () => {
+  assert.equal(mergeOf({ mergeable: 'CONFLICTING', mergeStateStatus: 'DIRTY' }), 'conflicting');
+  assert.equal(mergeOf({ mergeable: 'CONFLICTING' }), 'conflicting');
+  assert.equal(mergeOf({ mergeStateStatus: 'DIRTY' }), 'conflicting');
+  assert.equal(mergeOf({ mergeable: 'MERGEABLE', mergeStateStatus: 'DIRTY' }), 'conflicting');
+});
+
+test('Hawkeye reads a mergeable PR behind its base as behind and any other mergeable PR as clean', () => {
+  assert.equal(mergeOf({ mergeable: 'MERGEABLE', mergeStateStatus: 'BEHIND' }), 'behind');
+  for (const state of ['CLEAN', 'BLOCKED', 'UNSTABLE', 'HAS_HOOKS', 'DRAFT', 'UNKNOWN', undefined, null]) {
+    assert.equal(mergeOf({ mergeable: 'MERGEABLE', mergeStateStatus: state }), 'clean', 'MERGEABLE with ' + state);
+  }
+});
+
+test('Hawkeye leaves merge out when GitHub has not computed it, or answers nothing, null or something unknown', () => {
+  for (const extra of [{}, { mergeable: 'UNKNOWN' }, { mergeable: 'UNKNOWN', mergeStateStatus: 'UNKNOWN' }, { mergeable: null, mergeStateStatus: null },
+    { mergeable: 'SOMETHING_NEW' }, { mergeable: 7 }, { mergeStateStatus: 'BEHIND' }]) {
+    const summary = watcher.summarizePr({ state: 'OPEN', headRefOid: HEAD, statusCheckRollup: green, ...extra });
+    assert.ok(!('merge' in summary), 'merge for ' + JSON.stringify(extra) + ' was ' + summary.merge);
+  }
+});
+
+test('Hawkeye reports no merge answer for a merged or closed PR', () => {
+  for (const state of ['MERGED', 'CLOSED']) {
+    assert.ok(!('merge' in watcher.summarizePr({ state, headRefOid: HEAD, statusCheckRollup: green, mergeable: 'CONFLICTING', mergeStateStatus: 'DIRTY' })), state);
+  }
+});
+
+test('the merge answer does not change the check status, failures or head Hawkeye reports', () => {
+  const summary = watcher.summarizePr({ state: 'OPEN', headRefOid: HEAD.toUpperCase(), statusCheckRollup: green, mergeable: 'CONFLICTING', mergeStateStatus: 'DIRTY' });
+  assert.deepEqual(summary, { head: HEAD, status: 'passed', failedCount: 0, failures: [], merge: 'conflicting' });
+});
+
+test('the production gh pr view asks for mergeable and mergeStateStatus', () => {
+  const fields = watcher.PR_VIEW_FIELDS.split(',');
+  assert.ok(fields.includes('mergeable') && fields.includes('mergeStateStatus'));
+});

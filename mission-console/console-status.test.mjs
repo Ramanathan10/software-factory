@@ -24,11 +24,16 @@ class Node {
 const ids = new Map();
 const now = new Date().toISOString();
 const base = { title: 'A story', branch: 'story/x', worktree: 'C:/w/x', harness: 'Claude Code', questions: [], artifacts: [], files: [], events: [], revision: 1, createdAt: now, updatedAt: now, pr: 'https://github.com/acme/widgets/pull/10' };
+const head = 'c'.repeat(40);
 const stories = [
   { ...base, id: 'MRG-1', phase: 'retro', retro: { returnPhase: 'ci', startedAt: now, mergedAt: now, detail: 'The PR merged.' } },
   { ...base, id: 'MRG-B', phase: 'retro', blocked: 'Waiting on the owner.', retro: { returnPhase: 'ci', startedAt: now, mergedAt: now, detail: 'The PR merged.' } },
   { ...base, id: 'MRG-D', phase: 'retro', pendingDecision: { seq: 3 }, retro: { returnPhase: 'ci', startedAt: now, mergedAt: now, detail: 'The PR merged.' } },
   { ...base, id: 'LEFT-1', phase: 'ci', retro: { returnPhase: 'ci', startedAt: now, mergedAt: now, detail: 'The PR merged.' } },
+  { ...base, id: 'CNF-M', phase: 'merge', readyHead: head, prObservation: { head, status: 'passed', failedCount: 0, failures: [], merge: 'conflicting' } },
+  { ...base, id: 'CNF-C', phase: 'ci', prObservation: { head, status: 'passed', failedCount: 0, failures: [], merge: 'conflicting' } },
+  { ...base, id: 'RDY-M', phase: 'merge', readyHead: head, prObservation: { head, status: 'passed', failedCount: 0, failures: [], merge: 'clean' } },
+  { ...base, id: 'BHD-M', phase: 'merge', readyHead: head, prObservation: { head, status: 'passed', failedCount: 0, failures: [], merge: 'behind' } },
   { ...base, id: 'RET-1', phase: 'retro', retro: { returnPhase: 'ci', startedAt: now, detail: 'Review lessons.' } },
 ];
 const filter = new Node('select');
@@ -75,4 +80,22 @@ test('a merged retro with a saved decision shows it is waiting for Jarvis, with 
 test('a story that left the retro does not read as merged and finishing the retro, even if it kept retro.mergedAt', () => {
   const left = rows()['LEFT-1'];
   assert.ok(!left.includes('Merged · finishing retro'), left);
+});
+
+test('a story in merge or ci whose PR conflicts with main shows the conflict with an alert, never PR ready to merge', () => {
+  for (const id of ['CNF-M', 'CNF-C']) {
+    const row = rows()[id];
+    assert.ok(row.includes('Merge conflict with main'), id + ': ' + row);
+    assert.ok(!row.includes('PR ready to merge') && !row.includes('readiness needs confirmation'), id + ': ' + row);
+    const button = ids.get('overview').children.find(each => each.children[0].textContent.startsWith(id));
+    assert.ok(String(button.children[1].className).includes('attention-text'), id + ' has no alert');
+  }
+});
+
+test('a ready story whose PR does not conflict still reads ready, and behind main is added to the label without an alert', () => {
+  assert.ok(rows()['RDY-M'].includes('PR ready to merge'), rows()['RDY-M']);
+  assert.ok(!rows()['RDY-M'].includes('Behind main'), rows()['RDY-M']);
+  assert.ok(rows()['BHD-M'].includes('PR ready to merge') && rows()['BHD-M'].includes('Behind main'), rows()['BHD-M']);
+  const button = ids.get('overview').children.find(each => each.children[0].textContent.startsWith('BHD-M'));
+  assert.ok(!String(button.children[1].className).includes('attention-text'), 'Behind main raised an alert');
 });

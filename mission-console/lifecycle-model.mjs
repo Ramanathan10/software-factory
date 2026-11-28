@@ -11,7 +11,7 @@ const HEADS = ['a'.repeat(40), 'b'.repeat(40)];
 
 export const guarded = ['phase', 'harness', 'branch', 'questions', 'worker', 'blocked', 'cleanup', 'pr', 'prObservation', 'readyHead', 'diagram', 'retro', 'prReview', 'jarvis', 'deleted'];
 export const unguarded = ['id', 'title', 'brief', 'worktree', 'revision', 'createdAt', 'updatedAt', 'activity', 'draftPlan', 'plan',
-  'feedback', 'reviewRounds', 'comparisonRequested', 'files', 'artifacts', 'pipeline', 'repo', 'prPosted', 'prSeen'];
+  'feedback', 'reviewRounds', 'comparisonRequested', 'files', 'artifacts', 'pipeline', 'repo', 'prPosted', 'prSeen', 'conflictFresh'];
 
 const blocking = review => review.changesRequested.length > 0 || review.unresolved > 0;
 
@@ -29,7 +29,8 @@ export function abstract(story) {
   if (story.cleanup) state.cleanup = true;
   if (story.pr) state.pr = story.pr;
   if (story.prObservation) state.prObservation = { head: story.prObservation.head, status: story.prObservation.status,
-    ...(story.prObservation.review ? { blocking: blocking(story.prObservation.review) } : {}) };
+    ...(story.prObservation.review ? { blocking: blocking(story.prObservation.review) } : {}),
+    ...(story.prObservation.merge === 'conflicting' && story.prObservation.status === 'passed' && !story.prObservation.review ? { conflicting: true } : {}) };
   if (story.readyHead) state.readyHead = story.readyHead;
   if (story.diagram) state.diagram = { returnPhase: story.diagram.returnPhase };
   if (story.retro) state.retro = { ...(story.retro.returnPhase && !story.retro.completedAt ? { returnPhase: story.retro.returnPhase } : {}), ...(story.retro.completedAt ? { completed: true } : {}), ...(story.retro.mergedAt ? { merged: true } : {}) };
@@ -49,8 +50,8 @@ function concrete(state) {
   if (state.retro) story.retro = { ...(state.retro.returnPhase ? { returnPhase: state.retro.returnPhase } : {}), startedAt: 'then', detail: 'Retro.', ...(state.retro.completed ? { completedAt: 'then' } : {}), ...(state.retro.merged ? { mergedAt: '2026-01-01T00:00:00.000Z' } : {}) };
   if (state.jarvis) story.jarvis = { session: 'jarvis-1', handled: 1, ...(state.jarvis.turn ? { turn: { ...state.jarvis.turn, log: 'jarvis.log' } } : { waking: 'now' }) };
   if (state.prObservation) {
-    const { blocking: blocked, ...observed } = state.prObservation;
-    story.prObservation = { ...observed, failedCount: observed.status === 'failed' ? 1 : 0,
+    const { blocking: blocked, conflicting, ...observed } = state.prObservation;
+    story.prObservation = { ...observed, ...(conflicting ? { merge: 'conflicting' } : {}), failedCount: observed.status === 'failed' ? 1 : 0,
       failures: observed.status === 'failed' ? ['test'] : [], ...(blocked === undefined ? {} : { review: review(blocked) }) };
   }
   return story;
@@ -99,6 +100,9 @@ export function eventInputs(evidence) {
     ...HEADS.flatMap(head => [true, false].map(blocked => ['pr-observed', {
       url: PR, observation: { head, status: 'passed', failedCount: 0, failures: [], review: review(blocked) },
     }])),
+    ...HEADS.map(head => ['pr-observed', {
+      url: PR, observation: { head, status: 'passed', failedCount: 0, failures: [], merge: 'conflicting' },
+    }]),
     ['request-cleanup', {}],
     ['cleanup-blocked', detail],
     ['complete-cleanup', detail],
@@ -119,7 +123,7 @@ export function jarvisInputs(evidence) {
   ];
 }
 
-export function explore({ open = openStore, limit = 240000, inputs: choose = eventInputs } = {}) {
+export function explore({ open = openStore, limit = 300000, inputs: choose = eventInputs } = {}) {
   const folder = mkdtempSync(join(tmpdir(), 'lifecycle-model-'));
   const evidence = join(folder, 'after.png');
   writeFileSync(evidence, 'png');

@@ -118,30 +118,37 @@ function observePr(story, input, now) {
     Number.isSafeInteger(failedCount) && failedCount >= 0 && Array.isArray(failures) &&
     failures.length <= Math.min(10, failedCount) && failures.every(name => typeof name === 'string' && name.length <= 160),
   'Supply valid check evidence.');
+  requireThat(observation.merge === undefined || ['conflicting', 'behind', 'clean'].includes(observation.merge), 'Supply a valid merge answer.');
   const current = { head, status, failedCount: status === 'failed' ? failedCount : 0, failures: status === 'failed' ? failures : [] };
   const review = watching ? reviewOf(observation.review) : undefined;
   const previous = story.prObservation;
   const kept = watching ? review : previous?.review;
+  const merge = ['merged', 'closed'].includes(status) ? undefined : observation.merge ?? (previous?.head === head ? previous.merge : undefined);
   const checksSame = previous && Object.keys(current).every(key => JSON.stringify(current[key]) === JSON.stringify(previous[key]));
   const reviewing = story.phase === 'pr-review';
   const seen = new Set(story.prSeen ?? []);
   const fresh = review && !reviewing ? review.keys.filter(key => !seen.has(key)) : [];
-  if (checksSame && JSON.stringify(kept) === JSON.stringify(previous.review) && !fresh.length) return null;
+  if (checksSame && previous.merge === merge && JSON.stringify(kept) === JSON.stringify(previous.review) && !fresh.length) return null;
   const priorHead = previous?.head ?? story.readyHead;
   const newHead = Boolean(priorHead && priorHead !== current.head);
   const reconcileReady = story.phase === 'merge' && !previous && !story.readyHead;
   const listed = current.failures.length ? ' · ' + current.failures.join(', ') : '';
   const feedback = fresh.length > 0;
   const said = feedback ? ' · New feedback · ' + fresh.length + (fresh.length === 1 ? ' item' : ' items') : '';
-  const detail = 'Hawkeye · ' + (newHead ? 'New head · ' : '') + labels[status] + ' · ' + head.slice(0, 12) + listed + said;
-  story.prObservation = { ...current, ...(kept ? { review: kept } : {}), at: now };
+  const conflict = ['ci', 'merge'].includes(story.phase) && merge === 'conflicting' && (previous?.merge !== 'conflicting' || newHead);
+  const shown = merge === 'conflicting' ? ' · Merge conflict with main' : merge === 'behind' ? ' · Behind main' : '';
+  const detail = 'Hawkeye · ' + (newHead ? 'New head · ' : '') + labels[status] + ' · ' + head.slice(0, 12) + listed + shown + said;
+  story.prObservation = { ...current, ...(merge ? { merge } : {}), ...(kept ? { review: kept } : {}), at: now };
   if (review && !reviewing) {
     const live = new Set(review.keys);
     story.prSeen = [...[...seen].filter(key => !live.has(key)), ...live].slice(-1000);
   }
+  if (['ci', 'merge'].includes(story.phase)) {
+    if (merge === 'conflicting') story.conflictFresh = [...new Set([...(story.conflictFresh ?? []), ...fresh])];
+  }
   const checks = !checksSame && (newHead || reconcileReady || ['failed', 'passed', 'merged', 'closed'].includes(status) ||
     Boolean(previous && ['failed', 'passed', 'closed'].includes(previous.status)));
-  return { detail, feedback, wake: checks || feedback };
+  return { detail, feedback, conflict, wake: checks || feedback || conflict };
 }
 
 function markSeen(story, seen) {
@@ -343,10 +350,18 @@ function apply(story, input, now) {
       requireThat(['ci', 'merge'].includes(story.phase) && story.pr, 'Start PR review while the pull request is open.', 409);
       story.prReview = { returnPhase: 'ci', startedAt: now, detail: string(input.detail, 'review feedback') };
       delete story.readyHead;
+      delete story.conflictFresh;
       story.phase = 'pr-review';
       return 'Hawkeye started PR review · ' + story.prReview.detail;
     case 'return-to-build':
-      requireThat(['review', 'gates', 'comparison', 'publishing', 'pr-review'].includes(story.phase), 'Return to build from review, the deterministic gates, the comparison, publishing, or PR review.', 409);
+      requireThat(['review', 'gates', 'comparison', 'publishing', 'ci', 'merge', 'pr-review'].includes(story.phase), 'Return to build from review, the deterministic gates, the comparison, publishing, CI, merge, or PR review.', 409);
+      delete story.readyHead;
+      if (['ci', 'merge'].includes(story.phase)) {
+        delete story.prObservation;
+        if (story.conflictFresh) story.prSeen = (story.prSeen ?? []).filter(key => !story.conflictFresh.includes(key));
+      }
+      if (story.phase === 'pr-review' && story.prObservation?.merge === 'conflicting') delete story.prObservation;
+      delete story.conflictFresh;
       if (story.phase === 'review') story.reviewRounds = (story.reviewRounds ?? 0) + 1;
       if (story.phase === 'pr-review') markSeen(story, input.seen);
       story.phase = 'building';
@@ -359,7 +374,10 @@ function apply(story, input, now) {
       requireThat(story.phase !== 'planning' && story.phase !== 'closed',
         'This phase cannot reopen planning.', 409);
       requireThat(!story.retro?.mergedAt, 'The pull request has merged; finish the retro.', 409);
+      if (['ci', 'merge'].includes(story.phase) && story.conflictFresh) story.prSeen = (story.prSeen ?? []).filter(key => !story.conflictFresh.includes(key));
       story.phase = 'planning';
+      if (story.prObservation?.merge === 'conflicting') delete story.prObservation;
+      delete story.conflictFresh;
       delete story.blocked;
       delete story.readyHead;
       delete story.draftPlan;
@@ -415,11 +433,13 @@ function apply(story, input, now) {
         requireThat(story.prObservation, 'Hawkeye has not observed this pull request yet.', 409);
         requireThat(input.head === story.prObservation.head, 'Readiness evidence does not cover the observed head.', 409);
         requireThat(story.prObservation.status === 'passed', labels[story.prObservation.status] + ' on the observed head.', 409);
+        requireThat(story.prObservation.merge !== 'conflicting', 'Merge conflict with main on the observed head.', 409);
         const review = story.prObservation?.review;
         requireThat(!review?.changesRequested.length, 'Changes are requested on the observed head by ' + review?.changesRequested.join(', ') + '.', 409);
         requireThat(!review?.unresolved, review?.unresolved + ' unresolved review ' + (review?.unresolved === 1 ? 'thread remains' : 'threads remain') + ' on the observed head.', 409);
         story.readyHead = input.head;
       }
+      delete story.conflictFresh;
       story.phase = 'merge';
       return string(input.detail, 'current-head check and review evidence');
     case 'pr-recheck':
@@ -581,6 +601,7 @@ export function openStore(path) {
         let detail;
         let worker;
         let feedback = false;
+        let conflict = false;
         requireThat(input.by === undefined || input.by === 'jarvis', 'by can only be jarvis.');
         let wake = wakes.has(input.type) && !input.by;
         if (input.type === 'create') {
@@ -628,7 +649,7 @@ export function openStore(path) {
               db.exec('COMMIT');
               return { unchanged: true };
             }
-            ({ detail, wake, feedback } = observed);
+            ({ detail, wake, feedback, conflict } = observed);
           } else {
             if (story.cleanup && input.type === 'release-worker') {
               requireThat(worker && worker.id === input.assignment, 'Current assignment does not match.', 409);
@@ -649,6 +670,7 @@ export function openStore(path) {
         const event = { at: now, type: input.type, phase: story.phase, revision: story.revision, detail };
         if (input.type === 'pr-observed') event.observation = story.prObservation;
         if (feedback) event.feedback = true;
+        if (conflict) event.conflict = true;
         if (story.worker || worker) event.worker = story.worker ?? worker;
         if (input.type === 'pr-ready' && story.readyHead) event.head = story.readyHead;
         if (input.command) event.command = input.command;

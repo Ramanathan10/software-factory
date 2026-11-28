@@ -46,7 +46,7 @@ test('a GitHub Enterprise read asks gh for the pull request and runs GraphQL on 
   assert.equal(observation.head, HEAD);
   assert.equal(observation.status, 'no-checks');
   assert.equal(calls.length, 2);
-  assert.deepEqual(calls[0], ['gh', ['pr', 'view', url, '--json', 'url,state,headRefOid,statusCheckRollup']]);
+  assert.deepEqual(calls[0], ['gh', ['pr', 'view', url, '--json', watcher.PR_VIEW_FIELDS]]);
   const [file, graphql] = calls[1];
   assert.equal(file, 'gh');
   assert.ok(consecutive(graphql, 'api', 'graphql'));
@@ -62,7 +62,7 @@ test('a github.com read keeps its call arguments and names github.com for GraphQ
   const url = 'https://github.com/o/r/pull/3';
   const { run, calls } = ghStub({ url });
   await read(url, undefined, [], { run });
-  assert.deepEqual(calls[0], ['gh', ['pr', 'view', url, '--json', 'url,state,headRefOid,statusCheckRollup']]);
+  assert.deepEqual(calls[0], ['gh', ['pr', 'view', url, '--json', watcher.PR_VIEW_FIELDS]]);
   assert.ok(consecutive(calls[1][1], '--hostname', 'github.com'));
   assert.ok(consecutive(calls[1][1], '-f', 'owner=o') && consecutive(calls[1][1], '-F', 'number=3'));
 });
@@ -541,4 +541,13 @@ test('the Azure reader caps names at 100 and keys at 1000', async () => {
   const { review } = await readAzure(azStub({ pr: shown({ reviewers }), threads: many }));
   assert.ok(review.approvals.length <= 100);
   assert.ok(review.keys.length <= 1000);
+});
+
+test('readGitHubPr asks gh for PR_VIEW_FIELDS, which include the merge answer', async () => {
+  const url = 'https://github.com/o/r/pull/3';
+  const { run, calls } = ghStub({ url });
+  await reader('readGitHubPr')(url, undefined, [], { run });
+  const fields = calls[0][1][calls[0][1].indexOf('--json') + 1];
+  assert.equal(fields, watcher.PR_VIEW_FIELDS);
+  assert.ok(fields.split(',').includes('mergeable') && fields.split(',').includes('mergeStateStatus'));
 });
